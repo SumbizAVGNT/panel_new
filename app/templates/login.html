@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Вход — sumbiz{% endblock %}
+
+{% block content %}
+<section class="auth-center">
+  <div class="auth-card glass">
+    <h1 class="auth-title">Вход</h1>
+
+    <form method="POST" action="{{ url_for('auth.login') }}" class="form-vertical">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+
+      <label class="form-label" for="username">Имя пользователя</label>
+      <input class="input" id="username" name="username" type="text" required autocomplete="username" />
+
+      <label class="form-label" for="password">Пароль</label>
+      <input class="input" id="password" name="password" type="password" required autocomplete="current-password" />
+
+      <button type="submit" class="btn primary w-full">Войти</button>
+    </form>
+
+    <div class="divider"><span>или</span></div>
+
+    <a class="btn discord w-full" href="{{ url_for('auth.discord_login') }}">
+      Войти через Discord
+    </a>
+  </div>
+</section>
+{% endblock %}

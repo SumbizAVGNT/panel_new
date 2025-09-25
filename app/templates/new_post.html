@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% block title %}New Post — MoonRein{% endblock %}
+
+{% block content %}
+<div class="container-xxl pt-2">
+  <div class="card glass p-3 p-md-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h1 class="h5 m-0">New Post</h1>
+      <a class="btn btn-outline-light btn-sm" href="{{ url_for('news.index') }}">Back</a>
+    </div>
+
+    <form method="post" id="postForm" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <!-- ===== Composer ===== -->
+      <div class="row g-3">
+        <div class="col-12 col-lg-7">
+          <label class="form-label">Title</label>
+          <input class="form-control" name="title" id="title" placeholder="Post title" required>
+
+          <div class="mt-3">
+            <label class="form-label">Message</label>
+            <textarea class="form-control" name="content" id="content" rows="8" placeholder="Write your post..." required></textarea>
+            <div class="form-text">Plain text. Переносы строк сохраняются.</div>
+          </div>
+
+          <!-- Embed (optional) -->
+          <div class="mt-4">
+            <div class="d-flex justify-content-between align-items-center">
+              <label class="form-label m-0">Embed (optional)</label>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="embed_enabled">
+                <label class="form-check-label" for="embed_enabled">Enable</label>
+              </div>
+            </div>
+
+            <div id="embed_box" class="mt-2 collapse">
+              <div class="row g-3 align-items-center">
+                <div class="col-12 col-md-8">
+                  <label class="form-label">Embed title</label>
+                  <input class="form-control" name="embed_title" id="embed_title" placeholder="Optional">
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Color</label>
+                  <div class="input-group">
+                    <span class="input-group-text p-1">
+                      <input type="color" id="embed_color_picker" value="#2b2d31" style="width: 2rem; height: 1.8rem; border: none; background: transparent;">
+                    </span>
+                    <input class="form-control" name="embed_color" id="embed_color" placeholder="#2b2d31" value="#2b2d31">
+                  </div>
+                  <div class="form-text">HEX, например #5865F2.</div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Embed description</label>
+                  <textarea class="form-control" name="embed_desc" id="embed_desc" rows="4" placeholder="Optional"></textarea>
+                </div>
+                <div class="col-12 col-md-8">
+                  <label class="form-label">Image URL</label>
+                  <input class="form-control" name="embed_image_url" id="embed_image_url" placeholder="https://...">
+                  <div class="form-text">Discord принимает публичные URL. Локальный файл — только для предпросмотра (или добавьте серверную загрузку).</div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label">or Upload</label>
+                  <input class="form-control" type="file" id="embed_image_file" accept="image/*">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Live Preview (Discord-like) ===== -->
+        <div class="col-12 col-lg-5">
+          <label class="form-label">Preview</label>
+          <div class="p-3 rounded-3" style="background:#2b2d31; border:1px solid rgba(255,255,255,.08);">
+            <!-- author row (fake discord look) -->
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <img id="pv_avatar" class="rounded-circle" src="https://cdn.discordapp.com/embed/avatars/0.png" width="32" height="32" alt="">
+              <div class="d-flex align-items-baseline gap-2">
+                <span id="pv_author" class="fw-semibold" style="color:#fff;">{{ (g.user.username if g and g.get('user') else 'user') }}</span>
+                <span class="small text-secondary">Today at {{ (now()|default('00:00')) if false }}</span>
+              </div>
+            </div>
+
+            <!-- content -->
+            <div id="pv_content" class="mb-2" style="white-space:pre-wrap; color:#dcddde;"></div>
+
+            <!-- embed -->
+            <div id="pv_embed" class="d-none mt-2">
+              <div class="d-flex">
+                <div id="pv_embed_bar" style="width:4px; border-radius:4px 0 0 4px; background:#5865F2;"></div>
+                <div class="flex-grow-1 p-3 rounded-end" style="background:#1e1f22; border:1px solid rgba(255,255,255,.06);">
+                  <div id="pv_embed_title" class="fw-semibold mb-1" style="color:#fff;"></div>
+                  <div id="pv_embed_desc" class="mb-2" style="white-space:pre-wrap; color:#b5bac1;"></div>
+                  <img id="pv_embed_image" class="img-fluid rounded" style="display:none; max-height:260px; object-fit:contain;" alt="">
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <hr class="text-secondary my-4">
+
+      <!-- ===== Destinations ===== -->
+      <h2 class="h6">Destinations</h2>
+      <div class="row g-3 align-items-end">
+        <!-- DISCORD -->
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="send_discord" name="send_discord" checked>
+            <label class="form-check-label" for="send_discord">Discord</label>
+          </div>
+          {% if discord_bots|length == 0 %}
+            <div class="alert alert-warning py-2 mt-2 mb-0">
+              No Discord bots. Добавьте бота в <a class="alert-link" href="{{ url_for('admin.settings') }}">Settings → Bots</a>.
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label class="form-label d-flex align-items-center justify-content-between">
+            <span>Bot</span>
+            <span class="d-flex gap-2">
+              <button class="btn btn-outline-light btn-sm" type="button" id="btnGuildsRefresh">Refresh</button>
+              <button class="btn btn-outline-secondary btn-sm" type="button" id="btnGuildsTest">Test</button>
+            </span>
+          </label>
+          <select class="form-select" id="discord_bot_id" name="discord_bot_id">
+            <option value="">— choose bot —</option>
+            {% for b in discord_bots %}
+              <option value="{{ b.id }}">{{ b.name }}</option>
+            {% endfor %}
+          </select>
+          <div id="discord_bot_help" class="form-text text-warning small"></div>
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label class="form-label">Server (Guild)</label>
+          <select class="form-select" id="discord_guild_id" name="discord_guild_id">
+            <option value="">— choose server —</option>
+          </select>
+          <div id="discord_guild_help" class="form-text text-warning small"></div>
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label class="form-label">Channel</label>
+          <select class="form-select" id="discord_channel_id" name="discord_channel_id">
+            <option value="">— choose channel —</option>
+          </select>
+          <div id="discord_channel_help" class="form-text text-warning small"></div>
+        </div>
+
+        <!-- TELEGRAM -->
+        <div class="col-12 mt-3">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="send_telegram" name="send_telegram">
+            <label class="form-check-label" for="send_telegram">Telegram</label>
+          </div>
+          {% if telegram_bots|length == 0 %}
+            <div class="alert alert-warning py-2 mt-2 mb-0">
+              No Telegram bots. Добавьте бота в <a class="alert-link" href="{{ url_for('admin.settings') }}">Settings → Bots</a>.
+            </div>
+          {% endif %}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Bot</label>
+          <select class="form-select" id="telegram_bot_id" name="telegram_bot_id">
+            <option value="">— choose bot —</option>
+            {% for b in telegram_bots %}
+              <option value="{{ b.id }}">{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-8">
+          <label class="form-label">Chat ID / @username</label>
+          <input class="form-control" id="telegram_chat_id" name="telegram_chat_id" placeholder="e.g. -1001234567890 or @channelusername">
+        </div>
+
+        <!-- VK -->
+        <div class="col-12 mt-3">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="send_vk" name="send_vk">
+            <label class="form-check-label" for="send_vk">VK.com</label>
+          </div>
+          {% if vk_bots|length == 0 %}
+            <div class="alert alert-warning py-2 mt-2 mb-0">
+              No VK bots. Добавьте бота в <a class="alert-link" href="{{ url_for('admin.settings') }}">Settings → Bots</a>.
+            </div>
+          {% endif %}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Bot</label>
+          <select class="form-select" id="vk_bot_id" name="vk_bot_id">
+            <option value="">— choose bot —</option>
+            {% for b in vk_bots %}
+              <option value="{{ b.id }}">{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-8">
+          <label class="form-label">Peer ID</label>
+          <input class="form-control" id="vk_peer_id" name="vk_peer_id" placeholder="user_id / chat_id / group_id with 2000000000+N">
+        </div>
+      </div>
+
+      <div class="mt-4 d-flex gap-2">
+        <button class="btn btn-primary" type="submit">Publish</button>
+        <a class="btn btn-secondary" href="{{ url_for('news.index') }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block body_extra %}
+<script>
+(function(){
+  // ===== Helpers =====
+  const byId = (id)=>document.getElementById(id);
+  const title = byId('title');
+  const content = byId('content');
+
+  // ===== Preview (Discord-like) =====
+  const pvContent = byId('pv_content');
+  const pvEmbed   = byId('pv_embed');
+  const pvBar     = byId('pv_embed_bar');
+  const pvETitle  = byId('pv_embed_title');
+  const pvEDesc   = byId('pv_embed_desc');
+  const pvEImg    = byId('pv_embed_image');
+
+  const embedEnabled   = byId('embed_enabled');
+  const embedBox       = byId('embed_box');
+  const embedTitle     = byId('embed_title');
+  const embedDesc      = byId('embed_desc');
+  const embedColor     = byId('embed_color');
+  const embedPicker    = byId('embed_color_picker');
+  const embedImageUrl  = byId('embed_image_url');
+  const embedImageFile = byId('embed_image_file');
+
+  function setCollapse(el, on){
+    const c = new bootstrap.Collapse(el, {toggle:false});
+    on ? c.show() : c.hide();
+  }
+
+  embedEnabled?.addEventListener('change', e=>{
+    setCollapse(embedBox, e.target.checked);
+    render();
+  });
+
+  embedPicker?.addEventListener('input', e=>{
+    embedColor.value = e.target.value;
+    render();
+  });
+  embedColor?.addEventListener('input', render);
+  [title, content, embedTitle, embedDesc, embedImageUrl].forEach(el => el?.addEventListener('input', render));
+
+  // local image preview
+  embedImageFile?.addEventListener('change', (e)=>{
+    const f = e.target.files?.[0];
+    if(!f){ pvEImg.style.display='none'; pvEImg.src=''; return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{ pvEImg.src = reader.result; pvEImg.style.display='block'; };
+    reader.readAsDataURL(f);
+  });
+
+  function render(){
+    // message
+    pvContent.textContent = content?.value || '';
+
+    // embed
+    const on = embedEnabled?.checked;
+    pvEmbed.classList.toggle('d-none', !on);
+    if(!on) return;
+
+    // color bar
+    const hex = (embedColor.value || '#5865F2');
+    pvBar.style.background = hex;
+
+    // title/desc
+    pvETitle.textContent = embedTitle.value || '';
+    pvEDesc.textContent  = embedDesc.value || '';
+
+    // image priority: local file preview > URL
+    if(embedImageFile.files && embedImageFile.files[0]){
+      // уже выставили в change
+    }else if(embedImageUrl.value){
+      pvEImg.src = embedImageUrl.value;
+      pvEImg.style.display='block';
+    }else{
+      pvEImg.src = '';
+      pvEImg.style.display='none';
+    }
+  }
+  render();
+
+  // ===== Platforms toggles -> just clear values =====
+  function clearFields(ids){ ids.forEach(id=>{const el=byId(id); if(!el) return; if(el.tagName==='SELECT') el.selectedIndex=0; else el.value='';}); }
+  byId('send_discord')?.addEventListener('change', e=>{ if(!e.target.checked) clearFields(['discord_bot_id','discord_guild_id','discord_channel_id']); });
+  byId('send_telegram')?.addEventListener('change', e=>{ if(!e.target.checked) clearFields(['telegram_bot_id','telegram_chat_id']); });
+  byId('send_vk')?.addEventListener('change', e=>{ if(!e.target.checked) clearFields(['vk_bot_id','vk_peer_id']); });
+
+  // ===== Discord cascading: Bot -> Guild -> Channel =====
+  const botSel   = byId('discord_bot_id');
+  const guildSel = byId('discord_guild_id');
+  const chanSel  = byId('discord_channel_id');
+  const helpBot  = byId('discord_bot_help');
+  const helpGuild= byId('discord_guild_help');
+  const helpChan = byId('discord_channel_help');
+
+  function opt(text,val=""){ return `<option value="${val}">${text}</option>`; }
+  function setHelp(el,msg){ if(el) el.textContent = msg||''; }
+
+  async function loadGuildsForBot(){
+    setHelp(helpGuild,''); guildSel.innerHTML = opt('loading…'); chanSel.innerHTML = opt('— choose channel —');
+    if(!botSel.value){ guildSel.innerHTML = opt('— choose server —'); return; }
+    try{
+      const url = `{{ url_for('news.api_discord_guilds', bot_db_id=0) }}`.replace('/0','/'+botSel.value);
+      const res = await fetch(url, {cache:'no-store'}); const data = await res.json();
+      if(!data.ok){ setHelp(helpGuild, data.reason||'error'); guildSel.innerHTML = opt('— choose server —'); return; }
+      guildSel.innerHTML = opt('— choose server —') + data.guilds.map(g=>opt(g.name,g.id)).join('');
+    }catch(e){ setHelp(helpGuild,'network error'); guildSel.innerHTML = opt('— choose server —'); }
+  }
+  async function loadChannelsForGuild(){
+    setHelp(helpChan,''); chanSel.innerHTML = opt('loading…');
+    if(!botSel.value || !guildSel.value){ chanSel.innerHTML = opt('— choose channel —'); return; }
+    try{
+      let url = `{{ url_for('news.api_discord_channels', bot_db_id=0) }}`.replace('/0','/'+botSel.value);
+      url += `?guild_id=${encodeURIComponent(guildSel.value)}`;
+      const res = await fetch(url, {cache:'no-store'}); const data = await res.json();
+      if(!data.ok){ setHelp(helpChan, data.reason||'error'); chanSel.innerHTML = opt('— choose channel —'); return; }
+      chanSel.innerHTML = opt('— choose channel —') + data.channels.map(c=>opt('#'+c.name,c.id)).join('');
+    }catch(e){ setHelp(helpChan,'network error'); chanSel.innerHTML = opt('— choose channel —'); }
+  }
+  botSel?.addEventListener('change', loadGuildsForBot);
+  guildSel?.addEventListener('change', loadChannelsForGuild);
+  byId('btnGuildsRefresh')?.addEventListener('click', loadGuildsForBot);
+  byId('btnGuildsTest')?.addEventListener('click', async ()=>{
+    setHelp(helpBot, 'Testing…');
+    if(!botSel.value){ setHelp(helpBot,'Choose bot first'); return; }
+    try{
+      const url = `{{ url_for('news.api_discord_test', bot_db_id=0) }}`.replace('/0','/'+botSel.value);
+      const r = await fetch(url, {cache:'no-store'}); const d = await r.json();
+      setHelp(helpBot, d.ok ? `Gateway OK. Guilds: ${d.count}` : `Fail: ${d.reason||'error'}`);
+    }catch(e){ setHelp(helpBot,'Network error'); }
+  });
+})();
+</script>
+{% endblock %}

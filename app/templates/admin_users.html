@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Manage Users — MoonRein{% endblock %}
+
+{% block content %}
+<div class="users-page">
+
+  <!-- Header (ближе к навбару) -->
+  <div class="page-head glass">
+    <div class="head-left">
+      <h1 class="page-title">Manage Users</h1>
+      <div class="sub">{{ session.get('role') }}</div>
+    </div>
+
+    <div class="head-actions">
+      <div class="search">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M21 21l-4.35-4.35" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        <input id="userSearch" type="search" placeholder="Search users…">
+      </div>
+
+      <select id="roleFilter" class="input small">
+        <option value="">All roles</option>
+        {% for r in ['pending','user','admin','superadmin'] %}
+          <option value="{{ r }}">{{ r }}</option>
+        {% endfor %}
+      </select>
+
+      <!-- Add user (иконка) -->
+      <button class="icon-add" id="openDrawer" title="Add user" aria-label="Add user">
+        <img src="{{ url_for('static', filename='img/add_user.svg') }}" alt="" onerror="this.replaceWith(document.createTextNode('+'));"/>
+      </button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card glass users-card">
+    <div class="table-wrap">
+      <table class="user-table" id="usersTable">
+        <thead>
+          <tr>
+            <th style="width:80px">ID</th>
+            <th>User</th>
+            <th style="width:220px">Discord</th>
+            <th style="width:240px">Role</th>
+            <th style="width:260px">Created</th>
+            <th style="width:140px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr data-name="{{ (u.username or '')|lower }}" data-role="{{ u.role }}">
+            <td class="muted">#{{ u.id }}</td>
+
+            <td class="user-cell">
+              {% if u.discord_id %}
+                <img class="avatar" src="https://cdn.discordapp.com/embed/avatars/0.png" alt="avatar">
+              {% else %}
+                <span class="avatar initials">{{ (u.username or 'U')[:2]|upper }}</span>
+              {% endif %}
+              <div class="u-col">
+                <b class="uname">{{ u.username }}</b>
+                <span class="muted small">{{ 'linked' if u.discord_id else 'local' }}</span>
+              </div>
+            </td>
+
+            <td class="mono">{{ u.discord_id or '—' }}</td>
+
+            <td>
+              <form method="post" action="{{ url_for('admin.update_user_role', user_id=u.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="role-inline">
+                  <span class="role-badge {{ u.role }}">{{ u.role }}</span>
+                  <select name="role" class="input tiny" onchange="this.form.submit()">
+                    {% for r in ['pending','user','admin','superadmin'] %}
+                      <option value="{{ r }}" {{ 'selected' if u.role==r else '' }}>{{ r }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </form>
+            </td>
+
+            <td class="muted mono">{{ u.created_at }}</td>
+
+            <td class="actions">
+              <form method="post" action="{{ url_for('admin.delete_user', user_id=u.id) }}" onsubmit="return confirm('Delete user {{ u.username }}?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn danger tiny">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+            <tr><td colspan="6" class="empty">No users yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Slide-over Drawer -->
+<div id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-panel glass">
+    <div class="drawer-head">
+      <h3>Add user</h3>
+      <button class="icon-btn" id="closeDrawer" aria-label="Close">×</button>
+    </div>
+
+    <div class="tabs small" id="addTabs">
+      <button class="tab small active" data-tab="creds">Login & Password</button>
+      <button class="tab small" data-tab="discord">Discord ID</button>
+    </div>
+
+    <div class="tabpanes">
+      <!-- by credentials -->
+      <div id="creds" class="pane active">
+        <form method="POST" action="{{ url_for('admin.add_user') }}" class="form-vertical">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label class="form-label">Username</label>
+          <input class="input" name="username" required>
+
+          <label class="form-label">Password</label>
+          <input class="input" type="password" name="password" required>
+
+          <label class="form-label">Role</label>
+          <select class="input" name="role">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+            <option value="superadmin">superadmin</option>
+          </select>
+
+          <button class="btn primary w-full" type="submit">Create</button>
+        </form>
+      </div>
+
+      <!-- by discord -->
+      <div id="discord" class="pane">
+        <form method="POST" action="{{ url_for('admin.add_user') }}" class="form-vertical">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label class="form-label">Discord ID</label>
+          <input class="input" name="discord_id" required>
+
+          <label class="form-label">Role</label>
+          <select class="input" name="role">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+            <option value="superadmin">superadmin</option>
+          </select>
+
+          <label class="form-label">Temp password (optional)</label>
+          <input class="input" type="password" name="password" placeholder="optional">
+
+          <button class="btn primary w-full" type="submit">Create</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+</div>
+
+<style>
+/* ===== Лэйаут: ближе к навбару и на всю ширину ===== */
+.users-page{
+  width:100%;
+  max-width:none;
+  padding:8px 20px 24px;   /* ближе к верхнему навбару */
+  margin:0;
+  display:grid;
+  gap:16px;
+}
+.page-head{margin-top:0}
+.users-card,.table-wrap,.user-table{width:100%}
+
+/* ===== Header ===== */
+.page-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  padding:10px 14px;border-radius:14px;border:1px solid #1f2937;background:#0b1220;
+}
+.page-title{margin:0;font-size:22px;font-weight:800}
+.sub{color:#94a3b8;font-size:12px;margin-top:2px}
+.head-left{display:flex;align-items:baseline;gap:10px}
+.head-actions{display:flex;gap:10px;align-items:center}
+
+/* Search */
+.search{display:flex;align-items:center;gap:8px;border:1px solid #1f2937;background:#0e1524;border-radius:12px;padding:8px 12px}
+.search svg{color:#94a3b8}
+.search input{background:transparent;border:none;outline:none;color:#e5e7eb;min-width:280px}
+
+/* Inputs / Buttons re-use */
+.input{border:1px solid #1f2937;background:#0e1524;color:#e5e7eb;border-radius:10px;padding:8px 10px}
+.input.small{padding:8px 10px}
+.input.tiny{padding:6px 8px;font-size:12px;border-radius:8px}
+.btn{border:1px solid #334155;background:#0b1220;color:#e5e7eb;border-radius:10px;padding:8px 12px;cursor:pointer}
+.btn.primary{background:#1d4ed8;border-color:#1e40af}
+.btn.danger{border-color:#551b1b;background:#1a0f10;color:#fecaca}
+.btn.tiny{padding:6px 10px;border-radius:8px}
+.btn.w-full{width:100%}
+
+/* icon add */
+.icon-add{
+  width:44px;height:44px;border-radius:12px;display:grid;place-items:center;
+  background:linear-gradient(180deg,#2563eb33,#1e40af33);border:1px solid #23324a;color:#dbeafe;cursor:pointer;
+  transition:transform .1s,border-color .15s;
+}
+.icon-add:hover{transform:translateY(-1px);border-color:#3b82f6}
+.icon-add img{width:22px;height:22px;display:block}
+
+/* ===== Table ===== */
+.card{border-radius:16px;border:1px solid #1f2937;background:#0b1220}
+.table-wrap{overflow:auto}
+.user-table{border-collapse:collapse}
+.user-table th,.user-table td{padding:16px;border-bottom:1px solid #1f2937;text-align:left}
+.user-table thead th{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}
+.user-cell{display:flex;align-items:center;gap:12px}
+.avatar{width:36px;height:36px;border-radius:50%}
+.avatar.initials{display:inline-grid;place-items:center;background:#0e1726;border:1px solid #23324a;color:#9fb3ff;width:36px;height:36px;font-size:12px;border-radius:50%}
+.u-col .uname{font-weight:700}
+.muted{color:#94a3b8}
+.muted.small{font-size:12px}
+.mono{font-family:ui-monospace, monospace}
+.empty{text-align:center;color:#64748b;padding:22px}
+
+/* Role */
+.role-inline{display:flex;align-items:center;gap:8px}
+.role-badge{display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;text-transform:capitalize}
+.role-badge.pending{background:#22140b;color:#fbbf24}
+.role-badge.user{background:#0d1f16;color:#86efac}
+.role-badge.admin{background:#191326;color:#c4b5fd}
+.role-badge.superadmin{background:#1f0f16;color:#fecaca}
+
+/* ===== Drawer (исправлен z-index для кликов) ===== */
+.drawer{position:fixed;inset:0;z-index:80;display:none}
+.drawer.open{display:block}
+.drawer-backdrop{position:absolute;inset:0;background:#0008;z-index:1}
+.drawer-panel{
+  position:absolute;right:0;top:0;height:100%;
+  width:min(420px, 92vw);padding:22px;overflow:auto;z-index:2;
+  border-left:1px solid #1f2937;background:#0b1220;border-radius:0;
+}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.icon-btn{border:1px solid #334155;background:#0b1220;color:#e5e7eb;border-radius:8px;width:28px;height:28px;cursor:pointer}
+
+/* Tabs in drawer */
+.tabs.small{display:flex;gap:6px;margin:8px 0 12px}
+.tab.small{font-size:12px;padding:6px 10px;border:1px solid #1f2937;background:#0e1524;color:#e5e7eb;border-radius:999px;cursor:pointer}
+.tab.small.active{background:#1d4ed8;border-color:#1e40af}
+.pane{display:none}
+.pane.active{display:block}
+.form-vertical{display:grid;gap:10px}
+.form-label{font-size:12px;color:#94a3b8}
+</style>
+
+<script>
+(function(){
+  // drawer open/close
+  const drawer = document.getElementById('drawer');
+  const openBtn = document.getElementById('openDrawer');
+  const closeBtn = document.getElementById('closeDrawer');
+  const backdrop = document.getElementById('drawerBackdrop');
+
+  if(openBtn && drawer){
+    const open = ()=> drawer.classList.add('open');
+    const close = ()=> drawer.classList.remove('open');
+    openBtn.addEventListener('click', open);
+    closeBtn && closeBtn.addEventListener('click', close);
+    backdrop && backdrop.addEventListener('click', close);
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') close(); });
+  }
+
+  // tabs
+  const tabs = document.querySelectorAll('#addTabs .tab');
+  const panes = document.querySelectorAll('.pane');
+  tabs.forEach(t=>{
+    t.addEventListener('click', ()=>{
+      tabs.forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      const id=t.dataset.tab;
+      panes.forEach(p=>p.classList.toggle('active', p.id===id));
+    });
+  });
+
+  // filter
+  const search=document.getElementById('userSearch');
+  const filter=document.getElementById('roleFilter');
+  const rows=document.querySelectorAll('#usersTable tbody tr');
+  function apply(){
+    const term=(search.value||'').toLowerCase();
+    const role=filter.value;
+    rows.forEach(r=>{
+      const okName=!term || (r.dataset.name||'').includes(term);
+      const okRole=!role || r.dataset.role===role;
+      r.style.display=(okName && okRole)?'':'none';
+    });
+  }
+  if(search) search.addEventListener('input', apply);
+  if(filter) filter.addEventListener('change', apply);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% block title %}MoonRein — Admin{% endblock %}
+
+{% block content %}
+{% set role = role or (session.get('role') or 'user') %}
+{% set can_add_users = role == 'superadmin' %}
+{% set servers = servers or [] %}
+{% set stats = stats or { 'avg_sessions':'—','sessions_change':'0','users':'—','cost':'—',
+                          'tickets':'—','new_tickets':'—','completed_tickets':'—','response_time':'—' } %}
+
+<div class="dash-wrap">
+  <!-- Header -->
+  <div class="dash-head">
+    <div class="head-left">
+      <h1 class="h-title">Dashboard</h1>
+      <span class="role-pill">{{ role }}</span>
+      <div class="chips">
+        <button class="chip active" type="button">Today</button>
+        <button class="chip" type="button">7d</button>
+        <button class="chip" type="button">30d</button>
+      </div>
+    </div>
+    <!-- Кнопка «Серверы» справа -->
+    <div class="d-flex align-items-center gap-2">
+      <button class="chip" type="button" data-bs-toggle="modal" data-bs-target="#serversModal">
+        Servers · {{ servers|length }}
+      </button>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <section class="kpis">
+    <div class="kpi glass">
+      <div class="kpi-top">
+        <span class="kpi-ico">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 13h3l2-6 4 12 3-9 2 3h4"/>
+          </svg>
+        </span>
+        <span class="kpi-label">Avg sessions / day</span>
+      </div>
+      <div class="kpi-value">{{ stats.avg_sessions }}</div>
+      <div class="kpi-delta pos">{{ stats.sessions_change }}% vs last week</div>
+      <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points="0,22 18,18 36,12 54,19 72,9 100,14" fill="none" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </div>
+
+    <div class="kpi glass">
+      <div class="kpi-top">
+        <span class="kpi-ico">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="9" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </span>
+        <span class="kpi-label">Users</span>
+      </div>
+      <div class="kpi-value">{{ stats.users }}</div>
+      <div class="kpi-sub">active</div>
+      <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
+        <polyline points="0,20 20,16 40,18 60,10 80,12 100,8" fill="none" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </div>
+
+    <div class="kpi glass">
+      <div class="kpi-top">
+        <span class="kpi-ico">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="kpi-label">Cost</span>
+      </div>
+      <div class="kpi-value">{{ stats.cost }}</div>
+      <div class="progress" role="progressbar" aria-valuenow="75" aria-valuemin="0" aria-valuemax="100">
+        <span style="width:75%"></span>
+      </div>
+      <div class="kpi-sub">75% of monthly budget</div>
+    </div>
+
+    <div class="kpi glass">
+      <div class="kpi-top">
+        <span class="kpi-ico">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path d="M12 3v9l4 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="kpi-label">Uptime</span>
+      </div>
+      <div class="kpi-value">99.9%</div>
+      <div class="status"><span class="dot online"></span> operational</div>
+      <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
+        <polyline points="0,6 25,6 50,6 75,6 100,6" fill="none" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </div>
+  </section>
+
+  <!-- Основная сетка (оставил как было) -->
+  <section class="grid">
+    <div class="card glass">
+      <div class="card-head">
+        <h2>Performance</h2>
+        <span class="badge">live</span>
+      </div>
+      <div class="metric">
+        <div class="metric-val">{{ stats.avg_sessions }}</div>
+        <div class="metric-sub">avg sessions per day</div>
+        <span class="kpi-delta pos">{{ stats.sessions_change }}% vs last week</span>
+      </div>
+      <div class="bars" aria-hidden="true">
+        <div style="height:58%"></div>
+        <div style="height:72%"></div>
+        <div style="height:42%"></div>
+        <div style="height:86%"></div>
+        <div style="height:64%"></div>
+      </div>
+    </div>
+
+    <div class="card glass">
+      <div class="card-head"><h2>Support</h2></div>
+      <div class="metric">
+        <div class="metric-val">{{ stats.tickets }}</div>
+        <div class="metric-sub">total tickets</div>
+      </div>
+      <div class="row-split">
+        <span class="tag">new</span>
+        <b>{{ stats.new_tickets }}</b>
+      </div>
+      <div class="kv">
+        <div><span>Completed</span><b>{{ stats.completed_tickets }}</b></div>
+        <div><span>Avg response</span><b>{{ stats.response_time }}</b></div>
+      </div>
+    </div>
+
+    <div class="card glass wide">
+      <div class="card-head">
+        <h2>Recent activity</h2>
+        <a class="link" href="#">View all</a>
+      </div>
+      <div class="activity">
+        <div class="empty">No recent events</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ===== Servers Modal ===== -->
+<div class="modal fade" id="serversModal" tabindex="-1" aria-labelledby="serversModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h5 class="modal-title d-flex align-items-center gap-2" id="serversModalLabel">
+          <img src="https://cdn.jsdelivr.net/gh/twemoji/icons/svg/1f5a5.svg" alt="" class="img-fluid" style="width:22px;height:22px">
+          Servers overview
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        {% if servers|length == 0 %}
+          <div class="alert alert-warning mb-0">No servers configured yet. Add them in Settings → Servers.</div>
+        {% else %}
+          <div class="row g-3">
+            {% for s in servers %}
+            <div class="col-12 col-md-6">
+              <div class="card bg-transparent border-secondary-subtle h-100">
+                <div class="card-body d-flex flex-column gap-3">
+                  <!-- Верх: аватар/иконка + имя + статус -->
+                  <div class="d-flex align-items-center justify-content-between gap-3">
+                    <div class="d-flex align-items-center gap-3">
+                      <div class="ratio ratio-1x1" style="width:44px;">
+                        <img
+                          src="https://cdn.jsdelivr.net/gh/twemoji/icons/svg/1f5a5.svg"
+                          class="img-fluid rounded-2 object-fit-cover w-100 h-100 border border-secondary-subtle"
+                          alt="server"
+                        >
+                      </div>
+                      <div>
+                        <div class="fw-semibold">{{ s.name }}</div>
+                        <div class="text-secondary small">{{ s.host }}:{{ s.port }} · {{ s.username }}</div>
+                      </div>
+                    </div>
+                    {% set st = (s.last_status or 'unknown') %}
+                    {% set badge = 'success' if st in ['online','up'] else 'danger' if st in ['offline','down'] else 'secondary' %}
+                    <span class="badge bg-{{ badge }} text-uppercase">{{ st }}</span>
+                  </div>
+
+                  <!-- Аптайм + проверка -->
+                  <div class="small d-flex flex-wrap gap-2">
+                    <span class="text-secondary">Uptime:</span>
+                    <span>{{ s.last_uptime or 'N/A' }}</span>
+                    <span class="text-secondary ms-2">Checked:</span>
+                    <span>{{ s.last_checked or '—' }}</span>
+                  </div>
+
+                  <!-- Метрики (если есть) -->
+                  <div class="row g-2">
+                    <div class="col-12">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <span class="small text-secondary">CPU</span>
+                        <span class="small">{{ (s.cpu_pct is not none) and (s.cpu_pct|string ~ '%') or 'N/A' }}</span>
+                      </div>
+                      <div class="progress" style="height:8px">
+                        {% set cpuv = (s.cpu_pct or 0) | round(0) %}
+                        <div class="progress-bar" role="progressbar" style="width: {{ cpuv }}%"></div>
+                      </div>
+                    </div>
+
+                    <div class="col-12 col-sm-6">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <span class="small text-secondary">Memory</span>
+                        {% if s.mem_total_gb %}
+                          {% set mpct = (100 * (s.mem_used_gb or 0) / (s.mem_total_gb or 1)) | round(0) %}
+                          <span class="small">{{ s.mem_used_gb or 0 }} / {{ s.mem_total_gb }} GB ({{ mpct }}%)</span>
+                        {% else %}
+                          <span class="small">N/A</span>
+                        {% endif %}
+                      </div>
+                      <div class="progress" style="height:8px">
+                        <div class="progress-bar" role="progressbar" style="width: {{ mpct or 0 }}%"></div>
+                      </div>
+                    </div>
+
+                    <div class="col-12 col-sm-6">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <span class="small text-secondary">Disk</span>
+                        {% if s.disk_total_gb %}
+                          {% set dpct = (100 * (s.disk_used_gb or 0) / (s.disk_total_gb or 1)) | round(0) %}
+                          <span class="small">{{ s.disk_used_gb or 0 }} / {{ s.disk_total_gb }} GB ({{ dpct }}%)</span>
+                        {% else %}
+                          <span class="small">N/A</span>
+                        {% endif %}
+                      </div>
+                      <div class="progress" style="height:8px">
+                        <div class="progress-bar" role="progressbar" style="width: {{ dpct or 0 }}%"></div>
+                      </div>
+                    </div>
+
+                    <div class="col-12">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <span class="small text-secondary">Network</span>
+                        {% if s.net_in_mbps is not none or s.net_out_mbps is not none %}
+                          <span class="small">↓ {{ s.net_in_mbps or 0 }} Mb/s · ↑ {{ s.net_out_mbps or 0 }} Mb/s</span>
+                        {% else %}
+                          <span class="small">N/A</span>
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Docker -->
+                  <div>
+                    <div class="d-flex align-items-center justify-content-between">
+                      <span class="small text-secondary">Docker</span>
+                      {% if s.docker_running is not none %}
+                        <span class="small">{{ s.docker_running }} running</span>
+                      {% else %}
+                        <span class="small">N/A</span>
+                      {% endif %}
+                    </div>
+                    {% if s.docker_names_list and s.docker_names_list|length %}
+                      <div class="mt-1 d-flex flex-wrap gap-1">
+                        {% for dn in s.docker_names_list[:8] %}
+                          <span class="badge bg-dark border border-secondary-subtle">{{ dn }}</span>
+                        {% endfor %}
+                        {% if s.docker_names_list|length > 8 %}
+                          <span class="badge bg-secondary">+{{ s.docker_names_list|length - 8 }}</span>
+                        {% endif %}
+                      </div>
+                    {% endif %}
+                  </div>
+
+                  {% if s.collected_at %}
+                    <div class="text-secondary small">Metrics @ {{ s.collected_at }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="modal-footer">
+        <a class="btn btn-outline-light" href="{{ url_for('admin.settings') }}">Manage servers</a>
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* контейнер */
+.dash-wrap{width:100%;margin:0;padding:24px 20px 28px;display:grid;gap:20px}
+/* header */
+.dash-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+.head-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.h-title{margin:0;font-size:26px;font-weight:800}
+.role-pill{font-size:12px;border:1px solid #334155;border-radius:999px;padding:4px 10px;color:var(--muted)}
+.chips{display:flex;gap:6px;margin-left:6px}
+.chip{border:1px solid #223048;background:#0d1525;color:#cbd5e1;padding:6px 10px;border-radius:999px;cursor:pointer}
+.chip.active{background:#12203a;border-color:#33507a}
+/* KPIs */
+.kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+.kpi{border-radius:14px;padding:16px;display:grid;gap:8px;position:relative;overflow:hidden}
+.kpi-top{display:flex;align-items:center;gap:8px}
+.kpi-ico{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:#0f1b30;color:#7dd3fc;border:1px solid #1f3659}
+.kpi-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.kpi-value{font-size:28px;font-weight:800}
+.kpi-sub{font-size:12px;color:var(--muted)}
+.kpi-delta{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px}
+.kpi-delta.pos{background:#10b98122;color:#34d399}
+.spark{position:absolute;right:8px;bottom:8px;width:110px;height:34px;color:#22c55e;opacity:.45}
+/* grid */
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+@media (max-width: 1200px){ .grid{grid-template-columns:1fr} }
+.card{border-radius:16px;padding:20px;display:grid;gap:16px}
+.card.wide{grid-column:1/-1}
+.card-head{display:flex;align-items:center;justify-content:space-between}
+.badge{font-size:11px;text-transform:uppercase;border:1px solid #334155;border-radius:999px;padding:4px 8px;color:var(--muted)}
+.metric-val{font-size:32px;font-weight:800}
+.metric-sub{color:var(--muted);font-size:12px}
+/* bars */
+.bars{display:flex;align-items:flex-end;gap:12px;height:160px;margin-top:4px}
+.bars>div{flex:1;min-height:10px;background:linear-gradient(0deg,#22c55e,#16a34a);border-radius:6px 6px 0 0;opacity:.95;transition:transform .15s}
+.bars>div:hover{transform:translateY(-3px)}
+/* support */
+.row-split{display:flex;align-items:center;justify-content:space-between}
+.tag{font-size:12px;border:1px solid #334155;border-radius:6px;padding:4px 8px;background:#0b1220}
+.kv{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.kv>div{display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid #1f2937;border-radius:10px;background:#0b1220}
+.kv span{color:var(--muted);font-size:12px}
+/* activity */
+.activity{display:grid;gap:12px}
+.empty{color:var(--muted)}
+/* bootstrap progress harmonize */
+.progress{background:#111827;border:1px solid #283143;border-radius:999px;overflow:hidden}
+.progress .progress-bar{background:#22c55e}
+.dot{display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.4rem}
+.dot.online{background:#22c55e}
+</style>
+{% endblock %}
