@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Create post — MoonRein{% endblock %}
+
+{% block content %}
+<div class="container-xxl">
+
+  {% include "news/partials/_new_styles.html" %}
+
+  <div class="row g-4">
+    <!-- LEFT -->
+    <div class="col-12 col-xxl-8">
+      {% include "news/partials/_sticky_actions.html" %}
+      {% include "news/partials/_form_main.html" %}
+    </div>
+
+    <!-- RIGHT -->
+    <div class="col-12 col-xxl-4">
+      {% include "news/partials/_np_preview.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block body_extra %}
+  {% include "news/partials/_scripts_libs.html" %}
+  {% include "news/partials/_scripts_editor.html" %}
+  {% include "news/partials/_scripts_discord_picker.html" %}
+{% endblock %}

@@ -1,0 +1,63 @@
+{# ===== BOTS ===== #}
+<div class="card glass p-3 p-md-4 mt-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="h5 m-0">Bots</h2>
+  </div>
+
+  <form method="post" action="{{ url_for('admin.bots_add') }}" class="row gy-2 gx-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-12 col-md-3">
+      <label class="form-label">Platform</label>
+      <select name="platform" class="form-select">
+        <option value="discord">Discord</option>
+        <option value="telegram">Telegram</option>
+        <option value="vk">VK.com</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-7">
+      <label class="form-label">Token</label>
+      <input name="token" type="text" class="form-control" placeholder="Paste bot token / group token">
+    </div>
+    <div class="col-12 col-md-2 d-grid">
+      <button class="btn btn-primary" type="submit">Add bot</button>
+    </div>
+  </form>
+
+  <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mt-1">
+    {% for b in bots %}
+    <div class="col">
+      <div class="card bg-transparent border-secondary-subtle h-100">
+        <div class="card-body d-flex align-items-center justify-content-between gap-3">
+          <div class="d-flex align-items-center gap-3">
+            <div class="ratio ratio-1x1" style="width:48px;">
+              <img
+                src="{{ b.avatar_url or url_for('static', filename='img/bot_placeholder.png') }}"
+                alt="avatar"
+                class="img-fluid rounded-2 object-fit-cover w-100 h-100 border border-secondary-subtle"
+                loading="lazy">
+            </div>
+            <div>
+              <div class="fw-semibold">{{ b.name }}</div>
+              <div class="text-secondary small text-uppercase">{{ b.platform }}</div>
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <form method="post" action="{{ url_for('admin.bots_refresh', bot_pk=b.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-outline-light btn-sm">Refresh</button>
+            </form>
+            <form method="post" action="{{ url_for('admin.bots_delete', bot_pk=b.id) }}" onsubmit="return confirm('Delete this bot?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-outline-danger btn-sm">Delete</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+      <div class="text-secondary">No bots yet. Add your first bot above.</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>

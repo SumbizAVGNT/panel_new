@@ -1,0 +1,60 @@
+<!-- app/templates/auth/login.html -->
+{% extends "layout/base.html" %}
+{% block title %}Вход — MoonRein{% endblock %}
+
+{% block content %}
+<div class="container-xxl d-flex align-items-center justify-content-center" style="min-height: calc(100dvh - 120px);">
+  <div class="glass" style="width:100%; max-width: 420px; padding: 22px 22px;">
+    <div class="text-center mb-3">
+      <h1 class="h4 m-0">Вход</h1>
+      <div class="text-secondary small mt-1">Введите данные аккаунта или войдите через Discord</div>
+    </div>
+
+    <form method="POST" action="{{ url_for('auth.login') }}" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+
+      <div class="mb-3">
+        <label for="username" class="form-label">Имя пользователя</label>
+        <input
+          type="text"
+          class="form-control"
+          id="username"
+          name="username"
+          required
+          autocomplete="username"
+          placeholder="username"
+        >
+      </div>
+
+      <div class="mb-3">
+        <label for="password" class="form-label">Пароль</label>
+        <input
+          type="password"
+          class="form-control"
+          id="password"
+          name="password"
+          required
+          autocomplete="current-password"
+          placeholder="••••••••"
+        >
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100">
+        Войти
+      </button>
+    </form>
+
+    <div class="text-center text-secondary my-3 small">или</div>
+
+    <a class="btn btn-outline-light w-100 d-flex align-items-center justify-content-center gap-2"
+       href="{{ url_for('auth.discord_login') }}">
+      <i class="bi bi-discord"></i>
+      Войти через Discord
+    </a>
+
+    <div class="text-center text-secondary small mt-3">
+      Нужен доступ? Обратитесь к администратору.
+    </div>
+  </div>
+</div>
+{% endblock %}

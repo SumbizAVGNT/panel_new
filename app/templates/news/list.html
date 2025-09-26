@@ -1,0 +1,289 @@
+<!-- app/templates/news/list.html -->
+{% extends "base.html" %}
+{% block title %}News — MoonRein{% endblock %}
+
+{% block content %}
+<div class="container-xxl">
+
+  <style>
+    /* Карточки */
+    .post-card{cursor:pointer; position:relative; transition:box-shadow .12s ease, transform .12s ease, border-color .12s ease;}
+    .post-card:hover{transform:translateY(-1px); box-shadow:0 8px 24px rgba(0,0,0,.25)}
+    .post-card .clip-3{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden}
+    .post-head{padding-right:3.25rem;} /* место под кнопку publish */
+    .btn-publish{position:absolute; right:.75rem; bottom:.75rem; z-index:2}
+
+    /* Обводка по статусу (по умолчанию включена) */
+    .post-card { border:1px solid rgba(148,163,184,.18); }
+    .post-card.st-sent   { border-color: rgba(34,197,94,.55); box-shadow:0 0 0 1px rgba(34,197,94,.30) inset; }
+    .post-card.st-failed { border-color: rgba(234,179,8,.65);  box-shadow:0 0 0 1px rgba(234,179,8,.30) inset; }
+    .post-card.st-draft  { border-color: rgba(148,163,184,.28); }
+    .post-card.st-sent:hover   { box-shadow:0 8px 24px rgba(0,0,0,.25), 0 0 0 1px rgba(34,197,94,.45) inset; }
+    .post-card.st-failed:hover { box-shadow:0 8px 24px rgba(0,0,0,.25), 0 0 0 1px rgba(234,179,8,.45) inset; }
+
+    /* Компактная плотность */
+    #cards.dense .card-body{ padding: .75rem 1rem; }
+    #cards.dense .btn-publish{ right:.5rem; bottom:.5rem; }
+
+    /* Выкл статусной рамки */
+    #cards.status-off .post-card{ border-color: rgba(148,163,184,.22) !important; box-shadow:none !important; }
+
+    /* Скрыть бейджи целей */
+    #cards.hide-targets .targets{ display: none !important; }
+  </style>
+
+  <!-- Toolbar -->
+  <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <h1 class="h4 m-0">News</h1>
+      <span class="badge rounded-pill bg-secondary">{{ items|length }} items</span>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      <a class="btn btn-primary" href="{{ url_for('news.new_post') }}"><i class="bi bi-plus-lg me-1"></i>New post</a>
+      <div class="input-group input-group-sm" style="width:260px;">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input id="search" class="form-control" placeholder="Search title/content">
+      </div>
+
+      <!-- View settings -->
+      <div class="dropdown">
+        <button class="btn btn-outline-light btn-sm d-flex align-items-center gap-1" data-bs-toggle="dropdown" aria-expanded="false" title="View settings">
+          <i class="bi bi-sliders"></i><span class="d-none d-sm-inline">View</span>
+        </button>
+        <div class="dropdown-menu dropdown-menu-end p-2 glass" style="min-width: 260px;">
+          <div class="small text-secondary px-2 mb-1">Columns</div>
+          <div class="btn-group w-100 mb-2" role="group" id="opt-cols">
+            <input type="radio" class="btn-check" name="cols" id="cols-auto" autocomplete="off" value="auto" checked>
+            <label class="btn btn-outline-light btn-sm" for="cols-auto">Auto</label>
+            <input type="radio" class="btn-check" name="cols" id="cols-2" autocomplete="off" value="2">
+            <label class="btn btn-outline-light btn-sm" for="cols-2">2</label>
+            <input type="radio" class="btn-check" name="cols" id="cols-3" autocomplete="off" value="3">
+            <label class="btn btn-outline-light btn-sm" for="cols-3">3</label>
+            <input type="radio" class="btn-check" name="cols" id="cols-4" autocomplete="off" value="4">
+            <label class="btn btn-outline-light btn-sm" for="cols-4">4</label>
+          </div>
+
+          <div class="small text-secondary px-2 mb-1">Density</div>
+          <div class="btn-group w-100 mb-2" role="group" id="opt-density">
+            <input type="radio" class="btn-check" name="density" id="dens-comf" value="comfortable" checked>
+            <label class="btn btn-outline-light btn-sm" for="dens-comf">Comfort</label>
+            <input type="radio" class="btn-check" name="density" id="dens-compact" value="compact">
+            <label class="btn btn-outline-light btn-sm" for="dens-compact">Compact</label>
+          </div>
+
+          <div class="form-check form-switch d-flex align-items-center justify-content-between px-2">
+            <label class="form-check-label" for="sw-status">Status border</label>
+            <input class="form-check-input" type="checkbox" id="sw-status" checked>
+          </div>
+          <div class="form-check form-switch d-flex align-items-center justify-content-between px-2 mt-1">
+            <label class="form-check-label" for="sw-targets">Show targets</label>
+            <input class="form-check-input" type="checkbox" id="sw-targets" checked>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if not items %}
+    <div class="glass p-4 text-secondary">No posts yet. Click <em>New post</em> to create your first one.</div>
+  {% else %}
+  <!-- NOTE: классы row-cols будут меняться скриптом -->
+  <div id="cards" class="row g-3 row-cols-1 row-cols-md-2 row-cols-xl-3">
+    {% for p in items %}
+      {% set st = (p.status or 'draft') %}
+      {% set st_key = st|lower %}
+      <div class="col" data-title="{{ p.title|e }}" data-text="{{ p.content|e }}">
+        <div class="card glass h-100 border-0 post-card st-{{ 'sent' if st_key=='sent' else ('failed' if st_key in ['failed','error'] else 'draft') }}" data-id="{{ p.id }}">
+          <div class="card-body d-flex flex-column">
+            <div class="post-head">
+              <div class="fw-semibold">{{ p.title }}</div>
+              <div class="text-secondary small">{{ p.created_at }}</div>
+            </div>
+
+            <div class="mt-2 clip-3">{{ p.content }}</div>
+
+            <div class="targets mt-3 small d-flex flex-wrap gap-1">
+              {% for t in targets_by_post.get(p.id, []) %}
+                {% set tcls =
+                  'outline-success' if t.send_status=='sent' else
+                  ('outline-warning' if t.send_status=='pending' else 'outline-danger') %}
+                <span class="badge border border-{{ tcls }} text-{{ tcls }}">
+                  {{ t.platform }} · {{ t.bot_name }}{% if t.external_target_name %} → {{ t.external_target_name }}{% endif %}
+                </span>
+              {% else %}
+                <span class="text-secondary">no targets</span>
+              {% endfor %}
+            </div>
+
+            {% if can_edit %}
+              <a class="btn btn-sm btn-primary btn-publish"
+                 href="{{ url_for('news.publish', post_id=p.id) }}"
+                 title="Publish"
+                 data-stop="1">
+                <i class="bi bi-send"></i>
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="postModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h5 class="modal-title" id="pm-title">Preview</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2 text-secondary small" id="pm-date"></div>
+        <div id="pm-content" class="mb-3"></div>
+
+        <div id="pm-embed" class="p-3 rounded-3 d-none" style="background:rgba(99,102,241,.06);border-left:6px solid #5865F2;">
+          <div class="fw-semibold" id="pm-embed-title"></div>
+          <div class="text-secondary" id="pm-embed-desc"></div>
+          <img id="pm-embed-img" class="img-fluid rounded-2 border border-secondary-subtle mt-2 d-none" alt="">
+        </div>
+
+        <div id="pm-attach" class="mt-3 d-none">
+          <img id="pm-attach-img" class="img-fluid rounded-2 border border-secondary-subtle" alt="">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block body_extra %}
+<script>
+  /* Поиск */
+  (function(){
+    const input = document.getElementById('search');
+    const cards = document.querySelectorAll('#cards > .col');
+    function apply(){
+      const q = (input.value||'').toLowerCase().trim();
+      cards.forEach(c=>{
+        if(!q){ c.classList.remove('d-none'); return; }
+        const hay = (c.dataset.title+' '+c.dataset.text).toLowerCase();
+        c.classList.toggle('d-none', !hay.includes(q));
+      });
+    }
+    input?.addEventListener('input', apply);
+  })();
+
+  /* Кликабельные карточки */
+  (function(){
+    const grid = document.getElementById('cards');
+    const modalEl = document.getElementById('postModal');
+    const modal = new bootstrap.Modal(modalEl);
+
+    const q = sel => document.querySelector(sel);
+    const htmlBr = s => (s||'').replace(/\n/g,'<br>');
+    async function get(u){ const r=await fetch(u,{headers:{'Accept':'application/json'}}); return r.json(); }
+
+    async function openPreview(id){
+      const data = await get(`{{ url_for('news.api_post', post_id=0) }}`.replace('/0','/'+id));
+      if(!data.ok) return;
+
+      const p = data.post;
+      q('#pm-title').textContent = p.title || 'Untitled';
+      q('#pm-date').textContent  = p.created_at || '';
+      q('#pm-content').innerHTML = htmlBr(p.content || '');
+
+      const box = q('#pm-embed'), eImg = q('#pm-embed-img'), eTitle=q('#pm-embed-title'), eDesc=q('#pm-embed-desc');
+      box.classList.add('d-none'); eImg.classList.add('d-none'); eImg.removeAttribute('src'); eTitle.textContent=''; eDesc.textContent='';
+      const e = p.embed_json || null;
+      if(e){
+        box.classList.remove('d-none');
+        eTitle.textContent = e.title || 'Embed';
+        eDesc.innerHTML = htmlBr(e.description || '');
+        let col = '#5865F2';
+        if(typeof e.color==='number') col = '#'+e.color.toString(16).padStart(6,'0');
+        else if(typeof e.color==='string' && e.color.trim()){ const hex=e.color.replace(/[^0-9a-f]/ig,''); if(hex.length===6) col='#'+hex; }
+        box.style.borderLeftColor = col;
+        const u = (e.image && e.image.url) ? e.image.url : null;
+        const real = (u && u.startsWith('attachment://') && p.attachment_url) ? p.attachment_url : u;
+        if(real){ eImg.src = real; eImg.classList.remove('d-none'); }
+      }
+      const att = q('#pm-attach'), attImg = q('#pm-attach-img');
+      if(p.attachment_url){ att.classList.remove('d-none'); attImg.src = p.attachment_url; } else { att.classList.add('d-none'); attImg.removeAttribute('src'); }
+      modal.show();
+    }
+
+    grid?.addEventListener('click', (e)=>{
+      if(e.target.closest('[data-stop="1"]')) return; // внутри кнопки publish
+      const card = e.target.closest('.post-card');
+      if(!card) return;
+      openPreview(card.getAttribute('data-id'));
+    });
+    grid?.addEventListener('keydown', (e)=>{
+      if(e.key!=='Enter' && e.key!==' ') return;
+      const card = e.target.closest('.post-card'); if(!card) return;
+      e.preventDefault(); openPreview(card.getAttribute('data-id'));
+    });
+  })();
+
+  /* View settings: сохранение/применение */
+  (function(){
+    const cards = document.getElementById('cards');
+
+    // state
+    const key = 'newsView';
+    const def = { cols:'auto', density:'comfortable', statusBorder:true, showTargets:true };
+    let st = def;
+    try { st = Object.assign({}, def, JSON.parse(localStorage.getItem(key)||'{}')); } catch(e){}
+
+    // elements
+    const elCols = document.querySelectorAll('#opt-cols input[name="cols"]');
+    const elDens = document.querySelectorAll('#opt-density input[name="density"]');
+    const swStatus = document.getElementById('sw-status');
+    const swTargets= document.getElementById('sw-targets');
+
+    // apply functions
+    function applyCols(val){
+      // сброс row-cols*
+      cards.classList.remove('row-cols-1','row-cols-2','row-cols-3','row-cols-4','row-cols-md-2','row-cols-md-3','row-cols-xl-3','row-cols-xl-4');
+      if(val==='2'){ cards.classList.add('row-cols-1','row-cols-md-2'); }
+      else if(val==='3'){ cards.classList.add('row-cols-1','row-cols-md-3'); }
+      else if(val==='4'){ cards.classList.add('row-cols-1','row-cols-md-2','row-cols-xl-4'); }
+      else { // auto
+        cards.classList.add('row-cols-1','row-cols-md-2','row-cols-xl-3');
+      }
+    }
+    function applyDensity(val){
+      cards.classList.toggle('dense', val==='compact');
+    }
+    function applyStatus(on){
+      cards.classList.toggle('status-off', !on);
+    }
+    function applyTargets(on){
+      cards.classList.toggle('hide-targets', !on);
+    }
+    function applyAll(){
+      applyCols(st.cols);
+      applyDensity(st.density);
+      applyStatus(st.statusBorder);
+      applyTargets(st.showTargets);
+    }
+    function persist(){ localStorage.setItem(key, JSON.stringify(st)); }
+
+    // initialize controls
+    elCols.forEach(i=>{ i.checked = (i.value===st.cols); i.addEventListener('change', ()=>{ st.cols=i.value; applyCols(st.cols); persist(); }); });
+    elDens.forEach(i=>{ i.checked = (i.value===st.density); i.addEventListener('change', ()=>{ st.density=i.value; applyDensity(st.density); persist(); }); });
+    swStatus.checked = !!st.statusBorder;
+    swTargets.checked= !!st.showTargets;
+    swStatus.addEventListener('change', ()=>{ st.statusBorder=swStatus.checked; applyStatus(st.statusBorder); persist(); });
+    swTargets.addEventListener('change', ()=>{ st.showTargets=swTargets.checked; applyTargets(st.showTargets); persist(); });
+
+    // first paint
+    applyAll();
+  })();
+</script>
+{% endblock %}

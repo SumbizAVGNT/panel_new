@@ -1,0 +1,151 @@
+<div class="card glass np-card">
+  <div class="card-body p-3 p-md-4">
+    <form id="postForm" method="post" action="{{ url_for('news.new_post') }}" enctype="multipart/form-data" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <!-- Title + embed file -->
+      <div class="row g-3">
+        <div class="col-12 col-lg-7">
+          <label class="form-label">Title <span class="text-danger">*</span></label>
+          <input class="form-control" name="title" id="title" placeholder="Post title" required maxlength="140">
+          <div class="form-text form-hint">Короткий, ёмкий заголовок (до 140 символов).</div>
+          <div class="invalid-feedback">Введите заголовок.</div>
+        </div>
+
+        <div class="col-12 col-lg-5">
+          <label class="form-label d-flex align-items-center justify-content-between">
+            <span>Embed image (file)</span>
+            <small class="text-secondary">max 8 MB</small>
+          </label>
+          <div class="dropzone dropzone-enhanced" id="dz">
+            <input class="form-control" style="position:absolute;inset:0;opacity:0" type="file" name="embed_image_file" id="embed_file" accept=".png,.jpg,.jpeg,.gif,.webp">
+            <i class="bi bi-cloud-arrow-up"></i>
+            <div class="small text-secondary"><span id="dz-label">Click or drop image here</span></div>
+          </div>
+          <div class="form-text">URL ниже имеет меньший приоритет, чем файл.</div>
+        </div>
+      </div>
+
+      <!-- Markdown editor + preview -->
+      <div class="mt-3" id="editScope">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <label class="form-label m-0">Content (Markdown supported) <span class="text-danger">*</span></label>
+          <small class="text-secondary"><span id="cnt">0</span> / 2000</small>
+        </div>
+
+        <div class="toolbar d-flex flex-wrap gap-2 mb-2">
+          <div class="btn-group btn-group-sm" role="group" aria-label="md">
+            <button class="btn btn-outline-light" type="button" data-md="**|**" data-hotkey="b" data-bs-toggle="tooltip" title="Bold"><i class="bi bi-type-bold"></i><span class="kbd d-none d-lg-inline">Ctrl/⌘+B</span></button>
+            <button class="btn btn-outline-light" type="button" data-md="*|*" data-hotkey="i" data-bs-toggle="tooltip" title="Italic"><i class="bi bi-type-italic"></i><span class="kbd d-none d-lg-inline">Ctrl/⌘+I</span></button>
+            <button class="btn btn-outline-light" type="button" data-md="`|`" data-hotkey="k" data-bs-toggle="tooltip" title="Inline code"><i class="bi bi-code"></i><span class="kbd d-none d-lg-inline">Ctrl/⌘+K</span></button>
+            <button class="btn btn-outline-light" type="button" data-md="> |" data-bs-toggle="tooltip" title="Quote"><i class="bi bi-blockquote-left"></i></button>
+            <button class="btn btn-outline-light" type="button" data-md="- |" data-bs-toggle="tooltip" title="List"><i class="bi bi-list-ul"></i></button>
+            <button class="btn btn-outline-light" type="button" data-md="```|\n```" data-bs-toggle="tooltip" title="Code block"><i class="bi bi-code-square"></i></button>
+            <button class="btn btn-outline-light" type="button" data-md="---" data-bs-toggle="tooltip" title="Horizontal line"><i class="bi bi-dash-lg"></i></button>
+            <button class="btn btn-outline-light" type="button" data-link data-hotkey="l" data-bs-toggle="tooltip" title="Link"><i class="bi bi-link-45deg"></i><span class="kbd d-none d-lg-inline">Ctrl/⌘+L</span></button>
+            <button class="btn btn-outline-light" type="button" data-md="# |" data-hotkey="h" data-bs-toggle="tooltip" title="Heading"><i class="bi bi-type-h1"></i></button>
+          </div>
+          <div class="ms-auto d-flex align-items-center gap-2">
+            <div class="btn-group btn-group-sm" role="group">
+              <button type="button" class="btn btn-outline-light active" data-view="split">Split</button>
+              <button type="button" class="btn btn-outline-light" data-view="editor">Editor</button>
+              <button type="button" class="btn btn-outline-light" data-view="preview">Preview</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="editor-wrap fade-fast" id="edwrap">
+          <textarea class="form-control md-input" rows="8" name="content" id="md" placeholder="Write using Markdown…" required></textarea>
+          <div class="md-preview" id="mdpv"><div class="ghost">Your text…</div></div>
+        </div>
+        <div class="small text-secondary mt-1">
+          Поддерживаются базовые Markdown-правила: **жирный**, *курсив*, `код`, списки, цитаты, ссылки, заголовки. В предпросмотре HTML санитизируется.
+        </div>
+        <div class="invalid-feedback d-block" id="md-invalid" style="display:none;">Текст обязателен и не должен превышать 2000 символов.</div>
+      </div>
+
+      <!-- Embed -->
+      <div class="embed-controls">
+        <fieldset>
+          <legend>Embed (дополнительное оформление)</legend>
+
+          <div class="embed-toggle">
+            <input class="form-check-input" type="checkbox" id="embed_enable" checked>
+            <label class="form-check-label" for="embed_enable">Добавить эмбед к посту</label>
+          </div>
+
+          <div class="row g-3" id="embedFields">
+            <div class="col-12 col-lg-6">
+              <label class="form-label-wrapper">
+                <span>Embed title</span>
+                <i class="bi bi-question-circle help-tooltip" data-bs-toggle="tooltip" title="Заголовок эмбеда, отображается в соцсетях"></i>
+              </label>
+              <input class="form-control" name="embed_title" id="embed_title" placeholder="Optional">
+            </div>
+
+            <div class="col-6 col-lg-3">
+              <label class="form-label-wrapper">
+                <span>Embed color</span>
+                <i class="bi bi-question-circle help-tooltip" data-bs-toggle="tooltip" title="Цвет акцента эмбеда (работает в Discord)"></i>
+              </label>
+              <div class="input-group">
+                <input class="form-control form-control-color" type="color" id="embed_color_picker" value="#5865F2" title="Pick color" aria-label="Embed color picker">
+                <input class="form-control" name="embed_color" id="embed_color_hex" value="#5865F2" placeholder="#5865F2">
+              </div>
+            </div>
+
+            <div class="col-6 col-lg-3">
+              <label class="form-label-wrapper">
+                <span>Embed image URL</span>
+                <i class="bi bi-question-circle help-tooltip" data-bs-toggle="tooltip" title="URL изображения для эмбеда (если не загружен файл)"></i>
+              </label>
+              <input class="form-control" name="embed_image_url" id="embed_url" placeholder="https://…">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label-wrapper">
+                <span>Embed description</span>
+                <i class="bi bi-question-circle help-tooltip" data-bs-toggle="tooltip" title="Описание эмбеда, поддерживает Markdown"></i>
+              </label>
+              <textarea class="form-control" rows="3" name="embed_desc" id="embed_desc" placeholder="Optional"></textarea>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <hr class="my-4">
+
+      <!-- Targets -->
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h2 class="h6 text-uppercase text-secondary m-0">Publish targets</h2>
+        <div class="target-chips d-none d-md-flex">
+          <span class="chip" id="chip-dc" data-target="discord">Discord</span>
+          <span class="chip" id="chip-tg" data-target="telegram">Telegram</span>
+          <span class="chip" id="chip-vk" data-target="vk">VK</span>
+        </div>
+      </div>
+        <div class="targets-wrap mt-2">
+          <section class="target" id="target-discord">{% include "news/partials/_np_discord.html" %}</section>
+          <section class="target" id="target-telegram">{% include "news/partials/_np_telegram.html" %}</section>
+          <section class="target" id="target-vk">{% include "news/partials/_np_vk.html" %}</section>
+        </div>
+
+
+      <div class="publishing-status d-none" id="publishingStatus">
+        <h3 class="h6 mb-3">Publishing Status</h3>
+        <div class="status-item" id="status-discord"><i class="bi bi-hourglass-split text-warning"></i><span>Discord: Preparing...</span></div>
+        <div class="status-item" id="status-telegram"><i class="bi bi-hourglass-split text-warning"></i><span>Telegram: Preparing...</span></div>
+        <div class="status-item" id="status-vk"><i class="bi bi-hourglass-split text-warning"></i><span>VK: Preparing...</span></div>
+      </div>
+
+      <div class="mobile-cta d-lg-none">
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-light flex-fill" href="{{ url_for('news.index') }}">Cancel</a>
+          <button class="btn btn-primary flex-fill" type="submit" id="btn-publish-m">
+            <i class="bi bi-rocket-takeoff me-1"></i>Publish
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>

@@ -5,6 +5,8 @@ from secrets import token_urlsafe
 
 from dotenv import load_dotenv
 from flask import Flask, g, session
+from jinja2 import FileSystemLoader  # <-- добавили
+
 from .routes.news import news_bp
 from .cli import register_cli
 
@@ -13,7 +15,7 @@ def create_app():
     # Подхватываем .env из корня проекта
     load_dotenv()
 
-    app = Flask(__name__)
+    app = Flask(__name__, template_folder="templates", static_folder="static")
 
     # --- Secret key ---
     app.secret_key = os.environ.get('SECRET_KEY', os.urandom(32))
@@ -37,20 +39,81 @@ def create_app():
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=session_cookie_secure,
         SESSION_COOKIE_SAMESITE='Lax',
-        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=int(os.environ.get('SESSION_HOURS', '12') or 12)),
 
-        DB_PATH=raw_db_path,  # игнорируется, оставлено для совместимости
+        DB_PATH=raw_db_path,  # игнорируется MySQL-обёрткой, оставлено для совместимости
     )
 
-    # --- Авто-инициализация схемы в MySQL ---
+    # --- ДОБАВЛЯЕМ layout/ в поиск шаблонов ---
+    # Теперь {% extends "base.html" %} найдёт файл в app/templates/layout/base.html
+    try:
+        loader: FileSystemLoader = app.jinja_loader  # Flask по умолчанию FileSystemLoader
+        layout_path = os.path.join(app.root_path, 'templates', 'layout')
+        if hasattr(loader, "searchpath") and layout_path not in loader.searchpath:
+            loader.searchpath.append(layout_path)
+    except Exception:
+        # тихо игнорируем — в стандартной конфигурации выше достаточно
+        pass
+
+    # --- Авто-инициализация схемы в MySQL + «автобутстрап» суперпользователя из .env ---
     from .database import get_db_connection, init_db
-    def _ensure_schema():
-        conn = get_db_connection(None)
-        try:
-            init_db(conn)  # CREATE TABLE IF NOT EXISTS — безопасно
-        finally:
-            conn.close()
-    _ensure_schema()
+
+    def _ensure_schema_and_bootstrap():
+        from werkzeug.security import generate_password_hash
+
+        with get_db_connection(None) as conn:
+            # 1) схема (CREATE TABLE IF NOT EXISTS …)
+            init_db(conn)
+
+            # 2) если в .env заданы ADMIN_USERNAME/ADMIN_PASSWORD — создаём/обновляем суперпользователя
+            env_user = (os.environ.get("ADMIN_USERNAME") or "").strip()
+            env_pass = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+            if not (env_user and env_pass):
+                return
+
+            # убеждаемся, что таблица users существует
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'users'
+                """
+            ).fetchone()
+            if not row:
+                return
+
+            count_row = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()
+            total = int(count_row["c"] if count_row and "c" in count_row else 0)
+
+            pwd_hash = generate_password_hash(env_pass)
+
+            if total == 0:
+                conn.execute(
+                    "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+                    (env_user, pwd_hash, "superadmin"),
+                )
+            else:
+                u = conn.execute(
+                    "SELECT id FROM users WHERE username = ? LIMIT 1",
+                    (env_user,),
+                ).fetchone()
+                if u:
+                    conn.execute(
+                        "UPDATE users SET password_hash = ?, role = 'superadmin' WHERE id = ?",
+                        (pwd_hash, u["id"]),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+                        (env_user, pwd_hash, "superadmin"),
+                    )
+            try:
+                conn.commit()
+            except Exception:
+                pass
+
+    _ensure_schema_and_bootstrap()
 
     # --- CLI команды ---
     register_cli(app)
@@ -61,7 +124,6 @@ def create_app():
     @app.before_request
     def _open_db():
         if getattr(g, 'db', None) is None:
-            # параметр остаётся, но внутри игнорируется и подключение идёт по ENV
             g.db = _get_conn(app.config['DB_PATH'])
 
     @app.teardown_appcontext

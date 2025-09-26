@@ -1,14 +1,17 @@
+# panel/app/database.py
+from __future__ import annotations
+
 import os
-from typing import Optional, Iterable, Any
+from typing import Optional, Iterable, Any, Sequence
 
 # ✅ Гарантированно подхватываем .env ещё до чтения os.environ
 try:
     from dotenv import load_dotenv, find_dotenv
     _env_path = find_dotenv(usecwd=True)
     if _env_path:
-        load_dotenv(_env_path)  # загрузит из ближайшего .env в дереве
+        load_dotenv(_env_path)
 except Exception:
-    # если python-dotenv не установлен — просто пропустим (но лучше установить)
+    # если python-dotenv не установлен — просто пропустим
     pass
 
 import pymysql
@@ -28,26 +31,46 @@ __all__ = [
 ]
 
 
-# --- Обёртка над PyMySQL, имитирует интерфейс sqlite3.Connection ---
+# =========================
+#   Класс-обёртка соединения
+# =========================
 class MySQLConnection:
+    """
+    Обёртка над PyMySQL с интерфейсом, похожим на sqlite3.Connection.
+    Автоконвертирует плейсхолдеры '?' → '%s'.
+    """
+
     def __init__(self, conn: pymysql.connections.Connection):
         self._conn = conn
-        self._conn.ping(reconnect=True)
+        # поддерживаем живое соединение (переподключение при необходимости)
+        try:
+            self._conn.ping(reconnect=True)
+        except Exception:
+            pass
 
-    def __enter__(self):
+    # --- Контекстный менеджер ---
+    def __enter__(self) -> "MySQLConnection":
         return self
 
     def __exit__(self, exc_type, exc, tb):
         if exc_type is None:
             try:
                 self._conn.commit()
-            finally:
+            except Exception:
+                # не падаем в __exit__
                 pass
         else:
-            self._conn.rollback()
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
 
+    # --- Базовые методы транзакции/закрытия ---
     def commit(self):
         self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
 
     def close(self):
         try:
@@ -55,24 +78,73 @@ class MySQLConnection:
         except Exception:
             pass
 
+    # --- Утилиты ---
     @staticmethod
     def _qmark_to_percent(sql: str) -> str:
+        """
+        Простая замена '?' на '%s'.
+        Важно: не подходит для сложных SQL со знаками '?' внутри строк/JSON.
+        В проекте мы используем простые выражения, поэтому достаточно.
+        """
         return sql.replace("?", "%s")
 
+    def _cursor(self):
+        # Отдаём курсор как dict-строки
+        return self._conn.cursor(DictCursor)
+
+    # --- Выполнение запросов ---
     def execute(self, sql: str, params: Iterable[Any] | None = None):
         sql2 = self._qmark_to_percent(sql)
-        cur = self._conn.cursor(DictCursor)
+        cur = self._cursor()
         cur.execute(sql2, tuple(params or ()))
         return cur
 
+    def executemany(self, sql: str, seq_of_params: Sequence[Iterable[Any]]):
+        sql2 = self._qmark_to_percent(sql)
+        cur = self._cursor()
+        cur.executemany(sql2, [tuple(p) for p in seq_of_params])
+        return cur
+
     def executescript(self, script: str):
-        for stmt in [s.strip() for s in script.split(";")]:
-            if not stmt:
-                continue
-            self._conn.cursor().execute(stmt)
-        self._conn.commit()
+        """
+        Наивный разбор по ';'. Подходит для инициализации схемы.
+        """
+        cursor = self._conn.cursor()
+        try:
+            for stmt in [s.strip() for s in script.split(";")]:
+                if not stmt:
+                    continue
+                cursor.execute(stmt)
+            self._conn.commit()
+        finally:
+            cursor.close()
+
+    # --- Удобные шорткаты ---
+    def query_one(self, sql: str, params: Iterable[Any] | None = None) -> Optional[dict]:
+        cur = self.execute(sql, params)
+        try:
+            return cur.fetchone()
+        finally:
+            cur.close()
+
+    def query_all(self, sql: str, params: Iterable[Any] | None = None) -> list[dict]:
+        cur = self.execute(sql, params)
+        try:
+            return list(cur.fetchall())
+        finally:
+            cur.close()
+
+    @property
+    def lastrowid(self) -> int:
+        try:
+            return int(self._conn.insert_id())
+        except Exception:
+            return 0
 
 
+# =========================
+#   Конфиг и подключение
+# =========================
 def _load_env():
     host = os.environ.get("DB_HOST", "127.0.0.1")
     port = int(os.environ.get("DB_PORT", "3306"))
@@ -81,7 +153,7 @@ def _load_env():
     db = os.environ.get("DB_NAME", "appdb")
 
     # TLS
-    use_ssl = os.environ.get("DB_SSL", os.environ.get("DB_SSL_MODE", "0")) in ("1", "true", "TRUE")
+    use_ssl = os.environ.get("DB_SSL", os.environ.get("DB_SSL_MODE", "0")).lower() in ("1", "true", "yes")
     ssl_ca = os.environ.get("DB_SSL_CA")
 
     return host, port, user, password, db, use_ssl, ssl_ca
@@ -102,26 +174,23 @@ def _base_kwargs(host, port, user, password, database=None, use_ssl=False, ssl_c
         write_timeout=30,
     )
     if use_ssl:
-        # Если известен CA — укажем его; если нет — передаём пустой dict,
-        # это включает TLS без явной проверки CA (поведение зависит от сервера).
-        if ssl_ca and str(ssl_ca).strip():
-            kwargs["ssl"] = {"ca": ssl_ca}
-        else:
-            kwargs["ssl"] = {}  # <-- ВАЖНО: словарь, а не True
+        # Если известен CA — укажем его; иначе — пустой dict включает TLS без строгой проверки
+        kwargs["ssl"] = {"ca": ssl_ca} if (ssl_ca and str(ssl_ca).strip()) else {}
     return kwargs
 
 
-def _connect_with_auto_create():
+def _connect_with_auto_create() -> pymysql.connections.Connection:
     host, port, user, password, db, use_ssl, ssl_ca = _load_env()
 
-    # 1) пробуем сразу подключиться к DB_NAME
+    # 1) Пытаемся подключиться сразу к целевой БД
     try:
         return pymysql.connect(**_base_kwargs(host, port, user, password, database=db, use_ssl=use_ssl, ssl_ca=ssl_ca))
     except mysql_err.OperationalError as e:
-        if getattr(e, "args", [None])[0] != 1049:  # Unknown database
+        # 1049 — Unknown database
+        if getattr(e, "args", [None])[0] != 1049:
             raise
 
-    # 2) если базы нет — создаём (нужны права)
+    # 2) Если базы нет — создаём (нужны права у пользователя)
     admin = pymysql.connect(**_base_kwargs(host, port, user, password, database=None, use_ssl=use_ssl, ssl_ca=ssl_ca))
     try:
         with admin.cursor() as c:
@@ -130,7 +199,7 @@ def _connect_with_auto_create():
     finally:
         admin.close()
 
-    # 3) повторное подключение
+    # 3) Повторное подключение к созданной БД
     return pymysql.connect(**_base_kwargs(host, port, user, password, database=db, use_ssl=use_ssl, ssl_ca=ssl_ca))
 
 
@@ -139,10 +208,17 @@ def _mysql_connect() -> MySQLConnection:
     return MySQLConnection(conn)
 
 
-def get_db_connection(_db_path: Optional[str] = None):
+def get_db_connection(_db_path: Optional[str] = None) -> MySQLConnection:
+    """
+    Поддерживаем старую сигнатуру (параметр игнорируется), чтобы код, где передавался DB_PATH,
+    не ломался. Всегда возвращаем MySQLConnection.
+    """
     return _mysql_connect()
 
 
+# =========================
+#   Схема БД
+# =========================
 SCHEMA_SQL = """
 -- =========================
 -- Users
@@ -159,7 +235,7 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================
--- Key-Value настройки (в т.ч. Discord, Chatwoot и пр.)
+-- Key-Value настройки
 -- =========================
 CREATE TABLE IF NOT EXISTS settings (
     `key`   VARCHAR(191) PRIMARY KEY,
@@ -193,14 +269,13 @@ CREATE TABLE IF NOT EXISTS servers (
     password      TEXT NULL,
     ssh_key_path  VARCHAR(512) NULL,
     added_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- согласовано с кодом: 'online' / 'offline' / 'unknown'
     last_status   ENUM('online','offline','unknown') DEFAULT 'unknown',
     last_uptime   VARCHAR(255) NULL,
     last_checked  DATETIME NULL,
     UNIQUE KEY uniq_host_port_user (host, port, username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Метрики серверов (внешний ключ -> servers)
+-- Метрики серверов
 CREATE TABLE IF NOT EXISTS server_metrics (
     id INT AUTO_INCREMENT PRIMARY KEY,
     server_id INT NOT NULL,
@@ -285,14 +360,16 @@ CREATE TABLE IF NOT EXISTS post_targets (
 """
 
 
-
-
+# =========================
+#   Утилиты и настройки
+# =========================
 def init_db(conn: MySQLConnection):
+    """Применяет SCHEMA_SQL."""
     conn.executescript(SCHEMA_SQL)
 
 
 def get_setting(conn: MySQLConnection, key: str, default=None):
-    row = conn.execute("SELECT `value` FROM settings WHERE `key` = ?", (key,)).fetchone()
+    row = conn.query_one("SELECT `value` FROM settings WHERE `key` = ?", (key,))
     return row["value"] if row else default
 
 
@@ -305,6 +382,6 @@ def set_setting(conn: MySQLConnection, key: str, value: str):
     conn.commit()
 
 
-def get_all_settings(conn: MySQLConnection):
-    cur = conn.execute("SELECT `key`,`value` FROM settings")
-    return {row["key"]: row["value"] for row in cur.fetchall()}
+def get_all_settings(conn: MySQLConnection) -> dict[str, str]:
+    rows = conn.query_all("SELECT `key`,`value` FROM settings")
+    return {row["key"]: row["value"] for row in rows}

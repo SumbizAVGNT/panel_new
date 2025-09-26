@@ -1,3 +1,4 @@
+<!--app/templates/layout/base.html-->
 <!DOCTYPE html>
 <html lang="ru" data-bs-theme="dark">
 <head>
@@ -15,7 +16,6 @@
 
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-
 
   <style>
     :root{
@@ -52,7 +52,6 @@
 
     /* ===== Layout ===== */
     .page-wrap{max-width:1200px;margin:0 auto;padding:22px 16px 40px;}
-    /* Узкий режим (если захочешь использовать вместе с ep-проверкой) */
     .page-wrap--tight{padding-top:8px !important;}
 
     .glass{
@@ -71,7 +70,7 @@
     .flash-warning{background:rgba(251,191,36,.15);border:1px solid rgba(251,191,36,.25)}
     .flash-info{background:rgba(96,165,250,.15);border:1px solid rgba(96,165,250,.25)}
 
-    /* === GLOBAL TOP-TIGHTEN FIX (поджимает верх для любой страницы) === */
+    /* === GLOBAL TOP-TIGHTEN FIX === */
     .page-wrap > *:first-child { margin-top: 8px !important; }
     .page-wrap > .container,
     .page-wrap > .container-fluid,
@@ -126,7 +125,7 @@
       </nav>
 
       <!-- Пользователь -->
-      {% set user = g.user if g and g.get('user') else {'username':'user','discord_id':None} %}
+      {% set user = current_user or {'username':'user','discord_id':None} %}
       {% if user.discord_id %}
         {% set avatar_url = (
           'https://cdn.discordapp.com/avatars/%s/%s.png?size=64' % (user.discord_id, user.discord_avatar)
@@ -196,7 +195,6 @@
     })();
   </script>
 
-  {# ВАЖНО: сюда будут подставляться per-page скрипты (например, New Post) #}
   {% block body_extra %}{% endblock %}
 </body>
 </html>

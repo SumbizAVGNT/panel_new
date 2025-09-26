@@ -1,0 +1,92 @@
+<script>
+(function(){
+  const $=(s,root=document)=>root.querySelector(s);
+  const elSend=$('#send_discord'), elBot=$('#discord_bot_id'), elGuild=$('#discord_guild_id'), elChan=$('#discord_channel_id'), elManual=$('#discord_channel_manual'), elManualT=$('#dc-manual-toggle'), elSpinG=$('#dc-guild-spin'), elSpinC=$('#dc-chan-spin'), elStatus=$('#dc-status');
+  const btnBotRef=$('#dc-bot-refresh'), btnGRef=$('#dc-guild-reload'), btnCRef=$('#dc-chan-reload');
+
+  // search inputs above selects (если есть селекты)
+  function addFilter(inputId, beforeEl){
+    if(!beforeEl) return null;
+    const box=document.createElement('input');
+    box.type='search'; box.placeholder='Search…'; box.className='form-control form-control-sm mb-1'; box.id=inputId;
+    beforeEl.parentElement.insertBefore(box, beforeEl);
+    return box;
+  }
+  const guildFilter = addFilter('dc-guild-filter', elGuild);
+  const chanFilter  = addFilter('dc-chan-filter', elChan);
+
+  const j = async (u) => { const r=await fetch(u,{headers:{'Accept':'application/json'}}); try{ return await r.json(); }catch{ return {ok:false,reason:'Invalid JSON'}; } };
+  const setBusy=(el,on,spinEl=null,placeholder='Loading…')=>{ if(!el) return; el.disabled=!!on; if(on){ el.innerHTML=`<option value="">${placeholder}</option>`; spinEl && spinEl.classList.remove('d-none'); } else { spinEl && spinEl.classList.add('d-none'); } };
+  const msg=(txt,ok=null)=>{ if(!elStatus) return; elStatus.textContent=txt||''; elStatus.classList.remove('text-success','text-warning','text-danger'); if(ok===true) elStatus.classList.add('text-success'); if(ok===false) elStatus.classList.add('text-warning'); };
+
+  const cacheGuilds=new Map(); const cacheChans=new Map();
+  function toggleEnabled(on){
+    [elBot, elManualT].forEach(el=> el && (el.disabled=!on));
+    const m=elManualT && elManualT.checked;
+    [elGuild, guildFilter, elChan, chanFilter, btnGRef, btnCRef].forEach(el=> el && (el.disabled=!on || m));
+    if(elManual) elManual.disabled = !on || !m;
+  }
+  elManualT && elManualT.addEventListener('change',()=>toggleEnabled(elSend && elSend.checked));
+  elSend && elSend.addEventListener('change',()=>toggleEnabled(elSend.checked));
+  toggleEnabled(elSend?.checked ?? false);
+
+  function applyFilter(selectEl,query){
+    if(!selectEl) return;
+    const q=(query||'').trim().toLowerCase();
+    [...selectEl.options].forEach((opt,i)=>{ if(i===0) return; const txt=(opt.textContent||'').toLowerCase(); opt.hidden = q && !txt.includes(q); });
+  }
+  guildFilter && guildFilter.addEventListener('input',()=>applyFilter(elGuild,guildFilter.value));
+  chanFilter && chanFilter.addEventListener('input',()=>applyFilter(elChan,chanFilter.value));
+
+  async function loadGuilds(force=false){
+    if(!elBot||!elGuild||!elChan) return;
+    const botId=elBot.value;
+    if(guildFilter) guildFilter.value=''; if(chanFilter) chanFilter.value='';
+    if(!botId){ elGuild.innerHTML='<option value="">— Select bot first —</option>'; elChan.innerHTML='<option value="">— Select guild first —</option>'; return; }
+    const cached=cacheGuilds.get(botId);
+    if(cached && !force){ populateGuilds(cached); return; }
+    setBusy(elGuild,true,elSpinG,'Loading guilds…'); setBusy(elChan,true,elSpinC,'Select guild first');
+    const url=`{{ url_for('news.api_discord_guilds', bot_db_id=0) }}`.replace('/0','/'+botId);
+    const data=await j(url);
+    if(data.ok){ cacheGuilds.set(botId,data.guilds||[]); populateGuilds(data.guilds||[]); msg('Guilds loaded',true); toast('Guilds loaded','success'); }
+    else { elGuild.innerHTML=`<option value="">${data.reason || 'Failed to load guilds'}</option>`; msg(data.reason || 'Failed to load guilds',false); toast(data.reason || 'Failed to load guilds','error'); }
+    setBusy(elGuild,false,elSpinG); setBusy(elChan,false,elSpinC);
+  }
+  function populateGuilds(list){
+    if(!elGuild||!elChan) return;
+    elGuild.innerHTML='<option value="">— Select guild —</option>';
+    (list||[]).forEach(g=>{ const o=document.createElement('option'); o.value=g.id; o.textContent=g.name; elGuild.appendChild(o); });
+    elChan.innerHTML='<option value="">— Select guild first —</option>';
+    applyFilter(elGuild, guildFilter ? guildFilter.value : '');
+  }
+
+  async function loadChannels(force=false){
+    if(!elBot||!elGuild||!elChan) return;
+    const botId=elBot.value, gId=elGuild.value;
+    if(chanFilter) chanFilter.value='';
+    if(!botId||!gId){ elChan.innerHTML='<option value="">— Select guild first —</option>'; return; }
+    const key=`${botId}:${gId}`; const cached=cacheChans.get(key);
+    if(cached && !force){ populateChannels(cached); return; }
+    setBusy(elChan,true,elSpinC,'Loading channels…');
+    const url=`{{ url_for('news.api_discord_channels', bot_db_id=0) }}`.replace('/0','/'+botId) + `?guild_id=${encodeURIComponent(gId)}`;
+    const data=await j(url);
+    if(data.ok){ cacheChans.set(key,data.channels||[]); populateChannels(data.channels||[]); msg('Channels loaded',true); toast('Channels loaded','success'); }
+    else { elChan.innerHTML=`<option value="">${data.reason || 'Failed to load channels'}</option>`; msg(data.reason || 'Failed to load channels',false); toast(data.reason || 'Failed to load channels','error'); }
+    setBusy(elChan,false,elSpinC);
+  }
+  function populateChannels(list){
+    if(!elChan) return;
+    elChan.innerHTML='<option value="">— Select channel —</option>';
+    (list||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent='# '+c.name; elChan.appendChild(o); });
+    applyFilter(elChan, chanFilter ? chanFilter.value : '');
+  }
+
+  elBot && elBot.addEventListener('change',()=>loadGuilds());
+  elGuild && elGuild.addEventListener('change',()=>loadChannels());
+  btnBotRef && btnBotRef.addEventListener('click',()=>loadGuilds(true));
+  btnGRef && btnGRef.addEventListener('click',()=>loadGuilds(true));
+  btnCRef && btnCRef.addEventListener('click',()=>loadChannels(true));
+
+  if(elBot && elBot.value) loadGuilds();
+})();
+</script>

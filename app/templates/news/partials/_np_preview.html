@@ -1,0 +1,56 @@
+<div class="card glass np-card">
+  <div class="card-body p-3 p-md-4">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <h2 class="h6 m-0">Live preview</h2>
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-light active" data-pv="desktop">Desktop</button>
+        <button class="btn btn-outline-light" data-pv="mobile">Mobile</button>
+      </div>
+    </div>
+
+    <!-- Desktop -->
+    <div id="pv-desktop">
+      <div class="p-3 rounded-3 border border-secondary-subtle">
+        <div class="pv-head mb-2">
+          <div class="pv-ava"></div>
+          <div>
+            <div class="fw-semibold" id="pv-title">Untitled</div>
+            <div class="text-secondary small">MoonRein · now</div>
+          </div>
+        </div>
+        <div id="pv-text" class="mb-2 ghost">Your text…</div>
+        <div class="small text-secondary mb-3"><span id="pv-count">0 / 2000</span></div>
+
+        <div id="pv-embed" class="embed-card d-none">
+          <div class="fw-semibold" id="pv-embed-title">Embed title</div>
+          <div id="pv-embed-desc" class="text-secondary small"></div>
+          <img id="pv-embed-img" class="img-fluid rounded-2 border border-secondary-subtle mt-2 d-none embed-img" alt="">
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile -->
+    <div id="pv-mobile" class="d-none">
+      <div class="p-2 rounded-3 border border-secondary-subtle">
+        <div class="pv-head mb-2" style="gap:.4rem">
+          <div class="pv-ava" style="width:26px;height:26px"></div>
+          <div>
+            <div class="fw-semibold small" id="pv-title-m">Untitled</div>
+            <div class="text-secondary" style="font-size:.75rem;">MoonRein · now</div>
+          </div>
+        </div>
+        <div id="pv-text-m" class="small mb-2 ghost">Your text…</div>
+        <div class="small text-secondary mb-2"><span id="pv-count-m">0 / 2000</span></div>
+        <div id="pv-embed-m" class="embed-card d-none" style="padding:10px">
+          <div class="fw-semibold small" id="pv-embed-title-m">Embed title</div>
+          <div id="pv-embed-desc-m" class="text-secondary small"></div>
+          <img id="pv-embed-img-m" class="img-fluid rounded-2 border border-secondary-subtle mt-2 d-none" style="max-height:200px;object-fit:cover;" alt="">
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-3 text-secondary small">
+      <i class="bi bi-info-circle me-1"></i>Discord-стиль, лимит текста ~2000 символов. Markdown рендерится локально (безопасно).
+    </div>
+  </div>
+</div>

@@ -1,0 +1,21 @@
+<!-- Markdown + sanitize -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<script>
+function toast(msg, type='info'){
+  const wrap=document.createElement('div');
+  const map={success:'success',error:'danger',warn:'warning',info:'dark'};
+  const cls=map[type]||'dark';
+  wrap.className='toast align-items-center text-bg-'+cls;
+  wrap.role='alert';wrap.ariaLive='assertive';wrap.ariaAtomic='true';
+  wrap.style.position='fixed';wrap.style.right='16px';wrap.style.bottom='16px';wrap.style.zIndex=1085;
+  wrap.innerHTML=`<div class="d-flex">
+    <div class="toast-body">${msg}</div>
+    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+  </div>`;
+  document.body.appendChild(wrap);
+  const t=new bootstrap.Toast(wrap,{delay:2500});t.show();
+  wrap.addEventListener('hidden.bs.toast',()=>wrap.remove());
+}
+(() => { document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el)); })();
+</script>

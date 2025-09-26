@@ -43,7 +43,8 @@ def login():
 
         flash("Invalid credentials", "error")
 
-    return render_template("login.html")
+    # ВАЖНО: шаблон лежит в app/templates/auth/login.html
+    return render_template("auth/login.html")
 
 
 @auth_bp.route("/discord/login")
@@ -114,7 +115,6 @@ def discord_callback():
         return redirect(url_for("auth.login"))
 
     if token_resp.status_code != 200:
-        # Покажем точную причину от Discord (401=invalid_client, 400=invalid_grant и т.д.)
         try:
             data = token_resp.json()
             detail = data.get("error_description") or data.get("error") or token_resp.text
@@ -185,7 +185,7 @@ def discord_callback():
         dest = url_for("dashboard.index")
     except BuildError:
         try:
-            dest = url_for("dashboard.dashboard")  # у тебя так называется
+            dest = url_for("dashboard.dashboard")
         except BuildError:
             dest = "/"
 

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Settings — MoonRein{% endblock %}
+
+{% block content %}
+<div class="container-xxl">
+  {# ВАЖНО: корректные пути на частичные секции #}
+  {% include "admin/sections/_section_oauth.html" %}
+  {% include "admin/sections/_section_bots.html" %}
+  {% include "admin/sections/_section_support.html" %}
+  {% include "admin/sections/_section_servers.html" %}
+</div>
+{% endblock %}
+
+{% block body_extra %}
+<script>
+  (() => {
+    const tts = Array.from(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tts.forEach(el => new bootstrap.Tooltip(el, {container: 'body'}));
+  })();
+</script>
+{% endblock %}

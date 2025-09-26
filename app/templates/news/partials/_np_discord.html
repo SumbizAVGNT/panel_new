@@ -1,0 +1,85 @@
+<div class="card glass p-3">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-discord"></i>
+      <strong>Discord</strong>
+    </div>
+    <div class="form-check form-switch m-0">
+      <input class="form-check-input" type="checkbox" id="send_discord" name="send_discord" checked>
+      <label class="form-check-label small" for="send_discord">Enable</label>
+    </div>
+  </div>
+
+  <div class="row g-2 align-items-end">
+    <!-- Bot -->
+    <div class="col-12 col-lg-6">
+      <label class="form-label">Bot</label>
+      <div class="input-group">
+        <select class="form-select" id="discord_bot_id" name="discord_bot_id">
+          <option value="">— Select bot —</option>
+          {% for b in discord_bots %}
+            <option value="{{ b.id }}">{{ b.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-outline-secondary" type="button" id="dc-bot-refresh" title="Reload guilds">
+          <i class="bi bi-arrow-repeat"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Manual toggle -->
+    <div class="col-12 col-lg-6">
+      <label class="form-label d-block">Channel source</label>
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="dc-manual-toggle">
+        <label class="form-check-label" for="dc-manual-toggle">Enter Channel ID manually</label>
+      </div>
+    </div>
+
+    <!-- Guild -->
+    <div class="col-12 col-lg-6">
+      <label class="form-label">Guild</label>
+      <div class="input-group">
+        <div class="input-group-text d-none" id="dc-guild-spin">
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        </div>
+        <select class="form-select" id="discord_guild_id">
+          <option value="">— Select bot first —</option>
+        </select>
+        <button class="btn btn-outline-secondary" type="button" id="dc-guild-reload" title="Reload guilds">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Channel (picker) -->
+    <div class="col-12 col-lg-6">
+      <label class="form-label">Channel</label>
+      <div class="input-group">
+        <div class="input-group-text d-none" id="dc-chan-spin">
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        </div>
+        <select class="form-select" id="discord_channel_id" name="discord_channel_id">
+          <option value="">— Select guild first —</option>
+        </select>
+        <button class="btn btn-outline-secondary" type="button" id="dc-chan-reload" title="Reload channels">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Channel (manual) -->
+    <div class="col-12">
+      <label class="form-label">Channel ID (manual)</label>
+      <input class="form-control" id="discord_channel_manual" name="discord_channel_manual" placeholder="e.g. 123456789012345678">
+      <div class="form-text">Если указать ID вручную — список каналов будет игнорирован.</div>
+    </div>
+
+    <!-- Ping test (optional UI-only helper) -->
+    <div class="col-12">
+      <div class="d-flex align-items-center gap-2">
+        <small id="dc-status" class="text-secondary"></small>
+      </div>
+    </div>
+  </div>
+</div>

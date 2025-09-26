@@ -1,0 +1,31 @@
+<div class="card glass p-3">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-telegram"></i>
+      <strong>Telegram</strong>
+    </div>
+    <div class="form-check form-switch m-0">
+      <input class="form-check-input" type="checkbox" id="send_telegram" name="send_telegram">
+      <label class="form-check-label small" for="send_telegram">Enable</label>
+    </div>
+  </div>
+
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-lg-6">
+      <label class="form-label">Bot</label>
+      <select class="form-select" name="telegram_bot_id" id="telegram_bot_id">
+        <option value="">— Select bot —</option>
+        {% for b in telegram_bots %}
+          <option value="{{ b.id }}">{{ b.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Выберите активного Telegram-бота.</div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <label class="form-label">Chat ID / @username</label>
+      <input class="form-control" name="telegram_chat_id" id="telegram_chat_id" placeholder="@channelname или -1001234567890">
+      <div class="form-text">Лично/группа/канал. Для канала — ID или @username с правом постинга.</div>
+    </div>
+  </div>
+</div>
