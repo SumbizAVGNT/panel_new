@@ -1,0 +1,22 @@
+<div data-theme="synthwave_grid">
+  <style>
+    #bg-root.synth-grid{position:fixed;inset:0;z-index:-1;overflow:hidden;background:#0a0f1a}
+    #bg-root.synth-grid::before{
+      content:"";position:absolute;inset:0;
+      background:
+        linear-gradient(#223 1px,transparent 1px) 0 0/26px 26px,
+        linear-gradient(90deg,#223 1px,transparent 1px) 0 0/26px 26px,
+        radial-gradient(120% 60% at 50% 0%, rgba(236,72,153,.2), transparent 70%);
+      transform: perspective(700px) rotateX(66deg) translateY(35%);
+      animation: grid-move 18s linear infinite;
+      opacity:.95
+    }
+    @keyframes grid-move{from{background-position:0 0,0 0,center}to{background-position:0 260px,0 0,center}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('synthwave_grid', (root)=>{
+    root.className=''; root.classList.add('synth-grid');
+    return ()=>{ root.classList.remove('synth-grid'); };
+  });
+</script>

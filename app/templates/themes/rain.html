@@ -1,0 +1,25 @@
+<div data-theme="rain">
+  <style>
+    #bg-root.rain{position:fixed;inset:0;z-index:-1;background:#0a0f1a;overflow:hidden}
+    #bg-root.rain .drop{
+      position:absolute;width:1px;height:120px;background:linear-gradient(180deg,rgba(255,255,255,.0),rgba(255,255,255,.3));
+      opacity:.35; transform: translateY(-140px) rotate(14deg); animation: rain-fall var(--t,1.2s) linear infinite;
+    }
+    @keyframes rain-fall{to{transform: translateY(140vh) rotate(14deg)}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('rain', (root)=>{
+    root.className=''; root.classList.add('rain');
+    const n=120; const drops=[];
+    for(let i=0;i<n;i++){
+      const d=document.createElement('div'); d.className='drop';
+      d.style.left=(Math.random()*100)+'%'; d.style.top=(-Math.random()*100)+'%';
+      d.style.height=(80+Math.random()*140)+'px';
+      d.style.opacity = .15 + Math.random()*.35;
+      d.style.setProperty('--t', (.8+Math.random()*1.5)+'s');
+      root.appendChild(d); drops.push(d);
+    }
+    return ()=>{ drops.forEach(d=>d.remove()); root.classList.remove('rain'); };
+  });
+</script>

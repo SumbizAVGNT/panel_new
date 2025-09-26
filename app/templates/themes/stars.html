@@ -1,0 +1,36 @@
+<!-- stars.html -->
+<style>
+  .bg-stars {position:absolute; inset:0; overflow:hidden; pointer-events:none;}
+  .bg-stars .layer{position:absolute; inset:-20%; background-repeat:repeat; background-size:contain; opacity:.45; filter:drop-shadow(0 0 2px #fff2)}
+  .bg-stars .l1{background-image:
+      radial-gradient(2px 2px at 20% 30%, #fff, transparent 60%),
+      radial-gradient(1.5px 1.5px at 70% 60%, #fff, transparent 60%),
+      radial-gradient(1.2px 1.2px at 40% 80%, #fff, transparent 60%);
+    background-size: 600px 600px, 700px 700px, 800px 800px;
+    animation: stMove1 120s linear infinite;}
+  .bg-stars .l2{opacity:.35;background-image:
+      radial-gradient(1.8px 1.8px at 30% 20%, #fff, transparent 60%),
+      radial-gradient(1.2px 1.2px at 80% 70%, #fff, transparent 60%);
+    background-size: 900px 900px, 1000px 1000px;
+    animation: stMove2 160s linear infinite;}
+  .bg-stars .twinkle{position:absolute; inset:0; background:
+      radial-gradient(circle at 15% 25%, #fff5 0 1px, transparent 2px),
+      radial-gradient(circle at 60% 65%, #fff6 0 1px, transparent 2px),
+      radial-gradient(circle at 85% 35%, #fff6 0 1px, transparent 2px);
+    animation: twinkle 2.6s ease-in-out infinite alternate; mix-blend-mode:screen; opacity:.35}
+
+  @keyframes stMove1{from{background-position:0 0, 0 0, 0 0} to{background-position:-600px -300px, -700px -200px, -800px -400px}}
+  @keyframes stMove2{from{background-position:0 0, 0 0} to{background-position:600px 300px, 1000px 500px}}
+  @keyframes twinkle{from{opacity:.2} to{opacity:.55}}
+</style>
+<script>
+(function(){
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('stars', function(root){
+    const wrap = document.createElement('div');
+    wrap.className = 'bg-stars';
+    wrap.innerHTML = '<div class="layer l1"></div><div class="layer l2"></div><div class="twinkle"></div>';
+    root.appendChild(wrap);
+    return ()=> wrap.remove();
+  });
+})();
+</script>

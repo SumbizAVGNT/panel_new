@@ -1,0 +1,26 @@
+<!-- grid.html -->
+<style>
+  .bg-grid{position:absolute; inset:0; pointer-events:none}
+  .bg-grid .horizon{
+    position:absolute; inset:0; background:
+      linear-gradient(#263244 1px, transparent 1px) 0 0/22px 22px,
+      linear-gradient(90deg, #263244 1px, transparent 1px) 0 0/22px 22px;
+    transform: perspective(900px) rotateX(70deg) translateY(20%);
+    opacity:.45; animation: gScroll 18s linear infinite}
+  .bg-grid .glow{
+    position:absolute; left:0; right:0; bottom:30%;
+    height:30%; background: radial-gradient(60% 80% at 50% 100%, #60a5fa33, transparent 70%);
+    filter: blur(8px)}
+  @keyframes gScroll{from{background-position:0 0, 0 0} to{background-position:0 300px, 220px 0}}
+</style>
+<script>
+(function(){
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('grid', function(root){
+    const el=document.createElement('div');
+    el.className='bg-grid';
+    el.innerHTML='<div class="horizon"></div><div class="glow"></div>';
+    root.appendChild(el);
+    return ()=> el.remove();
+  });
+})();
+</script>

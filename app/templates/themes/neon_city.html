@@ -1,0 +1,31 @@
+<div data-theme="neon_city">
+  <style>
+    #bg-root.neon-city{
+      position:fixed;inset:0;z-index:-1;overflow:hidden;
+      background:
+        radial-gradient(60% 40% at 70% 0%, rgba(236,72,153,.18), transparent 60%),
+        radial-gradient(50% 40% at 30% 10%, rgba(59,130,246,.18), transparent 60%),
+        linear-gradient(180deg,#0a0f1a 0,#0a0f1a 35%,#0b1220 100%);
+    }
+    #bg-root.neon-city::before,#bg-root.neon-city::after{
+      content:"";position:absolute;left:0;right:0;bottom:0;height:45%;
+      background:
+        linear-gradient(#172033 1px,transparent 1px) 0 0/22px 22px,
+        linear-gradient(90deg,#172033 1px,transparent 1px) 0 0/22px 22px,
+        radial-gradient(120% 70% at 50% 0%, rgba(99,102,241,.15), transparent 70%);
+      transform: perspective(600px) rotateX(65deg) translateY(35%);
+      animation: city-glow 6s ease-in-out infinite alternate;
+      opacity:.9;
+    }
+    #bg-root.neon-city::after{
+      height:46%;filter:blur(6px);opacity:.6;animation-duration:7.5s
+    }
+    @keyframes city-glow{from{opacity:.75}to{opacity:1}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('neon_city', (root)=>{
+    root.className=''; root.classList.add('neon-city');
+    return ()=>{ root.classList.remove('neon-city'); };
+  });
+</script>

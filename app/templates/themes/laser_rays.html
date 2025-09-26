@@ -1,0 +1,24 @@
+<div data-theme="laser_rays">
+  <style>
+    #bg-root.lasers{position:fixed;inset:0;z-index:-1;background:#0a0f1a;overflow:hidden}
+    #bg-root.lasers::before{
+      content:"";position:absolute;inset:0;
+      background:
+        repeating-linear-gradient(120deg, rgba(59,130,246,.65) 0 2px, transparent 2px 16px),
+        repeating-linear-gradient(240deg, rgba(168,85,247,.55) 0 2px, transparent 2px 18px);
+      animation: lasers-slide 12s linear infinite;
+      opacity:.6;mix-blend-mode:screen
+    }
+    #bg-root.lasers::after{
+      content:"";position:absolute;inset:0;background: radial-gradient(40% 30% at 50% 10%, rgba(236,72,153,.2), transparent 60%);
+      filter: blur(6px); opacity:.5
+    }
+    @keyframes lasers-slide{to{background-position:800px 1200px, -1000px 800px}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('laser_rays', (root)=>{
+    root.className=''; root.classList.add('lasers');
+    return ()=>{ root.classList.remove('lasers'); };
+  });
+</script>

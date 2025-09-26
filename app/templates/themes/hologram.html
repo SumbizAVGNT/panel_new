@@ -1,0 +1,26 @@
+<div data-theme="hologram">
+  <style>
+    #bg-root.hologram{position:fixed;inset:0;z-index:-1;background:#0a0f1a;overflow:hidden}
+    #bg-root.hologram::before{
+      content:"";position:absolute;inset:-40%;
+      background: conic-gradient(from 0deg at 50% 50%, #22d3ee, transparent, #a78bfa, #22d3ee);
+      filter: blur(80px) saturate(1.2);
+      animation: holo-spin 20s linear infinite;
+      opacity:.55
+    }
+    #bg-root.hologram::after{
+      content:"";position:absolute;inset:0;
+      background: radial-gradient(600px 320px at 70% -10%, rgba(99,102,241,.2), transparent 70%),
+                  radial-gradient(600px 320px at 10% 110%, rgba(16,185,129,.16), transparent 70%);
+      mix-blend-mode: screen; opacity:.7; animation: holo-pulse 6s ease-in-out infinite alternate;
+    }
+    @keyframes holo-spin{to{transform:rotate(360deg)}}
+    @keyframes holo-pulse{from{opacity:.6}to{opacity:.9}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('hologram', (root)=>{
+    root.className=''; root.classList.add('hologram');
+    return ()=>{ root.classList.remove('hologram'); };
+  });
+</script>

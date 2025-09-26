@@ -1,0 +1,108 @@
+{# Панель выбора фоновой темы (drawer), 15 тем #}
+<style>
+  .theme-drawer{position:fixed;inset:0;z-index:1080;pointer-events:none}
+  .theme-drawer.open{pointer-events:auto}
+  .theme-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.35);opacity:0;transition:opacity .25s ease}
+  .theme-drawer.open .theme-backdrop{opacity:1}
+  .theme-panel{
+    position:absolute;right:0;top:0;height:100%;width:min(460px,94vw);
+    background:rgba(10,14,22,.92);border-left:1px solid rgba(148,163,184,.18);
+    backdrop-filter:blur(10px);transform:translateX(18px);opacity:0;
+    transition:transform .28s cubic-bezier(.22,.61,.36,1),opacity .2s ease;
+    display:grid;grid-template-rows:auto 1fr
+  }
+  .theme-drawer.open .theme-panel{transform:translateX(0);opacity:1}
+  .theme-head{display:flex;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid rgba(148,163,184,.14)}
+  .theme-title{margin:0;font-weight:700;font-size:16px}
+  .icon-btn{border:1px solid rgba(148,163,184,.25);background:#0b1220;color:#e5e7eb;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;cursor:pointer}
+  .theme-body{padding:12px;overflow:auto}
+  .theme-card{display:flex;flex-direction:column;gap:8px;background:rgba(13,17,23,.65);border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:10px;margin-bottom:12px;cursor:pointer;transition:border-color .15s,background .15s,transform .15s}
+  .theme-card:hover{border-color:#3b82f6;background:rgba(30,41,59,.55);transform:translateY(-1px)}
+  .theme-card.active{box-shadow:0 0 0 2px #3b82f6 inset}
+  .thumb{height:110px;border-radius:10px;overflow:hidden;display:grid;place-items:center;background:#0b1220;border:1px solid rgba(148,163,184,.18)}
+  .theme-name{display:flex;align-items:center;justify-content:space-between;color:#e5e7eb;font-weight:600;font-size:14px}
+  .theme-desc{color:#94a3b8;font-size:12px;margin-top:-4px}
+
+  /* простые декоративные превью */
+  .t-stars{background:radial-gradient(circle at 20% 30%,rgba(255,255,255,.35) 1px,transparent 2px) 0 0/60px 60px,radial-gradient(circle at 70% 60%,rgba(255,255,255,.22) 1px,transparent 2px) 0 0/80px 80px,#0b1020}
+  .t-aurora{background:linear-gradient(120deg,#1b2236 0%,#12203a 40%,#0d1726 100%),radial-gradient(80% 60% at 80% 20%,rgba(52,211,153,.25),transparent 60%),radial-gradient(70% 60% at 20% 80%,rgba(59,130,246,.28),transparent 60%)}
+  .t-waves{background:repeating-linear-gradient(to right,rgba(59,130,246,.35) 0 2px,transparent 2px 14px),#0b1020;mask:linear-gradient(#000 60%,transparent)}
+  .t-grid{background:linear-gradient(#1f2937 1px,transparent 1px) 0 0/18px 18px,linear-gradient(90deg,#1f2937 1px,transparent 1px) 0 0/18px 18px,#0b1020}
+  .t-matrix{background:radial-gradient(60% 50% at 50% 30%,rgba(0,255,120,.2),transparent 60%),#07110a}
+
+  /* новые */
+  .t-neoncity{background:linear-gradient(180deg,#0a0f1a 0,#0a0f1a 30%,#111827 100%),radial-gradient(60% 40% at 70% 0%,rgba(236,72,153,.35),transparent 60%),radial-gradient(50% 40% at 30% 10%,rgba(59,130,246,.35),transparent 60%)}
+  .t-synthgrid{background:linear-gradient(#223 1px,transparent 1px) 0 0/22px 22px,linear-gradient(90deg,#223 1px,transparent 1px) 0 0/22px 22px,radial-gradient(120% 60% at 50% 0%,rgba(59,130,246,.15),transparent 60%),#0a0f1a}
+  .t-hologram{background:conic-gradient(from 0deg at 50% 50%,#22d3ee,transparent,#a78bfa,#22d3ee);filter:saturate(1.2) brightness(.7)}
+  .t-lasers{background:repeating-linear-gradient(120deg,rgba(59,130,246,.7) 0 2px,transparent 2px 16px),repeating-linear-gradient(240deg,rgba(168,85,247,.6) 0 2px,transparent 2px 18px),#0a0f1a}
+  .t-scan{background:repeating-linear-gradient( to bottom,rgba(255,255,255,.05) 0 2px,transparent 2px 5px),#0b0f1a}
+  .t-bokeh{background:radial-gradient(circle at 20% 30%,rgba(99,102,241,.35),transparent 45%),radial-gradient(circle at 70% 60%,rgba(16,185,129,.35),transparent 50%),#0b0f1a}
+  .t-orbits{background:radial-gradient(circle at 50% 50%,transparent 45%,rgba(59,130,246,.35) 46% 47%,transparent 48%) 0 0/160px 160px,#0a0f1a}
+  .t-rain{background:repeating-linear-gradient( 170deg,rgba(255,255,255,.06) 0 2px,transparent 2px 18px),#0a0f1a}
+  .t-circuits{background:linear-gradient(#1f2937 1px,transparent 1px) 0 0/22px 22px,linear-gradient(90deg,#1f2937 1px,transparent 1px) 0 0/22px 22px,radial-gradient(2px 2px at 11px 11px,#22c55e,transparent) 0 0/22px 22px,#0b1220}
+  .t-hex{background: radial-gradient( circle at 50% 0%, #1e293b 30%, transparent 31% ) 0 0/36px 21px, radial-gradient( circle at 50% 100%, #1e293b 30%, transparent 31% ) 18px 10.5px/36px 21px #0a0f1a}
+</style>
+
+<div class="theme-drawer" id="themeDrawer" aria-hidden="true">
+  <div class="theme-backdrop" id="themeBackdrop"></div>
+  <aside class="theme-panel" role="dialog" aria-labelledby="themeTitle" aria-modal="true">
+    <div class="theme-head">
+      <h3 id="themeTitle" class="theme-title"><i class="bi bi-stars me-1"></i> Background theme</h3>
+      <button class="icon-btn" id="themeClose" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="theme-body">
+      <!-- базовые 5 -->
+      <div class="theme-card" data-theme-card="stars"><div class="thumb t-stars"></div><div class="theme-name"><span>Stars</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Мягкий звёздный фон.</div></div>
+      <div class="theme-card" data-theme-card="aurora"><div class="thumb t-aurora"></div><div class="theme-name"><span>Aurora</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Полярное сияние.</div></div>
+      <div class="theme-card" data-theme-card="waves"><div class="thumb t-waves"></div><div class="theme-name"><span>Waves</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Плавные линии-волны.</div></div>
+      <div class="theme-card" data-theme-card="grid"><div class="thumb t-grid"></div><div class="theme-name"><span>Grid</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Неоновая сетка.</div></div>
+      <div class="theme-card" data-theme-card="matrix"><div class="thumb t-matrix"></div><div class="theme-name"><span>Matrix</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Кодопад.</div></div>
+
+      <!-- +10 новых -->
+      <div class="theme-card" data-theme-card="neon_city"><div class="thumb t-neoncity"></div><div class="theme-name"><span>Neon City</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Киберпанк подсветка города.</div></div>
+      <div class="theme-card" data-theme-card="synthwave_grid"><div class="thumb t-synthgrid"></div><div class="theme-name"><span>Synthwave Grid</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Ретро-футуризм, движущаяся сетка.</div></div>
+      <div class="theme-card" data-theme-card="hologram"><div class="thumb t-hologram"></div><div class="theme-name"><span>Hologram</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Голографические переливы.</div></div>
+      <div class="theme-card" data-theme-card="laser_rays"><div class="thumb t-lasers"></div><div class="theme-name"><span>Laser Rays</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Диагональные лучи/сканер.</div></div>
+      <div class="theme-card" data-theme-card="scanlines"><div class="thumb t-scan"></div><div class="theme-name"><span>Scanlines</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Эффект дисплея.</div></div>
+      <div class="theme-card" data-theme-card="bokeh"><div class="thumb t-bokeh"></div><div class="theme-name"><span>Bokeh</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Плавающие огни-боке.</div></div>
+      <div class="theme-card" data-theme-card="orbits"><div class="thumb t-orbits"></div><div class="theme-name"><span>Orbits</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Орбиты/радиальные круги.</div></div>
+      <div class="theme-card" data-theme-card="rain"><div class="thumb t-rain"></div><div class="theme-name"><span>Rain</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Неоновый дождь.</div></div>
+      <div class="theme-card" data-theme-card="circuits"><div class="thumb t-circuits"></div><div class="theme-name"><span>Circuits</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Плата/трассы.</div></div>
+      <div class="theme-card" data-theme-card="hex"><div class="thumb t-hex"></div><div class="theme-name"><span>Hex Grid</span><i class="bi bi-check2-circle d-none"></i></div><div class="theme-desc">Шестиугольная сетка.</div></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function(){
+  const drawer=document.getElementById('themeDrawer');
+  const backdrop=document.getElementById('themeBackdrop');
+  const btnOpen=document.getElementById('openTheme');
+  const btnClose=document.getElementById('themeClose');
+  const KEY='mr_bg_theme';
+
+  function setActiveCard(name){
+    document.querySelectorAll('[data-theme-card]').forEach(c=>{
+      const on=c.dataset.themeCard===name;
+      c.classList.toggle('active',on);
+      const ic=c.querySelector('.theme-name .bi'); if(ic) ic.classList.toggle('d-none',!on);
+    });
+  }
+  function open(){drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';setActiveCard(localStorage.getItem(KEY)||'stars')}
+  function close(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');document.body.style.overflow=''}
+  btnOpen&&btnOpen.addEventListener('click',open);
+  btnClose&&btnClose.addEventListener('click',close);
+  backdrop&&backdrop.addEventListener('click',close);
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&drawer.classList.contains('open')) close(); });
+
+  drawer.querySelectorAll('[data-theme-card]').forEach(card=>{
+    card.addEventListener('click', ()=>{
+      const name=card.dataset.themeCard;
+      window.__BG_SWITCH__ && window.__BG_SWITCH__(name);
+      localStorage.setItem(KEY,name);
+      setActiveCard(name);
+      setTimeout(close,120);
+    });
+  });
+})();
+</script>

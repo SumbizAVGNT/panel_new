@@ -1,0 +1,31 @@
+<div data-theme="bokeh">
+  <style>
+    #bg-root.bokeh{position:fixed;inset:0;z-index:-1;background:#0b0f1a;overflow:hidden}
+    #bg-root.bokeh .dot{
+      position:absolute;border-radius:50%;filter:blur(2px);
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.6), rgba(255,255,255,.05));
+      opacity:.35; animation: bokeh-fly var(--t,12s) linear infinite;
+      mix-blend-mode: screen
+    }
+    @keyframes bokeh-fly{to{transform:translate3d(var(--dx,120px), var(--dy, -180px), 0)}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('bokeh', (root)=>{
+    root.className=''; root.classList.add('bokeh');
+    // create dots
+    const n=20; const nodes=[];
+    for(let i=0;i<n;i++){
+      const d=document.createElement('div');
+      d.className='dot';
+      const size=20+Math.random()*80;
+      d.style.width=size+'px'; d.style.height=size+'px';
+      d.style.left=Math.random()*100+'%'; d.style.top=Math.random()*100+'%';
+      d.style.setProperty('--dx', (Math.random()*400-200)+'px');
+      d.style.setProperty('--dy', (Math.random()*-400-120)+'px');
+      d.style.setProperty('--t', (9+Math.random()*10)+'s');
+      root.appendChild(d); nodes.push(d);
+    }
+    return ()=>{ nodes.forEach(n=>n.remove()); root.classList.remove('bokeh'); };
+  });
+</script>

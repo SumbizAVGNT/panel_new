@@ -1,0 +1,27 @@
+<!-- waves.html -->
+<style>
+  .bg-waves{position:absolute; inset:0; overflow:hidden; pointer-events:none}
+  .bg-waves .layer{position:absolute; left:-20%; right:-20%; height:40%; border-radius:50%; filter:blur(2px); opacity:.35}
+  .bg-waves .w1{bottom:20%; background:linear-gradient( to right, #60a5fa33, #a78bfa33 ); transform: translateX(0); animation:wMove1 18s ease-in-out infinite}
+  .bg-waves .w2{bottom:10%; background:linear-gradient( to right, #22d3ee33, #34d39933 ); animation:wMove2 24s ease-in-out infinite}
+  .bg-waves .grid{position:absolute; inset:0; background:
+      repeating-linear-gradient(to right, #1f2937 0 1px, transparent 1px 18px),
+      repeating-linear-gradient(to top,   #1f2937 0 1px, transparent 1px 18px);
+    transform: perspective(800px) rotateX(65deg) translateY(15%);
+    opacity:.25; animation: wGrid 20s linear infinite}
+
+  @keyframes wMove1{0%{transform:translateX(-5%)}50%{transform:translateX(5%)}100%{transform:translateX(-5%)}}
+  @keyframes wMove2{0%{transform:translateX(6%)}50%{transform:translateX(-6%)}100%{transform:translateX(6%)}}
+  @keyframes wGrid{from{background-position:0 0, 0 0} to{background-position:200px 200px, 0 300px}}
+</style>
+<script>
+(function(){
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('waves', function(root){
+    const wrap=document.createElement('div');
+    wrap.className='bg-waves';
+    wrap.innerHTML='<div class="grid"></div><div class="layer w1"></div><div class="layer w2"></div>';
+    root.appendChild(wrap);
+    return ()=> wrap.remove();
+  });
+})();
+</script>

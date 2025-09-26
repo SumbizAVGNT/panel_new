@@ -1,0 +1,17 @@
+<div data-theme="scanlines">
+  <style>
+    #bg-root.scanlines{position:fixed;inset:0;z-index:-1;background:#0b0f1a}
+    #bg-root.scanlines::before{
+      content:"";position:absolute;inset:0;
+      background: repeating-linear-gradient( to bottom, rgba(255,255,255,.05) 0 2px, transparent 2px 5px);
+      animation: scan-move 6s linear infinite; opacity:.35
+    }
+    @keyframes scan-move{to{background-position-y:120px}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('scanlines', (root)=>{
+    root.className=''; root.classList.add('scanlines');
+    return ()=>{ root.classList.remove('scanlines'); };
+  });
+</script>

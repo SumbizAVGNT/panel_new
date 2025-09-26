@@ -1,0 +1,19 @@
+<div data-theme="orbits">
+  <style>
+    #bg-root.orbits{position:fixed;inset:0;z-index:-1;background:#0a0f1a}
+    #bg-root.orbits::before{
+      content:"";position:absolute;inset:0;
+      background:
+        radial-gradient(circle at 50% 50%, transparent 46%, rgba(59,130,246,.35) 47% 48%, transparent 49%) 0 0/220px 220px,
+        radial-gradient(circle at 50% 50%, transparent 69%, rgba(99,102,241,.28) 70% 71%, transparent 72%) 0 0/220px 220px;
+      animation: orbits-pan 22s linear infinite; opacity:.7
+    }
+    @keyframes orbits-pan{to{background-position:300px 300px, -220px 220px}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('orbits', (root)=>{
+    root.className=''; root.classList.add('orbits');
+    return ()=>{ root.classList.remove('orbits'); };
+  });
+</script>

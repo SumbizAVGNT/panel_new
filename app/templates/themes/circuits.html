@@ -1,0 +1,21 @@
+<div data-theme="circuits">
+  <style>
+    #bg-root.circuits{position:fixed;inset:0;z-index:-1;background:#0b1220}
+    #bg-root.circuits::before{
+      content:"";position:absolute;inset:0;
+      background:
+        linear-gradient(#1f2937 1px,transparent 1px) 0 0/22px 22px,
+        linear-gradient(90deg,#1f2937 1px,transparent 1px) 0 0/22px 22px,
+        radial-gradient(2px 2px at 11px 11px,#22c55e,transparent) 0 0/22px 22px;
+      filter: drop-shadow(0 0 6px rgba(34,197,94,.35));
+      animation: circuits-scan 18s linear infinite; opacity:.9
+    }
+    @keyframes circuits-scan{to{background-position: 220px 0, 0 220px, 0 0}}
+  </style>
+</div>
+<script>
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('circuits', (root)=>{
+    root.className=''; root.classList.add('circuits');
+    return ()=>{ root.classList.remove('circuits'); };
+  });
+</script>

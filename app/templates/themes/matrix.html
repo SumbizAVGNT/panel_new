@@ -1,0 +1,36 @@
+<!-- matrix.html -->
+<style>
+  .bg-matrix{position:absolute; inset:0; overflow:hidden; pointer-events:none; color:#00ff88}
+  .bg-matrix .col{position:absolute; top:-120vh; width:18px; white-space:nowrap; font: 14px/18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; opacity:.7; text-shadow:0 0 6px #00ff8844}
+  .bg-matrix .col .g{display:block}
+  @keyframes fall{to{transform: translateY(220vh)}}
+</style>
+<script>
+(function(){
+  function randInt(a,b){return Math.floor(Math.random()*(b-a+1))+a}
+  function randChars(n){
+    const s='01アイウ0123456789ｱｲｳｴｵ01';
+    let out=''; for(let i=0;i<n;i++) out += s[randInt(0,s.length-1)];
+    return out;
+  }
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('matrix', function(root){
+    const wrap=document.createElement('div');
+    wrap.className='bg-matrix';
+    const cols = Math.ceil(window.innerWidth/18);
+    for(let i=0;i<cols;i++){
+      const c=document.createElement('div');
+      c.className='col';
+      c.style.left = (i*18)+'px';
+      c.style.animation = `fall ${randInt(8,16)}s linear ${randInt(0,8000)/1000}s infinite`;
+      // генерим несколько «строк»
+      let html='';
+      const lines = Math.ceil(window.innerHeight/18)+12;
+      for(let j=0;j<lines;j++) html += `<span class="g">${randChars(randInt(8,16))}</span>`;
+      c.innerHTML = html;
+      wrap.appendChild(c);
+    }
+    root.appendChild(wrap);
+    return ()=> wrap.remove();
+  });
+})();
+</script>

@@ -1,0 +1,27 @@
+<!-- aurora.html -->
+<style>
+  .bg-aurora{position:absolute; inset:0; pointer-events:none; overflow:hidden}
+  .bg-aurora .blend{position:absolute; inset:-20%; filter:blur(60px) saturate(1.2); opacity:.55}
+  .bg-aurora .a1{background:
+      radial-gradient(50% 60% at 20% 70%, rgba(52,211,153,.55), transparent 60%),
+      radial-gradient(60% 50% at 80% 30%, rgba(59,130,246,.55), transparent 60%);
+    animation: aSlide1 22s ease-in-out infinite alternate}
+  .bg-aurora .a2{background:
+      radial-gradient(40% 55% at 70% 80%, rgba(236,72,153,.45), transparent 60%),
+      radial-gradient(40% 50% at 30% 20%, rgba(147,197,253,.35), transparent 60%);
+    mix-blend-mode:screen; animation: aSlide2 28s ease-in-out infinite alternate}
+
+  @keyframes aSlide1{from{transform: translate(-6%, -4%) rotate(0.5deg)} to{transform: translate(6%, 4%) rotate(-0.5deg)}}
+  @keyframes aSlide2{from{transform: translate(8%, -6%) rotate(-0.6deg)} to{transform: translate(-8%, 6%) rotate(0.6deg)}}
+</style>
+<script>
+(function(){
+  window.__BG_MOUNT__ && window.__BG_MOUNT__('aurora', function(root){
+    const wrap=document.createElement('div');
+    wrap.className='bg-aurora';
+    wrap.innerHTML='<div class="blend a1"></div><div class="blend a2"></div>';
+    root.appendChild(wrap);
+    return ()=> wrap.remove();
+  });
+})();
+</script>
