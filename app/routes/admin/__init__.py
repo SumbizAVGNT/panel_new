@@ -23,3 +23,4 @@ from . import settings   # noqa: E402,F401
 from . import bots       # noqa: E402,F401
 from . import servers    # noqa: E402,F401
 from . import support    # noqa: E402,F401
+from . import gameservers

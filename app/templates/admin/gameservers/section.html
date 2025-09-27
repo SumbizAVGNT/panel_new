@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}{{ server.name }} — {{ section_title }}{% endblock %}
+
+{% block content %}
+<style>
+.gs-layout{display:grid;grid-template-columns: 280px 1fr; gap:16px}
+@media (max-width: 992px){ .gs-layout{grid-template-columns: 1fr} }
+.gs-side{position:sticky; top:76px; align-self:start}
+.gs-side .nav-link{border:1px solid rgba(148,163,184,.18); border-radius:10px; margin-bottom:8px}
+.gs-side .nav-link.active{background:#0f172a}
+.table-wrap{overflow:auto}
+pre.log{white-space:pre-wrap; background:#0b1220; border:1px solid rgba(148,163,184,.18); border-radius:10px; padding:.75rem}
+</style>
+
+<div class="container-xxl">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h1 class="h5 m-0">{{ server.name }}</h1>
+      <div class="text-secondary small">{{ section_title }}</div>
+    </div>
+    <a class="btn btn-outline-light btn-sm" href="{{ url_for('admin.gameservers_show', server_id=server.id) }}">
+      ← Back to overview
+    </a>
+  </div>
+
+  <div class="gs-layout">
+    <!-- Sidebar -->
+    <div class="gs-side">
+      <div class="card glass p-2">
+        {% for key, title in sections %}
+          <a class="nav-link px-3 py-2 {{ 'active' if key==section else '' }}"
+             href="{{ url_for('admin.gameservers_section', server_id=server.id, section=key) }}">
+            {{ title }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="gs-main">
+      {% if section == 'players' %}
+        <div class="card glass">
+          <div class="card-body">
+            <h2 class="h6 text-uppercase text-secondary mb-3">Players</h2>
+            <div class="table-wrap">
+              <table class="table table-dark table-striped align-middle">
+                <thead><tr><th>#</th><th>Nickname</th><th>UUID</th><th>Ping</th><th>Actions</th></tr></thead>
+                <tbody>
+                <!-- Заглушки -->
+                <tr><td>1</td><td>PlayerOne</td><td>...</td><td>57ms</td>
+                  <td><button class="btn btn-outline-danger btn-sm">Kick</button></td></tr>
+                <tr><td>2</td><td>PlayerTwo</td><td>...</td><td>83ms</td>
+                  <td><button class="btn btn-outline-danger btn-sm">Kick</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      {% elif section == 'donate' %}
+        <div class="card glass">
+          <div class="card-body">
+            <h2 class="h6 text-uppercase text-secondary mb-3">Donate</h2>
+            <div class="text-secondary">Integrate your payment provider here…</div>
+          </div>
+        </div>
+
+      {% elif section == 'logs' %}
+        <div class="card glass">
+          <div class="card-body">
+            <h2 class="h6 text-uppercase text-secondary mb-3">Logs</h2>
+            <pre class="log">[00:00:01] Server started
+[00:00:10] PlayerOne joined
+[00:02:44] PlayerTwo joined
+…</pre>
+          </div>
+        </div>
+
+      {% elif section == 'console' %}
+        <div class="card glass">
+          <div class="card-body">
+            <h2 class="h6 text-uppercase text-secondary mb-3">Console</h2>
+            <form class="d-flex gap-2">
+              <input class="form-control" placeholder="Type command… (e.g. list, stop, say Hello)">
+              <button class="btn btn-primary" type="button"><i class="bi bi-send"></i></button>
+            </form>
+            <pre class="log mt-3">> list
+There are 2 of a max of 100 players online: PlayerOne, PlayerTwo</pre>
+          </div>
+        </div>
+
+      {% elif section == 'errors' %}
+        <div class="card glass">
+          <div class="card-body">
+            <h2 class="h6 text-uppercase text-secondary mb-3">Errors</h2>
+            <div class="text-danger">No recent errors.</div>
+          </div>
+        </div>
+
+      {% elif section == 'whitelist' %}
+        <div class="card glass">
+          <div class="card-body">
+            <h2 class="h6 text-uppercase text-secondary mb-3">WhiteList</h2>
+            <form class="d-flex gap-2 mb-2">
+              <input class="form-control" placeholder="Add nickname">
+              <button class="btn btn-outline-light" type="button">Add</button>
+            </form>
+            <ul class="list-group list-group-flush">
+              <li class="list-group-item bg-transparent text-light">PlayerOne <button class="btn btn-sm btn-outline-danger float-end">Remove</button></li>
+            </ul>
+          </div>
+        </div>
+
+      {% elif section == 'oplist' %}
+        <div class="card glass">
+          <div class="card-body">
+            <h2 class="h6 text-uppercase text-secondary mb-3">OpList</h2>
+            <form class="d-flex gap-2 mb-2">
+              <input class="form-control" placeholder="Add operator nickname">
+              <button class="btn btn-outline-light" type="button">Add</button>
+            </form>
+            <ul class="list-group list-group-flush">
+              <li class="list-group-item bg-transparent text-light">AdminGuy <button class="btn btn-sm btn-outline-danger float-end">Remove</button></li>
+            </ul>
+          </div>
+        </div>
+
+      {% elif section == 'maintenance' %}
+        <div class="card glass">
+          <div class="card-body">
+            <h2 class="h6 text-uppercase text-secondary mb-3">Technical work</h2>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="mw-switch">
+              <label class="form-check-label" for="mw-switch">Maintenance mode</label>
+            </div>
+            <input class="form-control mb-2" placeholder="Message to players (motd)">
+            <button class="btn btn-warning">Apply</button>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
