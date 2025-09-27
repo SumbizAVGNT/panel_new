@@ -1,144 +1,224 @@
-{% extends "base.html" %}
-{% block title %}{{ server.name }} — {{ section_title }}{% endblock %}
-
+{% extends "layout/base.html" %}
+{% block title %}{{ realm }} — Game Server{% endblock %}
 {% block content %}
 <style>
-.gs-layout{display:grid;grid-template-columns: 280px 1fr; gap:16px}
+.gs-layout{display:grid;grid-template-columns: 300px 1fr; gap:16px}
 @media (max-width: 992px){ .gs-layout{grid-template-columns: 1fr} }
 .gs-side{position:sticky; top:76px; align-self:start}
 .gs-side .nav-link{border:1px solid rgba(148,163,184,.18); border-radius:10px; margin-bottom:8px}
 .gs-side .nav-link.active{background:#0f172a}
-.table-wrap{overflow:auto}
-pre.log{white-space:pre-wrap; background:#0b1220; border:1px solid rgba(148,163,184,.18); border-radius:10px; padding:.75rem}
+.tile{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;border:1px solid rgba(148,163,184,.18);background:rgba(13,17,23,.55)}
+.tile .tcap{font-size:.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+.badge-cap{padding:.35rem .6rem;border-radius:999px}
+pre.console{max-height:260px;overflow:auto;background:rgba(15,23,42,.4);border-radius:10px;padding:10px;border:1px solid rgba(148,163,184,.18)}
 </style>
 
-<div class="container-xxl">
+<div class="container-xxl py-4" data-realm="{{ realm }}">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-      <h1 class="h5 m-0">{{ server.name }}</h1>
-      <div class="text-secondary small">{{ section_title }}</div>
+      <h2 class="m-0">{{ realm|capitalize }}</h2>
+      <div class="text-secondary small">Minecraft (Paper) · realm: {{ realm }}</div>
     </div>
-    <a class="btn btn-outline-light btn-sm" href="{{ url_for('admin.gameservers_show', server_id=server.id) }}">
-      ← Back to overview
-    </a>
+    <div class="d-flex align-items-center gap-2">
+      <span id="status-badge" class="badge badge-cap bg-secondary">unknown</span>
+      <div class="form-check form-switch ms-2">
+        <input class="form-check-input" type="checkbox" id="autorefresh" checked>
+        <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
+      </div>
+      <button id="refresh" class="btn btn-sm btn-outline-secondary">Обновить</button>
+      <a href="/admin/gameservers" class="btn btn-sm btn-outline-light">Назад</a>
+    </div>
   </div>
 
   <div class="gs-layout">
     <!-- Sidebar -->
     <div class="gs-side">
       <div class="card glass p-2">
+        {% set sections = [
+          ('overview','Overview'),
+          ('players','Players'),
+          ('worlds','Worlds'),
+          ('console','Console')
+        ] %}
         {% for key, title in sections %}
-          <a class="nav-link px-3 py-2 {{ 'active' if key==section else '' }}"
-             href="{{ url_for('admin.gameservers_section', server_id=server.id, section=key) }}">
-            {{ title }}
-          </a>
+          <a class="nav-link px-3 py-2" href="#{{ key }}">{{ title }}</a>
         {% endfor %}
       </div>
     </div>
 
-    <!-- Content -->
+    <!-- Main -->
     <div class="gs-main">
-      {% if section == 'players' %}
-        <div class="card glass">
-          <div class="card-body">
-            <h2 class="h6 text-uppercase text-secondary mb-3">Players</h2>
-            <div class="table-wrap">
-              <table class="table table-dark table-striped align-middle">
-                <thead><tr><th>#</th><th>Nickname</th><th>UUID</th><th>Ping</th><th>Actions</th></tr></thead>
-                <tbody>
-                <!-- Заглушки -->
-                <tr><td>1</td><td>PlayerOne</td><td>...</td><td>57ms</td>
-                  <td><button class="btn btn-outline-danger btn-sm">Kick</button></td></tr>
-                <tr><td>2</td><td>PlayerTwo</td><td>...</td><td>83ms</td>
-                  <td><button class="btn btn-outline-danger btn-sm">Kick</button></td></tr>
-                </tbody>
-              </table>
-            </div>
+      <!-- Overview -->
+      <div id="overview" class="card glass mb-3">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-6 col-md-3"><div class="tile"><div class="tcap">MSPT</div><div id="t-mspt" class="fs-5">—</div></div></div>
+            <div class="col-6 col-md-3"><div class="tile"><div class="tcap">TPS (avg)</div><div id="t-tps" class="fs-5">—</div></div></div>
+            <div class="col-6 col-md-3"><div class="tile"><div class="tcap">Online</div><div id="t-online" class="fs-5">—</div></div></div>
+            <div class="col-6 col-md-3"><div class="tile"><div class="tcap">Players</div><div id="t-players" class="fs-6 text-light">—</div></div></div>
+          </div>
+          <div class="mt-3">
+            <canvas id="tpsChart" height="80"></canvas>
+            <div class="form-text">Мини-график последних значений TPS (обновляется каждые N сек).</div>
           </div>
         </div>
+      </div>
 
-      {% elif section == 'donate' %}
-        <div class="card glass">
-          <div class="card-body">
-            <h2 class="h6 text-uppercase text-secondary mb-3">Donate</h2>
-            <div class="text-secondary">Integrate your payment provider here…</div>
+      <!-- Players -->
+      <div id="players" class="card glass mb-3">
+        <div class="card-body">
+          <h5 class="mb-3">Игроки</h5>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr><th>Ник</th><th>UUID</th><th>Мир</th></tr></thead>
+              <tbody id="tbl-players"><tr><td colspan="3" class="text-secondary">нет данных</td></tr></tbody>
+            </table>
           </div>
         </div>
+      </div>
 
-      {% elif section == 'logs' %}
-        <div class="card glass">
-          <div class="card-body">
-            <h2 class="h6 text-uppercase text-secondary mb-3">Logs</h2>
-            <pre class="log">[00:00:01] Server started
-[00:00:10] PlayerOne joined
-[00:02:44] PlayerTwo joined
-…</pre>
+      <!-- Worlds -->
+      <div id="worlds" class="card glass mb-3">
+        <div class="card-body">
+          <h5 class="mb-3">Миры</h5>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr><th>Мир</th><th>Тип</th><th>TPS</th><th>Игроки</th><th>Чанки</th><th>Spawn</th></tr></thead>
+              <tbody id="tbl-worlds"><tr><td colspan="6" class="text-secondary">нет данных</td></tr></tbody>
+            </table>
           </div>
         </div>
+      </div>
 
-      {% elif section == 'console' %}
-        <div class="card glass">
-          <div class="card-body">
-            <h2 class="h6 text-uppercase text-secondary mb-3">Console</h2>
-            <form class="d-flex gap-2">
-              <input class="form-control" placeholder="Type command… (e.g. list, stop, say Hello)">
-              <button class="btn btn-primary" type="button"><i class="bi bi-send"></i></button>
-            </form>
-            <pre class="log mt-3">> list
-There are 2 of a max of 100 players online: PlayerOne, PlayerTwo</pre>
+      <!-- Console -->
+      <div id="console" class="card glass">
+        <div class="card-body">
+          <h5 class="mb-3">Консоль</h5>
+          <div class="input-group mb-2">
+            <input id="cmd" class="form-control" placeholder="say Hello from MoonRein">
+            <button id="send" class="btn btn-primary">Отправить</button>
           </div>
+          <div id="console-status" class="small text-muted mb-2"></div>
+          <pre class="console" id="console-log">// live-лог можно подключить позже (SSE/WS)</pre>
         </div>
-
-      {% elif section == 'errors' %}
-        <div class="card glass">
-          <div class="card-body">
-            <h2 class="h6 text-uppercase text-secondary mb-3">Errors</h2>
-            <div class="text-danger">No recent errors.</div>
-          </div>
-        </div>
-
-      {% elif section == 'whitelist' %}
-        <div class="card glass">
-          <div class="card-body">
-            <h2 class="h6 text-uppercase text-secondary mb-3">WhiteList</h2>
-            <form class="d-flex gap-2 mb-2">
-              <input class="form-control" placeholder="Add nickname">
-              <button class="btn btn-outline-light" type="button">Add</button>
-            </form>
-            <ul class="list-group list-group-flush">
-              <li class="list-group-item bg-transparent text-light">PlayerOne <button class="btn btn-sm btn-outline-danger float-end">Remove</button></li>
-            </ul>
-          </div>
-        </div>
-
-      {% elif section == 'oplist' %}
-        <div class="card glass">
-          <div class="card-body">
-            <h2 class="h6 text-uppercase text-secondary mb-3">OpList</h2>
-            <form class="d-flex gap-2 mb-2">
-              <input class="form-control" placeholder="Add operator nickname">
-              <button class="btn btn-outline-light" type="button">Add</button>
-            </form>
-            <ul class="list-group list-group-flush">
-              <li class="list-group-item bg-transparent text-light">AdminGuy <button class="btn btn-sm btn-outline-danger float-end">Remove</button></li>
-            </ul>
-          </div>
-        </div>
-
-      {% elif section == 'maintenance' %}
-        <div class="card glass">
-          <div class="card-body">
-            <h2 class="h6 text-uppercase text-secondary mb-3">Technical work</h2>
-            <div class="form-check form-switch mb-2">
-              <input class="form-check-input" type="checkbox" id="mw-switch">
-              <label class="form-check-label" for="mw-switch">Maintenance mode</label>
-            </div>
-            <input class="form-control mb-2" placeholder="Message to players (motd)">
-            <button class="btn btn-warning">Apply</button>
-          </div>
-        </div>
-      {% endif %}
+      </div>
     </div>
   </div>
 </div>
+
+<script>
+const realm = document.querySelector("[data-realm]").dataset.realm;
+let tpsSeries = [];  // для мини-графика
+let timer=null;
+
+function setStatusBadge(state){
+  const el = document.getElementById("status-badge");
+  el.classList.remove("bg-success","bg-warning","bg-danger","bg-secondary");
+  if(state==="online") el.classList.add("bg-success");
+  else if(state==="maintenance") el.classList.add("bg-warning");
+  else if(state==="offline") el.classList.add("bg-danger");
+  else el.classList.add("bg-secondary");
+  el.textContent = state || "unknown";
+}
+
+function drawSparkline(canvas, values){
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width = canvas.clientWidth;
+  const h = canvas.height = canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(!values.length) return;
+  const min = Math.min(...values), max = Math.max(...values);
+  const pad = 6;
+  const xi = (i)=> pad + (w-2*pad) * (i/(values.length-1||1));
+  const yi = (v)=> h - pad - (h-2*pad) * ((v - min) / ((max-min)||1));
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  values.forEach((v,i)=>{ const x=xi(i), y=yi(v); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.stroke();
+}
+
+function render(p){
+  // status
+  const online = typeof p.online === "number" ? p.online : (p.players||[]).length;
+  const status = (p.tps?.length || online>0) ? "online" : "offline";
+  setStatusBadge(status);
+
+  // tiles
+  const avgTPS = (p.tps && p.tps.length) ? (p.tps.reduce((a,b)=>a+b,0)/p.tps.length).toFixed(2) : "—";
+  document.getElementById("t-mspt").textContent = p.mspt ?? "—";
+  document.getElementById("t-tps").textContent  = avgTPS;
+  document.getElementById("t-online").textContent = online ?? "—";
+  document.getElementById("t-players").textContent = (p.players||[]).map(x=>x.name).join(", ") || "—";
+
+  // series (ограничим до 60 точек)
+  const last = (p.tps && p.tps.length) ? p.tps[p.tps.length-1] : null;
+  if(last!=null){ tpsSeries.push(last); if(tpsSeries.length>60) tpsSeries.shift(); }
+  drawSparkline(document.getElementById("tpsChart"), tpsSeries);
+
+  // players table
+  const pt = document.getElementById("tbl-players");
+  const players = p.players||[];
+  pt.innerHTML = players.length ? players.map(pl=>`
+    <tr><td>${pl.name}</td><td class="small">${pl.uuid||""}</td><td>${pl.world||""}</td></tr>
+  `).join("") : `<tr><td colspan="3" class="text-secondary">нет данных</td></tr>`;
+
+  // worlds table
+  const wt = document.getElementById("tbl-worlds");
+  const worlds = p.worlds||[];
+  wt.innerHTML = worlds.length ? worlds.map(w=>`
+    <tr>
+      <td>${w.name}</td>
+      <td>${w.type||""}</td>
+      <td>${(w.tps||[]).join(", ")}</td>
+      <td>${w.players??""}</td>
+      <td>${w.loadedChunks??""}</td>
+      <td>${w.spawn?`${w.spawn.x},${w.spawn.y},${w.spawn.z}`:""}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="6" class="text-secondary">нет данных</td></tr>`;
+}
+
+async function fetchStats(){
+  const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`);
+  const j = await r.json();
+  if(!j.ok){ setStatusBadge("offline"); return; }
+  render(j.data||{});
+}
+
+async function sendCmd(){
+  const cmd = document.getElementById("cmd").value.trim();
+  if(!cmd) return;
+  const btn = document.getElementById("send");
+  const st = document.getElementById("console-status");
+  btn.disabled = true; st.textContent = "Отправка...";
+  try{
+    const r = await fetch("/admin/gameservers/api/console", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({realm, cmd})
+    });
+    const j = await r.json();
+    st.textContent = j.ok ? "OK" : (j.error||"error");
+    if(j.ok){
+      const log = document.getElementById("console-log");
+      log.textContent += `\n> ${cmd}`;
+      log.scrollTop = log.scrollHeight;
+      document.getElementById("cmd").value="";
+    }
+  }catch(e){
+    st.textContent = e.message||"network error";
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("send").addEventListener("click", sendCmd);
+document.getElementById("refresh").addEventListener("click", fetchStats);
+document.getElementById("autorefresh").addEventListener("change",(e)=>{
+  clearInterval(timer);
+  if(e.target.checked) timer=setInterval(fetchStats, 3000);
+});
+
+// первичная загрузка
+fetchStats(); timer=setInterval(fetchStats, 3000);
+</script>
 {% endblock %}

@@ -1,52 +1,83 @@
-{% extends "base.html" %}
-{% block title %}Game Servers — MoonRein{% endblock %}
-
+{% extends "layout/base.html" %}
+{% block title %}GameServers · Realms{% endblock %}
 {% block content %}
-<div class="container-xxl">
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <h1 class="h4 m-0">Game Servers</h1>
-    <div class="text-secondary small">Admin · manage your servers</div>
+<style>
+.gs-search{display:flex; gap:8px; align-items:center}
+.gs-card{transition:transform .15s ease, box-shadow .15s ease}
+.gs-card:hover{transform:translateY(-2px)}
+.badge-cap{padding:.35rem .6rem;border-radius:999px}
+</style>
+
+<div class="container-xxl py-4">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <h2 class="m-0">GameServers</h2>
+    <div class="gs-search">
+      <input id="q" class="form-control form-control-sm" placeholder="Фильтр по названию realm…">
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="autorefresh" checked>
+        <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
+      </div>
+      <button id="refresh" class="btn btn-sm btn-outline-secondary">Обновить</button>
+    </div>
   </div>
 
-  <div class="row g-3">
-    {% for s in servers %}
-    <div class="col-12 col-md-6 col-xl-4">
-      <div class="card glass h-100">
-        <div class="card-body">
-          <div class="d-flex align-items-center justify-content-between">
-            <div>
-              <div class="fw-bold">{{ s.name }}</div>
-              <div class="text-secondary small">{{ s.game }}</div>
-            </div>
-            <span class="badge {{ 'bg-success' if s.status=='online' else ('bg-warning' if s.status=='maintenance' else 'bg-danger') }}">{{ s.status }}</span>
-          </div>
+  <div id="empty" class="text-secondary d-none">Нет активных плагинов. Запусти плагин и убедись, что он подключён к бриджу.</div>
+  <div id="grid" class="row g-3"></div>
+</div>
 
-          <div class="mt-2 small text-secondary">
-            <div>Address: <span class="text-light">{{ s.host }}:{{ s.port }}</span></div>
-            <div>Players: <span class="text-light">{{ s.players_online }}/{{ s.players_max }}</span></div>
-            <div>Tags:
-              {% for t in s.tags %}
-                <span class="badge rounded-pill text-bg-dark border border-secondary-subtle">{{ t }}</span>
-              {% endfor %}
-            </div>
-          </div>
+<script>
+let timer=null;
 
-          <div class="mt-3 d-flex gap-2">
-            <a class="btn btn-primary btn-sm" href="{{ url_for('admin.gameservers_show', server_id=s.id) }}">
-              <i class="bi bi-hdd-network me-1"></i>Open
-            </a>
-            <a class="btn btn-outline-light btn-sm" href="{{ url_for('admin.gameservers_section', server_id=s.id, section='console') }}">
-              <i class="bi bi-terminal me-1"></i>Console
-            </a>
+function render(data){
+  const grid = document.getElementById("grid");
+  const empty = document.getElementById("empty");
+  grid.innerHTML = "";
+  const q = (document.getElementById("q").value||"").toLowerCase().trim();
+
+  const entries = Object.entries(data).filter(([realm]) => realm.toLowerCase().includes(q));
+  if(entries.length===0){ empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+
+  for(const [realm,count] of entries){
+    const col = document.createElement("div"); col.className="col-12 col-sm-6 col-lg-4";
+    col.innerHTML = `
+      <div class="card glass gs-card h-100">
+        <div class="card-body d-flex flex-column">
+          <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">${realm}</h5>
+            <span class="badge badge-cap ${count>0?'bg-success':'bg-secondary'}">${count} plugin(s)</span>
+          </div>
+          <p class="mt-2 mb-3 text-secondary small">Мониторинг, игроки, TPS, консоль.</p>
+          <div class="mt-auto d-flex gap-2">
+            <a class="btn btn-sm btn-primary" href="/admin/gameservers/${encodeURIComponent(realm)}">Открыть</a>
+            <a class="btn btn-sm btn-outline-light" href="#" onclick="stats('${realm}');return false;">Проверить</a>
           </div>
         </div>
-      </div>
-    </div>
-    {% else %}
-      <div class="col-12">
-        <div class="glass p-4 text-secondary">No servers yet.</div>
-      </div>
-    {% endfor %}
-  </div>
-</div>
+      </div>`;
+    grid.appendChild(col);
+  }
+}
+
+async function load(){
+  const r = await fetch("/admin/gameservers/api/list");
+  const j = await r.json();
+  render(j.ok ? (j.data||{}) : {});
+}
+
+async function stats(realm){
+  const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`);
+  const j = await r.json();
+  if(!j.ok){ alert(j.error||"error"); return; }
+  const p = j.data||{};
+  alert(`Realm: ${realm}\nTPS: ${(p.tps||[]).join(", ")}\nMSPT: ${p.mspt}\nOnline: ${p.online}`);
+}
+
+document.getElementById("refresh").addEventListener("click", load);
+document.getElementById("q").addEventListener("input", load);
+document.getElementById("autorefresh").addEventListener("change", (e)=>{
+  clearInterval(timer);
+  if(e.target.checked) timer=setInterval(load, 5000);
+});
+load(); timer=setInterval(load, 5000);
+</script>
 {% endblock %}
