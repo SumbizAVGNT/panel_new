@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-u", "panel_new/run.py"]
+    working_dir: /app
+    ports:
+      - "5000:5000"
+    environment:
+      # ---- сеть панели ----
+      HOST: 0.0.0.0
+      PORT: 5000
+
+      # ---- подключение к BRIDGE ----
+      SP_BRIDGE_URL: ws://bridge:8765/ws
+      SP_TOKEN: SUPER_SECRET
+
+      # ---- основная БД панели ----
+      DB_HOST: 79.174.89.178
+      DB_PORT: 16844
+      DB_USER: HBusiwshu9whsd
+      DB_PASSWORD: "NIUhbsuhwSU*GB0w87ygs08"
+      DB_NAME: panel
+
+      # ---- AuthMe (если не задать HOST/PORT/USER/PASSWORD, код возьмёт из DB_*) ----
+      AUTHME_NAME: authmedb
+
+      # ---- LuckPerms (свои креды) ----
+      LUCKPERMS_HOST: 79.174.89.178
+      LUCKPERMS_PORT: 16844
+      LUCKPERMS_USER: donateLP
+      LUCKPERMS_PASSWORD: "M8YI2rA7t-pT5QAa1E-PxjF2f4yt"
+      LUCKPERMS_NAME: donate
+
+      # опционально TLS к БД
+      # DB_SSL: "0"
+      # AUTHME_SSL: "0"
+      # LUCKPERMS_SSL: "0"
+
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./:/app
+    depends_on:
+      - bridge
+
+  bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-u", "panel_new/bridge.py"]
+    working_dir: /app
+    ports:
+      - "8765:8765"
+    environment:
+      # если bridge читает хост/порт — оставьте как есть;
+      # иначе он слушает 0.0.0.0:8765 по умолчанию
+      BRIDGE_HOST: 0.0.0.0
+      BRIDGE_PORT: 8765
+      SP_TOKEN: SUPER_SECRET
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',8765)); print('ok')"]
+      interval: 10s
+      timeout: 2s
+      retries: 10
