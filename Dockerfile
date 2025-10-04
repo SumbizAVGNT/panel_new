@@ -1,23 +1,18 @@
 FROM python:3.11-slim
 
-# системные либы, чтобы Pillow собирался/работал
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential gcc libjpeg62-turbo-dev zlib1g-dev libpng-dev \
+      git ca-certificates build-essential gcc libjpeg62-turbo-dev zlib1g-dev libpng-dev \
+      procps bash util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# зависимости: если есть requirements.txt — используем его,
-# иначе ставим минимальный набор под ваш код
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt || \
-    pip install --no-cache-dir \
-      flask==3.0.3 websockets requests pillow python-dotenv pymysql
+RUN if [ -s /tmp/requirements.txt ]; then pip install --no-cache-dir -r /tmp/requirements.txt; fi
 
-# сам проект
-COPY .. /app
+COPY docker/git-entrypoint.sh /usr/local/bin/git-entrypoint.sh
+RUN chmod +x /usr/local/bin/git-entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1
-
-# по умолчанию запустим панель (compose переопределит)
-CMD ["python", "panel_new/run.py"]
+ENTRYPOINT ["/usr/local/bin/git-entrypoint.sh"]
+CMD ["python", "run.py"]
