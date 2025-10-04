@@ -1,0 +1,12 @@
+# По умолчанию нормализуем текст
+* text=auto
+
+# Скрипты и конфиги — строго LF (важно для Docker/Unix)
+*.sh        text eol=lf
+*.py        text eol=lf
+Dockerfile  text eol=lf
+docker-compose.yml text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.conf      text eol=lf
+*.env       text eol=lf
