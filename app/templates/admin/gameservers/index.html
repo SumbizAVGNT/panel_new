@@ -1,83 +1,127 @@
 {% extends "layout/base.html" %}
-{% block title %}GameServers · Realms{% endblock %}
+{% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
-.gs-search{display:flex; gap:8px; align-items:center}
-.gs-card{transition:transform .15s ease, box-shadow .15s ease}
-.gs-card:hover{transform:translateY(-2px)}
+.grid-realms{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.tile{
+  border-radius:14px;border:1px solid rgba(148,163,184,.18);
+  background:rgba(13,17,23,.55);backdrop-filter:blur(8px);
+  padding:14px;display:flex;flex-direction:column;gap:8px;transition:.15s
+}
+.tile:hover{box-shadow:0 12px 28px rgba(0,0,0,.25),0 0 0 1px rgba(148,163,184,.25)}
+.tile .cap{font-size:.78rem;color:#94a3b8;letter-spacing:.04em;text-transform:uppercase}
 .badge-cap{padding:.35rem .6rem;border-radius:999px}
+.tile .row2{display:flex;align-items:center;justify-content:space-between}
+.tile .subs{display:flex;flex-wrap:wrap;gap:6px}
+.pill{font-size:.78rem;border:1px solid rgba(148,163,184,.25);border-radius:999px;padding:.1rem .5rem;color:#cbd5e1}
+.tile .arrow{opacity:.7;transition:.15s}
+.tile:hover .arrow{opacity:1;transform:translateX(2px)}
 </style>
 
 <div class="container-xxl py-4">
-  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-    <h2 class="m-0">GameServers</h2>
-    <div class="gs-search">
-      <input id="q" class="form-control form-control-sm" placeholder="Фильтр по названию realm…">
-      <div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" id="autorefresh" checked>
-        <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
-      </div>
-      <button id="refresh" class="btn btn-sm btn-outline-secondary">Обновить</button>
-    </div>
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h2 class="m-0">Game Servers</h2>
+    <button id="refresh" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-repeat me-1"></i>Обновить
+    </button>
   </div>
 
-  <div id="empty" class="text-secondary d-none">Нет активных плагинов. Запусти плагин и убедись, что он подключён к бриджу.</div>
-  <div id="grid" class="row g-3"></div>
+  <div id="list" class="grid-realms">
+    <div class="tile">
+      <div class="cap">Loading</div>
+      <div class="h5 m-0">Fetching realms…</div>
+    </div>
+  </div>
 </div>
 
 <script>
-let timer=null;
+/*
+  Статическая группировка (кластер → дочерние реалмы).
+  Сейчас «anarxy-1» агрегирует «lobby». Позже можно хранить это в БД.
+*/
+const STATIC_CLUSTERS = {
+  "anarxy-1": ["lobby"]
+};
+// куда вести по клику на кластер (по умолчанию — первый дочерний)
+const CLUSTER_DEFAULT_TARGET = {
+  "anarxy-1": "lobby"
+};
 
-function render(data){
-  const grid = document.getElementById("grid");
-  const empty = document.getElementById("empty");
-  grid.innerHTML = "";
-  const q = (document.getElementById("q").value||"").toLowerCase().trim();
+function badgeHtml(isOnline, text){
+  return `<span class="badge badge-cap ${isOnline?'bg-success':'bg-secondary'}">${text || (isOnline?'online':'offline')}</span>`;
+}
 
-  const entries = Object.entries(data).filter(([realm]) => realm.toLowerCase().includes(q));
-  if(entries.length===0){ empty.classList.remove("d-none"); return; }
-  empty.classList.add("d-none");
+function tileHtml({cap, title, href, onlineCount=0, subtext="", subs=[]}){
+  const isOnline = (onlineCount|0) > 0;
+  const subsHtml = subs.length ? `<div class="subs">${subs.map(s=>`<span class="pill">${s}</span>`).join("")}</div>` : "";
+  return `
+    <a class="tile text-decoration-none text-reset" href="${href}">
+      <div class="cap">${cap}</div>
+      <div class="row2">
+        <div class="h5 m-0">${title}</div>
+        ${badgeHtml(isOnline)}
+      </div>
+      ${subsHtml || (subtext ? `<div class="small text-secondary">${subtext}</div>` : "")}
+      <div class="small text-secondary d-flex align-items-center gap-1">
+        ${onlineCount|0} plugin(s) connected
+        <i class="bi bi-arrow-right-short arrow ms-auto"></i>
+      </div>
+    </a>
+  `;
+}
 
-  for(const [realm,count] of entries){
-    const col = document.createElement("div"); col.className="col-12 col-sm-6 col-lg-4";
-    col.innerHTML = `
-      <div class="card glass gs-card h-100">
-        <div class="card-body d-flex flex-column">
-          <div class="d-flex justify-content-between align-items-center">
-            <h5 class="card-title mb-0">${realm}</h5>
-            <span class="badge badge-cap ${count>0?'bg-success':'bg-secondary'}">${count} plugin(s)</span>
-          </div>
-          <p class="mt-2 mb-3 text-secondary small">Мониторинг, игроки, TPS, консоль.</p>
-          <div class="mt-auto d-flex gap-2">
-            <a class="btn btn-sm btn-primary" href="/admin/gameservers/${encodeURIComponent(realm)}">Открыть</a>
-            <a class="btn btn-sm btn-outline-light" href="#" onclick="stats('${realm}');return false;">Проверить</a>
-          </div>
-        </div>
-      </div>`;
-    grid.appendChild(col);
+async function loadList(){
+  const box = document.getElementById('list');
+  box.innerHTML = '';
+
+  let payload = {};
+  try{
+    const r = await fetch('/admin/gameservers/api/list',{cache:'no-store'});
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'bridge unavailable');
+    payload = j.data || {};
+  }catch(e){
+    // даже если bridge недоступен — покажем статический кластер как offline
+    payload = payload || {};
+  }
+
+  // --- Сначала рисуем статические кластеры ---
+  for(const clusterName of Object.keys(STATIC_CLUSTERS)){
+    const children = STATIC_CLUSTERS[clusterName] || [];
+    // агрегируем статус: сумма подключенных плагинов у дочерних реалмов
+    const agg = children.reduce((acc, r)=>acc + (payload[r]||0), 0);
+    const target = CLUSTER_DEFAULT_TARGET[clusterName] || children[0] || null;
+    const href = target ? `/admin/gameservers/${encodeURIComponent(target)}` : '#';
+    const subs = children; // покажем список дочерних под названием кластера
+    box.insertAdjacentHTML('beforeend', tileHtml({
+      cap: 'Cluster',
+      title: clusterName,
+      href,
+      onlineCount: agg,
+      subtext: target ? `opens: ${target}` : '',
+      subs
+    }));
+  }
+
+  // --- Затем обычные реалмы, исключая те, что попали в кластеры ---
+  const clusteredChildren = new Set(Object.values(STATIC_CLUSTERS).flat());
+  const realms = Object.keys(payload).filter(k => !clusteredChildren.has(k)).sort((a,b)=>a.localeCompare(b));
+  if (realms.length === 0 && Object.keys(STATIC_CLUSTERS).length === 0){
+    box.insertAdjacentHTML('beforeend', `<div class="text-secondary">Нет доступных реалмов</div>`);
+  }
+  for(const k of realms){
+    const count = payload[k] || 0;
+    box.insertAdjacentHTML('beforeend', tileHtml({
+      cap: 'Realm',
+      title: k,
+      href: `/admin/gameservers/${encodeURIComponent(k)}`,
+      onlineCount: count,
+      subtext: ''
+    }));
   }
 }
 
-async function load(){
-  const r = await fetch("/admin/gameservers/api/list");
-  const j = await r.json();
-  render(j.ok ? (j.data||{}) : {});
-}
-
-async function stats(realm){
-  const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`);
-  const j = await r.json();
-  if(!j.ok){ alert(j.error||"error"); return; }
-  const p = j.data||{};
-  alert(`Realm: ${realm}\nTPS: ${(p.tps||[]).join(", ")}\nMSPT: ${p.mspt}\nOnline: ${p.online}`);
-}
-
-document.getElementById("refresh").addEventListener("click", load);
-document.getElementById("q").addEventListener("input", load);
-document.getElementById("autorefresh").addEventListener("change", (e)=>{
-  clearInterval(timer);
-  if(e.target.checked) timer=setInterval(load, 5000);
-});
-load(); timer=setInterval(load, 5000);
+document.getElementById('refresh').addEventListener('click', loadList);
+loadList();
 </script>
 {% endblock %}

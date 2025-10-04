@@ -1,5 +1,7 @@
-# bridge.py
+# bridge/bridge.py
 # pip install websockets
+from __future__ import annotations
+
 import asyncio
 import json
 import argparse
@@ -7,6 +9,7 @@ import os
 from urllib.parse import urlparse, parse_qs
 
 import websockets
+from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 PLUGINS: dict[str, set] = {}   # realm -> set(ws)
 ADMINS: set = set()            # admin connections
@@ -15,8 +18,8 @@ ADMINS: set = set()            # admin connections
 # ------------------ helpers ------------------
 
 def _extract_token(ws, path: str) -> str:
-    """Достаём токен из Authorization/X-Auth-Token/query ?token=."""
-    h = ws.request_headers  # case-insensitive CIMultiDict
+    """Достаём токен из Authorization / X-Auth-Token / query ?token=."""
+    h = ws.request_headers  # case-insensitive
     auth = h.get("Authorization") or h.get("authorization") or ""
     token = ""
     if auth:
@@ -55,9 +58,13 @@ def realm_has_plugins(realm: str) -> bool:
 async def route_to_realm(realm: str, msg: dict):
     if not realm_has_plugins(realm):
         print(f"[bridge] NO PLUGIN for realm='{realm}', drop: {msg.get('type')}")
-        await broadcast_admin({"type": "bridge.warn", "payload": {
-            "message": f"No plugin online for realm '{realm}'", "request": msg}})
+        await broadcast_admin({
+            "type": "bridge.warn",
+            "payload": {"message": f"No plugin online for realm '{realm}'", "request": msg}
+        })
         return
+    t = msg.get("type")
+    print(f"[bridge] ROUTE {t} -> realm='{realm}'")
     data = json.dumps(msg, ensure_ascii=False)
     dead = []
     for ws in list(PLUGINS[realm]):
@@ -108,27 +115,30 @@ async def handler(ws, path, token_required: str):
                 await process_admin(ws, msg)
 
         # основной цикл
-        async for raw in ws:
-            try:
-                obj = json.loads(raw)
-            except Exception:
-                print("[bridge] bad json:", raw)
-                continue
+        try:
+            async for raw in ws:
+                try:
+                    obj = json.loads(raw)
+                except Exception:
+                    print("[bridge] bad json:", raw)
+                    continue
 
-            if role == "plugin":
-                t = obj.get("type")
-                print(f"[bridge] <- {t} from {realm}")
-                if t in ("console.result", "stats.report", "maintenance.status", "bridge.log"):
-                    # для наглядности распечатаем полезную нагрузку
-                    try:
-                        print(json.dumps(obj.get("payload", {}), ensure_ascii=False, indent=2))
-                    except Exception:
-                        pass
-                    await broadcast_admin(obj)
+                if role == "plugin":
+                    t = obj.get("type")
+                    print(f"[bridge] <- {t} from {realm}")
+                    if t in ("console.result", "stats.report", "maintenance.status", "bridge.log"):
+                        try:
+                            print(json.dumps(obj.get("payload", {}), ensure_ascii=False, indent=2))
+                        except Exception:
+                            pass
+                        await broadcast_admin(obj)
+                    else:
+                        await broadcast_admin({"type": "bridge.echo", "payload": obj})
                 else:
-                    await broadcast_admin({"type": "bridge.echo", "payload": obj})
-            else:
-                await process_admin(ws, obj)
+                    await process_admin(ws, obj)
+        except (ConnectionClosedOK, ConnectionClosedError):
+            # штатное/тихое закрытие клиентом — без трейсбека
+            pass
 
     finally:
         if role == "plugin" and realm:
@@ -181,9 +191,15 @@ async def repl(uri, token):
                     await ws.send(json.dumps({"type": "stats.query", "realm": realm})); continue
                 if line.startswith("maint "):
                     _, realm, state, *msg = line.split(" ")
-                    await ws.send(json.dumps({"type": "maintenance.set", "realm": realm,
-                                              "payload": {"realm": realm, "enabled": state.lower() == "on",
-                                                          "message": " ".join(msg)}})); continue
+                    await ws.send(json.dumps({
+                        "type": "maintenance.set",
+                        "realm": realm,
+                        "payload": {
+                            "realm": realm,
+                            "enabled": state.lower() == "on",
+                            "message": " ".join(msg)
+                        }
+                    })); continue
                 print("unknown command")
         await asyncio.gather(reader(), writer())
 

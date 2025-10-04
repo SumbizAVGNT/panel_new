@@ -1,17 +1,35 @@
-# app/routes/admin/gameservers.py
 from __future__ import annotations
 
-from flask import Blueprint, render_template, jsonify, request, redirect, url_for
-from app.decorators import login_required
-from app.modules.bridge_client import bridge_list, stats_query, console_exec
+import os
+import io
+import json
+import base64
+import asyncio
+import logging
+import threading
+from functools import lru_cache
+from queue import Queue, Empty
+from typing import Optional
 
-# корневой админский блюпринт
+import requests
+import websockets
+from PIL import Image
+from flask import (
+    Blueprint, render_template, jsonify, request,
+    send_file, current_app
+)
+
+from ...decorators import login_required
+from ...modules.bridge_client import (
+    bridge_list, stats_query, console_exec,
+    maintenance_set, maintenance_whitelist,
+)
 from . import admin_bp
 
-# -------- вложенный блюпринт под /admin/gameservers --------
 bp = Blueprint("gameservers", __name__, url_prefix="/gameservers")
 
-# HTML
+# ---------- HTML ----------
+
 @bp.route("/")
 @login_required
 def index():
@@ -22,27 +40,34 @@ def index():
 def realm_page(realm: str):
     return render_template("admin/gameservers/section.html", realm=realm)
 
-# API
+# ---------- API: list/stats/console ----------
+
 @bp.route("/api/list")
 @login_required
 def api_list():
     try:
         data = bridge_list()
+        if data.get("type") != "bridge.list.result":
+            return jsonify({"ok": False, "error": data.get("error") or "bridge unavailable"}), 502
         return jsonify({"ok": True, "data": data.get("payload", {})})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("bridge_list failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
 
 @bp.route("/api/stats")
 @login_required
 def api_stats():
-    realm = request.args.get("realm", "").strip()
+    realm = (request.args.get("realm") or "").strip()
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
     try:
         data = stats_query(realm)
+        if data.get("type") == "bridge.error":
+            return jsonify({"ok": False, "error": data.get("error") or "bridge error"}), 502
         return jsonify({"ok": True, "data": data.get("payload") or data})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("stats_query failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
 
 @bp.route("/api/console", methods=["POST"])
 @login_required
@@ -56,15 +81,222 @@ def api_console():
         data = console_exec(realm, cmd)
         return jsonify({"ok": True, "data": data})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("console_exec failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
 
-# ------------- ВАЖНО: регистрируем сначала под-блюпринт -------------
+# ---------- API: maintenance / whitelist ----------
+
+@bp.route("/api/maintenance", methods=["POST"])
+@login_required
+def api_maintenance_toggle():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    enabled = bool(j.get("enabled"))
+    kick_message = (j.get("kickMessage") or j.get("message") or "").strip()
+    if not realm:
+        return jsonify({"ok": False, "error": "realm required"}), 400
+    try:
+        ok = maintenance_set(realm, enabled, kick_message)
+        if not ok:
+            return jsonify({"ok": False, "error": "bridge send failed"}), 502
+        return jsonify({"ok": True})
+    except Exception as e:
+        current_app.logger.exception("maintenance_set failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@bp.route("/api/maintenance/whitelist", methods=["POST"])
+@login_required
+def api_maintenance_whitelist():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    op = (j.get("op") or "").strip().lower()
+    player = (j.get("player") or "").strip()
+    if not realm or op not in ("add", "remove") or not player:
+        return jsonify({"ok": False, "error": "realm, op(add|remove) and player required"}), 400
+    try:
+        ok = maintenance_whitelist(realm, op, player)
+        if not ok:
+            return jsonify({"ok": False, "error": "bridge send failed"}), 502
+        return jsonify({"ok": True})
+    except Exception as e:
+        current_app.logger.exception("maintenance_whitelist failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+# ---------- Player head proxy ----------
+
+REQ_TIMEOUT = (4, 6)
+MOJANG_UUID_URL    = "https://api.mojang.com/users/profiles/minecraft/{name}"
+MOJANG_PROFILE_URL = "https://sessionserver.mojang.com/session/minecraft/profile/{uuid}"
+CRAFATAR_AVATAR    = "https://crafatar.com/avatars/{uuid}?size=32&overlay"
+CRAFATAR_SKIN      = "https://crafatar.com/skins/{uuid}"
+
+def _http_get(url: str):
+    headers = {"User-Agent": "MoonReinPanel/1.0 (+bridge)"}
+    return requests.get(url, headers=headers, timeout=REQ_TIMEOUT)
+
+@lru_cache(maxsize=512)
+def _cached_uuid_for_name(name: str) -> Optional[str]:
+    r = _http_get(MOJANG_UUID_URL.format(name=name))
+    if r.status_code == 204:
+        return None
+    r.raise_for_status()
+    return (r.json().get("id") or "").strip() or None
+
+@lru_cache(maxsize=1024)
+def _cached_skin_url_for_uuid(uuid_nodash: str) -> Optional[str]:
+    r = _http_get(MOJANG_PROFILE_URL.format(uuid=uuid_nodash))
+    if r.status_code == 204:
+        return None
+    r.raise_for_status()
+    data = r.json()
+    prop = next((p for p in data.get("properties", []) if p.get("name") == "textures"), None)
+    if not prop:
+        return None
+    decoded = json.loads(base64.b64decode(prop["value"]).decode("utf-8"))
+    return decoded.get("textures", {}).get("SKIN", {}).get("url")
+
+def _compose_head_png_from_skin_url(url: str) -> io.BytesIO:
+    r = _http_get(url); r.raise_for_status()
+    img = Image.open(io.BytesIO(r.content)).convert("RGBA")
+    face = img.crop((8,8,16,16)).resize((32,32), Image.NEAREST)
+    try:
+        hat = img.crop((40,8,48,16)).resize((32,32), Image.NEAREST)
+        face.alpha_composite(hat)
+    except Exception:
+        pass
+    buf = io.BytesIO(); face.save(buf, format="PNG"); buf.seek(0); return buf
+
+def _compose_head_png_from_crafatar(uuid_nodash: str) -> io.BytesIO:
+    r = _http_get(CRAFATAR_AVATAR.format(uuid=uuid_nodash))
+    if r.ok: return io.BytesIO(r.content)
+    r2 = _http_get(CRAFATAR_SKIN.format(uuid=uuid_nodash)); r2.raise_for_status()
+    img = Image.open(io.BytesIO(r2.content)).convert("RGBA")
+    face = img.crop((8,8,16,16)).resize((32,32), Image.NEAREST)
+    try:
+        hat = img.crop((40,8,48,16)).resize((32,32), Image.NEAREST)
+        face.alpha_composite(hat)
+    except Exception:
+        pass
+    buf = io.BytesIO(); face.save(buf, format="PNG"); buf.seek(0); return buf
+
+@bp.route("/api/player-head")
+@login_required
+def api_player_head():
+    name = (request.args.get("name") or "").strip()
+    uuid = (request.args.get("uuid") or "").replace("-", "").strip()
+    log = current_app.logger if current_app else logging.getLogger(__name__)
+    if uuid and len(uuid) != 32:
+        uuid = uuid.replace("-", "")
+    if uuid and len(uuid) != 32:
+        uuid = ""
+    try:
+        if not uuid and name:
+            uuid = _cached_uuid_for_name(name) or ""
+        if uuid:
+            skin_url = _cached_skin_url_for_uuid(uuid)
+            if skin_url:
+                buf = _compose_head_png_from_skin_url(skin_url)
+                return send_file(buf, mimetype="image/png", max_age=600)
+    except Exception as e:
+        log.warning("player-head Mojang fail (name=%s uuid=%s): %s", name, uuid, e)
+    try:
+        if uuid:
+            buf = _compose_head_png_from_crafatar(uuid)
+            return send_file(buf, mimetype="image/png", max_age=600)
+    except Exception as e:
+        log.warning("player-head Crafatar fail (uuid=%s): %s", uuid, e)
+    img = Image.new("RGBA", (32,32), (60,75,92,255))
+    bio = io.BytesIO(); img.save(bio, format="PNG"); bio.seek(0)
+    return send_file(bio, mimetype="image/png", max_age=120)
+
+# ---------- SSE live console (bridge -> browser) ----------
+
+@bp.route("/api/console/stream")
+@login_required
+def api_console_stream():
+    """
+    SSE-прокси: bridge (WS) -> браузер.
+    Пропускаем кадры console.stream / bridge.log только для указанного realm.
+    """
+    realm = (request.args.get("realm") or "").strip()
+    if not realm:
+        return jsonify({"ok": False, "error": "realm required"}), 400
+
+    BRIDGE_URL = os.getenv("SP_BRIDGE_URL", "ws://127.0.0.1:8765/ws")
+    BRIDGE_TOKEN = os.getenv("SP_TOKEN", "SUPER_SECRET")
+
+    q: Queue = Queue(maxsize=256)
+    STOP = object()
+
+    def worker():
+        async def run():
+            headers = {"Authorization": f"Bearer {BRIDGE_TOKEN}"}
+            try:
+                async with websockets.connect(
+                    BRIDGE_URL, extra_headers=headers, ping_interval=20, ping_timeout=20
+                ) as ws:
+                    # админ-клиент: слушаем и фильтруем
+                    while True:
+                        raw = await ws.recv()
+                        try:
+                            obj = json.loads(raw)
+                        except Exception:
+                            continue
+                        t = obj.get("type")
+                        if t not in ("console.stream", "bridge.log"):
+                            continue
+                        r = obj.get("realm") or (obj.get("payload") or {}).get("realm")
+                        if r != realm:
+                            continue
+                        payload = obj.get("payload") or obj
+                        try:
+                            q.put_nowait(payload)
+                        except Exception:
+                            pass
+            except Exception as e:
+                try:
+                    q.put_nowait({"_err": str(e)})
+                except Exception:
+                    pass
+            finally:
+                try:
+                    q.put_nowait(STOP)
+                except Exception:
+                    pass
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(run())
+        loop.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    def gen():
+        yield "retry: 2000\n\n"
+        try:
+            while True:
+                try:
+                    item = q.get(timeout=20)
+                except Empty:
+                    yield ": keepalive\n\n"
+                    continue
+                if item is STOP:
+                    break
+                if isinstance(item, dict) and "_err" in item:
+                    yield f"event: err\ndata: {json.dumps(item)}\n\n"
+                    continue
+                yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+        except GeneratorExit:
+            pass  # клиент закрыл соединение
+
+    resp = current_app.response_class(gen(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
+# ---------- register ----------
+
 admin_bp.register_blueprint(bp)
-
-# -------- затем объявляем алиасы для обратной совместимости --------
-# Эти алиасы имеют те же пути, но будут добавлены ПОСЛЕ основных правил,
-# поэтому на прямой заход URL попадёт в основные view, а старые endpoint-имена
-# будут продолжать строить URL без 404.
 
 @admin_bp.get("/gameservers", endpoint="gameservers_index")
 @login_required

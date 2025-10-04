@@ -1,0 +1,122 @@
+{% extends "layout/base.html" %}
+{% block title %}Accounts{% endblock %}
+
+{% block content %}
+<style>
+.card.glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px)}
+.table>:not(caption)>*>*{background:transparent}
+.searchbar{display:flex;gap:8px;align-items:center}
+.searchbar .form-control{background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);color:#e5e7eb}
+.badge-role{background:#0b1220;border:1px solid rgba(148,163,184,.24);padding:.25rem .5rem;border-radius:999px}
+.player-head{width:22px;height:22px;border-radius:4px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220}
+.hint{color:#9aa4b2;font-size:.9rem}
+</style>
+
+<div class="container-xxl py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="m-0">Accounts</h3>
+    <a href="/admin/gameservers" class="btn btn-sm btn-outline-light">Game Servers</a>
+  </div>
+
+  <div class="card glass mb-3">
+    <div class="card-body">
+      <div class="searchbar">
+        <div class="input-group">
+          <span class="input-group-text bg-transparent text-secondary"><i class="bi bi-search"></i></span>
+          <input id="q" class="form-control" placeholder="Ник / UUID / email / ip (prefix)">
+        </div>
+        <button id="btnSearch" class="btn btn-primary">Поиск</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card glass">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0">
+          <thead>
+          <tr>
+            <th style="width:26%">Ник</th>
+            <th style="width:12%">Роль</th>
+            <th style="width:28%">UUID</th>
+            <th style="width:12%">Email</th>
+            <th style="width:10%">IP</th>
+            <th style="width:12%">Reg</th>
+            <th style="width:12%">Last</th>
+            <th style="width:10%">Premium</th>
+          </tr>
+          </thead>
+          <tbody id="rows">
+          <tr><td colspan="8" class="text-secondary">Введите ник и нажмите «Поиск»</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-2 hint">Автозагрузка показывает последние сессии. Поиск поддерживает ник, uuid (с дефисами и без), email и ip.</div>
+</div>
+
+<script>
+const rows = document.getElementById('rows');
+const fmtTime = ms => {
+  if (ms == null) return "—";
+  try {
+    const d = new Date(Number(ms));
+    const z = n => String(n).padStart(2,'0');
+    return `${z(d.getDate())}.${z(d.getMonth()+1)}.${d.getFullYear()}, ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
+  } catch { return "—"; }
+};
+const skin = (name, uuid) => {
+  const u = (uuid||'').replaceAll('-', '');
+  const qs = u ? `uuid=${u}` : `name=${encodeURIComponent(name||'')}`;
+  return `/admin/gameservers/api/player-head?${qs}`;
+};
+function render(data){
+  if(!data || !data.length){
+    rows.innerHTML = `<tr><td colspan="8" class="text-secondary">ничего не найдено</td></tr>`;
+    return;
+  }
+  rows.innerHTML = data.map(r=>{
+    const nm  = r.name || r.player_name || '—';
+    const uid = r.uuid || r.unique_id || '';
+    const em  = r.email ?? '—';
+    const ip  = r.ip || r.lastip || '—';
+    const reg = fmtTime(r.regdate);
+    const last= fmtTime(r.lastlogin);
+    const prem= (r.premium===1 || r.premium===true) ? "yes" : "—";
+    const role= r.role || 'default';
+    return `<tr>
+      <td><img class="player-head me-2" src="${skin(nm, uid)}" alt=""> ${nm}</td>
+      <td><span class="badge-role">${role}</span></td>
+      <td class="small">${uid || '—'}</td>
+      <td>${em}</td>
+      <td>${ip}</td>
+      <td>${reg}</td>
+      <td>${last}</td>
+      <td>${prem}</td>
+    </tr>`;
+  }).join('');
+}
+async function fetchData(q=""){
+  const url = new URL("/admin/accounts/api/search", location.origin);
+  if(q) url.searchParams.set("q", q);
+  try{
+    const res = await fetch(url, {cache:"no-store"});
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || "error");
+    render(j.data || []);
+  }catch(e){
+    rows.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message}</td></tr>`;
+  }
+}
+document.getElementById('btnSearch').addEventListener('click', ()=>{
+  fetchData(document.getElementById('q').value.trim());
+});
+document.getElementById('q').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter') document.getElementById('btnSearch').click();
+});
+/* авто-подгрузка «последних» на входе */
+fetchData();
+</script>
+{% endblock %}

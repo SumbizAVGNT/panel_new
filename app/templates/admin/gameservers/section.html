@@ -1,71 +1,187 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ realm }} — Game Server{% endblock %}
+
 {% block content %}
 <style>
-.gs-layout{display:grid;grid-template-columns: 300px 1fr; gap:16px}
-@media (max-width: 992px){ .gs-layout{grid-template-columns: 1fr} }
-.gs-side{position:sticky; top:76px; align-self:start}
-.gs-side .nav-link{border:1px solid rgba(148,163,184,.18); border-radius:10px; margin-bottom:8px}
-.gs-side .nav-link.active{background:#0f172a}
-.tile{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;border:1px solid rgba(148,163,184,.18);background:rgba(13,17,23,.55)}
-.tile .tcap{font-size:.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+.container-xxl.gs-scope{
+  background:
+    radial-gradient(700px 360px at 50% -12%, rgba(148,163,184,.10), transparent 70%),
+    linear-gradient(180deg, rgba(13,17,23,.55), rgba(13,17,23,.42));
+  border:1px solid rgba(148,163,184,.14);
+  border-radius:18px;
+}
+.gs-layout{display:grid;grid-template-columns:300px 1fr;gap:16px}
+@media (max-width:992px){.gs-layout{grid-template-columns:1fr}}
+.card.glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px)}
+.table>:not(caption)>*>*{background:transparent}
+
+/* side */
+.gs-side{position:sticky;top:76px;align-self:start}
+.gs-side .nav-link{border:1px solid rgba(148,163,184,.18);border-radius:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.gs-side .nav-link .dot{width:6px;height:6px;border-radius:999px;background:rgba(148,163,184,.5)}
+.gs-side .nav-link.active{background:#0f172a;box-shadow:inset 0 0 0 1px rgba(148,163,184,.28)}
+.gs-side .nav-link.active .dot{background:#22c55e}
+
+/* tiles */
+.tile{position:relative;isolation:isolate;display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(13,17,23,.55)}
+.tile[data-click]{cursor:pointer}
+.tile:before{content:"";position:absolute;inset:-1px;border-radius:14px;z-index:-1;background:
+  radial-gradient(260px 140px at 0% 0%, rgba(56,189,248,.20), transparent 70%),
+  radial-gradient(260px 140px at 100% 100%, rgba(34,197,94,.12), transparent 70%);opacity:.28;transition:.2s}
+.tile:hover:before{opacity:.5}
+.tcap{font-size:.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+.kpi .value{font-size:1.25rem}
 .badge-cap{padding:.35rem .6rem;border-radius:999px}
-pre.console{max-height:260px;overflow:auto;background:rgba(15,23,42,.4);border-radius:10px;padding:10px;border:1px solid rgba(148,163,184,.18)}
+
+/* maintenance card */
+.maint-card .head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.stat-dot{display:inline-flex;align-items:center;gap:6px;font-size:.86rem}
+.stat-dot .d{width:8px;height:8px;border-radius:999px;background:#475569}
+.stat-dot.m .d{background:#f59e0b}
+.stat-dot.o .d{background:#22c55e}
+.ctrlbar{display:flex;flex-wrap:wrap;gap:10px}
+.ctrl{display:flex;align-items:center;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);border-radius:12px;overflow:hidden}
+.ctrl .label{display:flex;align-items:center;gap:6px;padding:0 10px;color:#cbd5e1;border-right:1px solid rgba(148,163,184,.18)}
+.ctrl input{border:0;background:transparent;color:#e5e7eb;outline:0;width:280px;min-width:160px}
+.ctrl .btn{border:0}
+.ctrl .btn-start{background:#f59e0b;color:#111827}
+.ctrl .btn-stop{background:transparent;border-left:1px solid rgba(148,163,184,.18);color:#e5e7eb}
+.ctrl .btn:hover{filter:brightness(1.05)}
+.ctrl .btn:active{transform:translateY(1px)}
+.ctrl .btn, .ctrl .label, .ctrl input{height:36px}
+.ctrl.wl input{width:200px}
+
+/* console */
+.console-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.switchx{display:flex;align-items:center;gap:6px;font-size:.9rem}
+pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-radius:10px;padding:10px;border:1px solid rgba(148,163,184,.18);white-space:pre-wrap}
+
+/* players */
+.player-head{width:32px;height:32px;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.5);image-rendering:pixelated}
+.player-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px}
+.player-row:hover{background:rgba(148,163,184,.06)}
+
+/* skeletons + toasts */
+.skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
+.skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg, transparent, rgba(255,255,255,.07), transparent);transform:translateX(-100%);animation:shimmer 1.2s infinite}
+@keyframes shimmer{100%{transform:translateX(100%)}}
+#toasts{position:fixed;right:16px;bottom:16px;z-index:1080;display:flex;flex-direction:column;gap:8px}
+.toastx{background:rgba(13,17,23,.96);border:1px solid rgba(148,163,184,.28);color:#e2e8f0;padding:10px 12px;border-radius:12px}
+.toastx.ok{border-color:rgba(34,197,94,.6)}
+.toastx.err{border-color:rgba(239,68,68,.6)}
 </style>
 
-<div class="container-xxl py-4" data-realm="{{ realm }}">
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <div>
-      <h2 class="m-0">{{ realm|capitalize }}</h2>
-      <div class="text-secondary small">Minecraft (Paper) · realm: {{ realm }}</div>
+<div class="container-xxl gs-scope py-4" data-realm="{{ realm }}">
+  <!-- header -->
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-3">
+      <div class="rounded-circle" style="width:42px;height:42px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6)">
+        <i class="bi bi-hdd-network text-info"></i>
+      </div>
+      <div>
+        <h2 class="m-0">{{ realm|capitalize }}</h2>
+        <div class="text-secondary small">Minecraft (Paper) · realm: <code class="text-light">{{ realm }}</code></div>
+      </div>
     </div>
     <div class="d-flex align-items-center gap-2">
-      <span id="status-badge" class="badge badge-cap bg-secondary">unknown</span>
+      <span id="status-badge" class="badge badge-cap bg-secondary"><i class="bi bi-activity me-1"></i>unknown</span>
       <div class="form-check form-switch ms-2">
-        <input class="form-check-input" type="checkbox" id="autorefresh" checked>
+        <input class="form-check-input" type="checkbox" id="autorefresh">
         <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
       </div>
-      <button id="refresh" class="btn btn-sm btn-outline-secondary">Обновить</button>
-      <a href="/admin/gameservers" class="btn btn-sm btn-outline-light">Назад</a>
+      <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
+      <a href="/admin/gameservers" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left"></i> Назад</a>
     </div>
   </div>
 
   <div class="gs-layout">
-    <!-- Sidebar -->
-    <div class="gs-side">
+    <!-- sidebar -->
+    <aside class="gs-side">
       <div class="card glass p-2">
-        {% set sections = [
-          ('overview','Overview'),
-          ('players','Players'),
-          ('worlds','Worlds'),
-          ('console','Console')
-        ] %}
+        {% set sections = [('overview','Overview'),('maintenance','Maintenance'),('players','Players'),('worlds','Worlds'),('console','Console')] %}
         {% for key, title in sections %}
-          <a class="nav-link px-3 py-2" href="#{{ key }}">{{ title }}</a>
+          <a class="nav-link px-3 py-2" href="#{{ key }}"><span class="dot"></span>{{ title }}</a>
         {% endfor %}
+        <!-- external section: Accounts -->
+        <a class="nav-link px-3 py-2" href="/admin/accounts">
+          <span class="dot"></span>Accounts
+        </a>
       </div>
-    </div>
+    </aside>
 
-    <!-- Main -->
-    <div class="gs-main">
-      <!-- Overview -->
-      <div id="overview" class="card glass mb-3">
+    <!-- main -->
+    <main class="gs-main">
+
+      <!-- overview -->
+      <section id="overview" class="card glass mb-3">
         <div class="card-body">
           <div class="row g-3">
-            <div class="col-6 col-md-3"><div class="tile"><div class="tcap">MSPT</div><div id="t-mspt" class="fs-5">—</div></div></div>
-            <div class="col-6 col-md-3"><div class="tile"><div class="tcap">TPS (avg)</div><div id="t-tps" class="fs-5">—</div></div></div>
-            <div class="col-6 col-md-3"><div class="tile"><div class="tcap">Online</div><div id="t-online" class="fs-5">—</div></div></div>
-            <div class="col-6 col-md-3"><div class="tile"><div class="tcap">Players</div><div id="t-players" class="fs-6 text-light">—</div></div></div>
+            <div class="col-6 col-md-3">
+              <div class="tile">
+                <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-speedometer2"></i> MSPT</div>
+                <div class="kpi d-flex align-items-baseline gap-2">
+                  <div id="t-mspt" class="value skel" style="height:20px;width:64px"></div>
+                  <div class="text-secondary small">ms</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="tile">
+                <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-graph-up-arrow"></i> TPS (avg)</div>
+                <div id="t-tps" class="value skel" style="height:20px;width:64px"></div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <button id="players-tile" class="tile w-100 text-start" type="button" data-click>
+                <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-people"></i> Players</div>
+                <div id="t-players" class="value skel text-light" style="height:20px;width:80%"></div>
+                <div class="small text-secondary">open list ⟶</div>
+              </button>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="tile">
+                <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-person-check"></i> Online</div>
+                <div id="t-online" class="value skel" style="height:20px;width:64px"></div>
+              </div>
+            </div>
           </div>
+
           <div class="mt-3">
-            <canvas id="tpsChart" height="80"></canvas>
-            <div class="form-text">Мини-график последних значений TPS (обновляется каждые N сек).</div>
+            <canvas id="tpsChart" height="92"></canvas>
+            <div class="form-text">Мини-график последних значений TPS.</div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Players -->
-      <div id="players" class="card glass mb-3">
+      <!-- maintenance -->
+      <section id="maintenance" class="card glass mb-3 maint-card">
+        <div class="card-body">
+          <div class="head">
+            <h5 class="m-0 d-flex align-items-center gap-2">
+              <i class="bi bi-cone-striped text-warning"></i> Maintenance
+            </h5>
+            <div id="maint-state" class="stat-dot o"><span class="d"></span><span>state: online</span></div>
+          </div>
+
+          <div class="ctrlbar">
+            <div class="ctrl">
+              <div class="label"><i class="bi bi-tools"></i> Technical work</div>
+              <input id="maint-msg" placeholder="Kick message (optional)">
+              <button id="maint-on"  class="btn btn-start"><i class="bi bi-play-fill me-1"></i>Start</button>
+              <button id="maint-off" class="btn btn-stop"><i class="bi bi-stop-fill me-1"></i>Stop</button>
+            </div>
+            <div class="ctrl wl">
+              <div class="label"><i class="bi bi-shield-check"></i> Whitelist</div>
+              <input id="wl-player" placeholder="Player">
+              <button id="wl-add"    class="btn btn-stop"><i class="bi bi-plus-lg me-1"></i>Add</button>
+              <button id="wl-remove" class="btn btn-stop" style="color:#fca5a5"><i class="bi bi-dash-lg me-1"></i>Remove</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- players -->
+      <section id="players" class="card glass mb-3">
         <div class="card-body">
           <h5 class="mb-3">Игроки</h5>
           <div class="table-responsive">
@@ -75,10 +191,10 @@ pre.console{max-height:260px;overflow:auto;background:rgba(15,23,42,.4);border-r
             </table>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Worlds -->
-      <div id="worlds" class="card glass mb-3">
+      <!-- worlds -->
+      <section id="worlds" class="card glass mb-3">
         <div class="card-body">
           <h5 class="mb-3">Миры</h5>
           <div class="table-responsive">
@@ -88,29 +204,77 @@ pre.console{max-height:260px;overflow:auto;background:rgba(15,23,42,.4);border-r
             </table>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Console -->
-      <div id="console" class="card glass">
+      <!-- console -->
+      <section id="console" class="card glass">
         <div class="card-body">
           <h5 class="mb-3">Консоль</h5>
-          <div class="input-group mb-2">
-            <input id="cmd" class="form-control" placeholder="say Hello from MoonRein">
-            <button id="send" class="btn btn-primary">Отправить</button>
+
+          <div class="console-toolbar">
+            <div class="switchx">
+              <input class="form-check-input" type="checkbox" id="live-toggle" checked>
+              <label for="live-toggle" class="form-check-label">Live log</label>
+            </div>
+            <div class="switchx">
+              <input class="form-check-input" type="checkbox" id="auto-scroll" checked>
+              <label for="auto-scroll" class="form-check-label">Autoscroll</label>
+            </div>
+            <button id="clear-log" class="btn btn-sm btn-outline-light"><i class="bi bi-eraser"></i> Clear</button>
           </div>
-          <div id="console-status" class="small text-muted mb-2"></div>
-          <pre class="console" id="console-log">// live-лог можно подключить позже (SSE/WS)</pre>
+
+          <pre class="console" id="console-log">// connecting…</pre>
+
+          <div class="input-group mt-2">
+            <input id="cmd" class="form-control" placeholder="say Hello from MoonRein">
+            <button id="send" class="btn btn-primary"><i class="bi bi-send"></i> Отправить</button>
+          </div>
+          <div id="console-status" class="small text-muted mt-1"></div>
         </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- players modal -->
+<div class="modal fade" id="playersModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h5 class="modal-title">Players · <code>{{ realm }}</code></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="players-list" class="vstack gap-1">
+          <div class="text-secondary">Loading…</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <small class="text-secondary">Скины: Mojang (textures.minecraft.net) / Crafatar</small>
+        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
 </div>
 
+<div id="toasts" aria-live="polite" aria-atomic="true"></div>
+
 <script>
 const realm = document.querySelector("[data-realm]").dataset.realm;
-let tpsSeries = [];  // для мини-графика
-let timer=null;
+const LS_AUTO_KEY = `gs_auto_${realm}`;
+let tpsSeries = [], timer = null, lastStats = null;
 
+/* toasts */
+function toast(msg, ok=true){
+  const wrap = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toastx ' + (ok?'ok':'err');
+  el.innerHTML = `<div class="small">${msg}</div>`;
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2200);
+}
+
+/* status */
 function setStatusBadge(state){
   const el = document.getElementById("status-badge");
   el.classList.remove("bg-success","bg-warning","bg-danger","bg-secondary");
@@ -118,51 +282,58 @@ function setStatusBadge(state){
   else if(state==="maintenance") el.classList.add("bg-warning");
   else if(state==="offline") el.classList.add("bg-danger");
   else el.classList.add("bg-secondary");
-  el.textContent = state || "unknown";
+  el.innerHTML = `<i class="bi bi-activity me-1"></i>${state || "unknown"}`;
+
+  const ms = document.getElementById("maint-state");
+  ms.classList.remove("o","m");
+  ms.classList.add(state==="maintenance" ? "m" : "o");
+  ms.querySelector("span:last-child").textContent = `state: ${state}`;
 }
 
+/* sparkline */
 function drawSparkline(canvas, values){
   const ctx = canvas.getContext("2d");
-  const w = canvas.width = canvas.clientWidth;
-  const h = canvas.height = canvas.clientHeight;
+  const w = canvas.width = canvas.clientWidth, h = canvas.height = canvas.clientHeight;
   ctx.clearRect(0,0,w,h);
   if(!values.length) return;
-  const min = Math.min(...values), max = Math.max(...values);
-  const pad = 6;
-  const xi = (i)=> pad + (w-2*pad) * (i/(values.length-1||1));
-  const yi = (v)=> h - pad - (h-2*pad) * ((v - min) / ((max-min)||1));
-  ctx.lineWidth = 2;
-  ctx.beginPath();
+  const min = Math.min(...values), max = Math.max(...values), pad = 6;
+  const xi = i => pad + (w-2*pad) * (i/((values.length-1)||1));
+  const yi = v => h - pad - (h-2*pad) * ((v-min)/((max-min)||1));
+  ctx.lineWidth = 2; ctx.beginPath();
   values.forEach((v,i)=>{ const x=xi(i), y=yi(v); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
   ctx.stroke();
 }
+function unskeleton(){
+  for(const id of ["t-mspt","t-tps","t-players","t-online"]){
+    const el = document.getElementById(id);
+    el.classList.remove('skel'); el.style.removeProperty('width'); el.style.removeProperty('height');
+  }
+}
 
+/* render stats */
 function render(p){
-  // status
+  lastStats = p;
   const online = typeof p.online === "number" ? p.online : (p.players||[]).length;
   const status = (p.tps?.length || online>0) ? "online" : "offline";
   setStatusBadge(status);
 
-  // tiles
   const avgTPS = (p.tps && p.tps.length) ? (p.tps.reduce((a,b)=>a+b,0)/p.tps.length).toFixed(2) : "—";
   document.getElementById("t-mspt").textContent = p.mspt ?? "—";
   document.getElementById("t-tps").textContent  = avgTPS;
   document.getElementById("t-online").textContent = online ?? "—";
   document.getElementById("t-players").textContent = (p.players||[]).map(x=>x.name).join(", ") || "—";
+  unskeleton();
 
-  // series (ограничим до 60 точек)
   const last = (p.tps && p.tps.length) ? p.tps[p.tps.length-1] : null;
   if(last!=null){ tpsSeries.push(last); if(tpsSeries.length>60) tpsSeries.shift(); }
   drawSparkline(document.getElementById("tpsChart"), tpsSeries);
 
-  // players table
   const pt = document.getElementById("tbl-players");
   const players = p.players||[];
   pt.innerHTML = players.length ? players.map(pl=>`
     <tr><td>${pl.name}</td><td class="small">${pl.uuid||""}</td><td>${pl.world||""}</td></tr>
   `).join("") : `<tr><td colspan="3" class="text-secondary">нет данных</td></tr>`;
 
-  // worlds table
   const wt = document.getElementById("tbl-worlds");
   const worlds = p.worlds||[];
   wt.innerHTML = worlds.length ? worlds.map(w=>`
@@ -177,48 +348,138 @@ function render(p){
   `).join("") : `<tr><td colspan="6" class="text-secondary">нет данных</td></tr>`;
 }
 
+/* polling stats */
 async function fetchStats(){
-  const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`);
-  const j = await r.json();
-  if(!j.ok){ setStatusBadge("offline"); return; }
-  render(j.data||{});
+  try{
+    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`, {cache:"no-store"});
+    const j = await r.json();
+    if(!j.ok){ setStatusBadge("offline"); return; }
+    render(j.data||{});
+  }catch(e){ setStatusBadge("offline"); }
 }
 
+/* players modal (render list with heads) */
+function openPlayersModal(){
+  const list = document.getElementById("players-list");
+  list.innerHTML = "";
+  const players = (lastStats?.players)||[];
+  if(players.length===0){
+    list.innerHTML = `<div class="text-secondary">Игроков нет.</div>`;
+  } else {
+    for(const p of players){
+      const row = document.createElement("div");
+      row.className = "player-row";
+      const uuid = (p.uuid||"").replace(/-/g,"");
+      const headSrc = `/admin/gameservers/api/player-head?name=${encodeURIComponent(p.name)}&uuid=${encodeURIComponent(uuid)}`;
+      row.innerHTML = `
+        <img class="player-head" width="32" height="32" src="${headSrc}" alt="">
+        <div class="flex-grow-1">
+          <div class="text-light">${p.name}</div>
+          <div class="small text-secondary">${uuid}${p.world? " · "+p.world : ""}</div>
+        </div>`;
+      list.appendChild(row);
+    }
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('playersModal')).show();
+}
+
+/* console: live via SSE */
+let es=null;
+function appendLine(line){
+  const pre = document.getElementById('console-log');
+  pre.textContent += (pre.textContent?'\n':'') + line;
+  if(document.getElementById('auto-scroll').checked){
+    pre.scrollTop = pre.scrollHeight;
+  }
+}
+function fmtLine(p){
+  const t  = new Date().toLocaleTimeString();
+  const lv = p.level ? `[${p.level}] ` : '';
+  const sc = p.source ? `${p.source}: ` : '';
+  const msg = p.line || p.message || JSON.stringify(p);
+  return `[${t}] ${lv}${sc}${msg}`;
+}
+function startLive(){
+  if(es) return;
+  const url = `/admin/gameservers/api/console/stream?realm=${encodeURIComponent(realm)}`;
+  es = new EventSource(url);
+  es.onmessage = (ev)=>{ try{ appendLine(fmtLine(JSON.parse(ev.data||'{}')));}catch{} };
+  es.addEventListener('err', (ev)=>{ appendLine(`[stream] ${ev.data}`); });
+  es.onerror = ()=>{}; // авто-reconnect от EventSource
+}
+function stopLive(){ try{es?.close();}catch{} es=null; }
+
+/* console: send command */
 async function sendCmd(){
   const cmd = document.getElementById("cmd").value.trim();
   if(!cmd) return;
-  const btn = document.getElementById("send");
-  const st = document.getElementById("console-status");
+  const btn = document.getElementById("send"), st = document.getElementById("console-status");
   btn.disabled = true; st.textContent = "Отправка...";
   try{
-    const r = await fetch("/admin/gameservers/api/console", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({realm, cmd})
-    });
+    const r = await fetch("/admin/gameservers/api/console", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({realm, cmd})});
     const j = await r.json();
     st.textContent = j.ok ? "OK" : (j.error||"error");
-    if(j.ok){
-      const log = document.getElementById("console-log");
-      log.textContent += `\n> ${cmd}`;
-      log.scrollTop = log.scrollHeight;
-      document.getElementById("cmd").value="";
-    }
-  }catch(e){
-    st.textContent = e.message||"network error";
-  }finally{
-    btn.disabled = false;
-  }
+    toast(j.ok ? "Команда отправлена" : (j.error||"Ошибка"), j.ok);
+    if(j.ok){ document.getElementById("cmd").value=""; }
+  }catch(e){ st.textContent = e.message||"network error"; toast(st.textContent, false); }
+  finally{ btn.disabled = false; }
 }
 
+/* maintenance API */
+async function maintToggle(enabled){
+  const msg = document.getElementById("maint-msg").value.trim();
+  const r = await fetch("/admin/gameservers/api/maintenance", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({realm, enabled, kickMessage: msg, message: msg})});
+  const j = await r.json();
+  if (j.ok && enabled) setStatusBadge("maintenance");
+  if (j.ok && !enabled) setStatusBadge("online");
+  toast(j.ok ? (enabled?"Техработы включены":"Техработы отключены") : (j.error||"Ошибка"), j.ok);
+}
+async function wlChange(op){
+  const player = document.getElementById("wl-player").value.trim();
+  if(!player) return;
+  const r = await fetch("/admin/gameservers/api/maintenance/whitelist", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({realm, op, player})});
+  const j = await r.json();
+  toast(j.ok ? `Whitelist: ${op} ${player}` : (j.error||"Ошибка"), j.ok);
+  if (j.ok && op === "add") document.getElementById("wl-player").value = "";
+}
+
+/* sidebar actives */
+const links = Array.from(document.querySelectorAll('.gs-side .nav-link[href^="#"]'));
+const ids = links.map(a => a.getAttribute('href')).filter(Boolean).map(h => h.replace('#',''));
+const obs = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    const id = e.target.id;
+    const link = links.find(a => a.getAttribute('href') === '#' + id);
+    if(link){ e.isIntersecting ? link.classList.add('active') : link.classList.remove('active'); }
+  });
+},{rootMargin:'-40% 0px -50% 0px', threshold:0.01});
+ids.forEach(id => { const el = document.getElementById(id); if(el) obs.observe(el); });
+
+/* binds + persistence */
 document.getElementById("send").addEventListener("click", sendCmd);
+document.getElementById("cmd").addEventListener("keydown", e=>{ if(e.key==="Enter") sendCmd(); });
 document.getElementById("refresh").addEventListener("click", fetchStats);
-document.getElementById("autorefresh").addEventListener("change",(e)=>{
+document.getElementById("players-tile")?.addEventListener("click", openPlayersModal);
+
+document.getElementById("maint-on").addEventListener("click", ()=>maintToggle(true));
+document.getElementById("maint-off").addEventListener("click", ()=>maintToggle(false));
+document.getElementById("wl-add").addEventListener("click", ()=>wlChange("add"));
+document.getElementById("wl-remove").addEventListener("click", ()=>wlChange("remove"));
+
+document.getElementById("live-toggle").addEventListener("change", e=>{ e.target.checked ? startLive() : stopLive(); });
+document.getElementById("clear-log").addEventListener("click", ()=>{ document.getElementById('console-log').textContent=""; });
+
+const autoEl = document.getElementById("autorefresh");
+autoEl.checked = (localStorage.getItem(LS_AUTO_KEY) ?? "1") !== "0";
+autoEl.addEventListener("change", e=>{
   clearInterval(timer);
-  if(e.target.checked) timer=setInterval(fetchStats, 3000);
+  localStorage.setItem(LS_AUTO_KEY, e.target.checked ? "1" : "0");
+  if(e.target.checked) timer = setInterval(fetchStats, 3000);
 });
 
-// первичная загрузка
-fetchStats(); timer=setInterval(fetchStats, 3000);
+/* init */
+fetchStats();
+if(autoEl.checked) timer = setInterval(fetchStats, 3000);
+startLive(); // по умолчанию включён
 </script>
 {% endblock %}
