@@ -5,17 +5,28 @@
 <style>
 .card.glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px)}
 .table>:not(caption)>*>*{background:transparent}
-.searchbar{display:flex;gap:8px;align-items:center}
+.searchbar{display:flex;gap:.5rem;align-items:center}
 .searchbar .form-control{background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);color:#e5e7eb}
 .badge-role{background:#0b1220;border:1px solid rgba(148,163,184,.24);padding:.25rem .5rem;border-radius:999px}
 .player-head{width:22px;height:22px;border-radius:4px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220}
 .hint{color:#9aa4b2;font-size:.9rem}
+.cursor-pointer{cursor:pointer}
+.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%}
+.status-online{background:#22c55e;box-shadow:0 0 10px #22c55e80}
+.status-offline{background:#ef4444}
+.status-unknown{background:#9aa4b2}
+.sticky-th th{position:sticky;top:0;background:rgba(13,17,23,.9);backdrop-filter:blur(4px)}
+.skeleton{background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12),rgba(255,255,255,.06));background-size:200% 100%;animation:s 1.2s infinite}
+@keyframes s{0%{background-position:200% 0}100%{background-position:-200% 0}}
 </style>
 
 <div class="container-xxl py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h3 class="m-0">Accounts</h3>
-    <a href="/admin/gameservers" class="btn btn-sm btn-outline-light">Game Servers</a>
+    <div class="d-flex align-items-center gap-2">
+      <span id="count" class="text-secondary small">—</span>
+      <a href="/admin/gameservers" class="btn btn-sm btn-outline-light">Game Servers</a>
+    </div>
   </div>
 
   <div class="card glass mb-3">
@@ -34,7 +45,7 @@
     <div class="card-body p-0">
       <div class="table-responsive">
         <table class="table table-dark table-hover align-middle mb-0">
-          <thead>
+          <thead class="sticky-th">
           <tr>
             <th style="width:26%">Ник</th>
             <th style="width:12%">Роль</th>
@@ -47,32 +58,137 @@
           </tr>
           </thead>
           <tbody id="rows">
-          <tr><td colspan="8" class="text-secondary">Введите ник и нажмите «Поиск»</td></tr>
+            <tr><td colspan="8" class="text-secondary">Введите ник и нажмите «Поиск»</td></tr>
           </tbody>
         </table>
       </div>
     </div>
   </div>
 
-  <div class="mt-2 hint">Автозагрузка показывает последние сессии. Поиск поддерживает ник, uuid (с дефисами и без), email и ip.</div>
+  <div class="mt-2 hint">Клик по строке — подробная карточка с балансом. Поиск поддерживает ник, uuid (с/без дефисов), email и ip.</div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="accountModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h5 class="modal-title">Профиль</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="mLoading" class="skeleton rounded p-3 mb-3" style="display:none">Загрузка…</div>
+
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <img id="mHead" class="player-head" src="" alt="">
+          <div>
+            <div class="fw-semibold" id="mName">—</div>
+            <div class="text-secondary small">
+              <span id="mRole" class="badge-role me-2">default</span>
+              <span id="mOnline">
+                <span class="status-dot status-unknown me-1"></span><span class="align-middle">unknown</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label text-secondary small">UUID</label>
+            <div class="form-control bg-transparent text-white border-secondary" id="mUuid" style="white-space:nowrap;overflow:auto">—</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label text-secondary small">Email</label>
+            <div class="form-control bg-transparent text-white border-secondary" id="mEmail">—</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label text-secondary small">IP</label>
+            <div class="form-control bg-transparent text-white border-secondary" id="mIp">—</div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">Reg</label>
+            <div class="form-control bg-transparent text-white border-secondary" id="mReg">—</div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">Last</label>
+            <div class="form-control bg-transparent text-white border-secondary" id="mLast">—</div>
+          </div>
+        </div>
+
+        <hr class="border-secondary my-4">
+
+        <div class="row g-3 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label">Донатная валюта (<span id="mKey">rubs</span>)</label>
+            <input id="mPoints" type="number" step="0.01" class="form-control" placeholder="0.00">
+            <div class="form-text text-secondary">Текущий баланс: <span id="mPointsCurr">0.00</span></div>
+          </div>
+          <div class="col-md-6 d-flex align-items-end">
+            <button id="btnSavePoints" class="btn btn-success ms-auto" disabled>Сохранить баланс</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-light" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-container position-fixed top-0 end-0 p-3">
+  <div id="toast" class="toast align-items-center text-bg-dark border-0" role="alert">
+    <div class="d-flex">
+      <div id="toastBody" class="toast-body">done</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
 </div>
 
 <script>
 const rows = document.getElementById('rows');
+const countEl = document.getElementById('count') || null;
+const el = id => document.getElementById(id);
+
+// Bootstrap fallback (если JS bootstrap не подключён)
+const BS = (()=>{
+  const has = !!(window.bootstrap && window.bootstrap.Modal && window.bootstrap.Toast);
+  if (has) return window.bootstrap;
+  class Modal {
+    constructor(root){ this.root = root; this._backdrop = null; }
+    show(){
+      this.root.classList.add('show'); this.root.style.display='block'; this.root.removeAttribute('aria-hidden');
+      document.body.classList.add('modal-open');
+      this._backdrop = document.createElement('div'); this._backdrop.className='modal-backdrop fade show'; document.body.appendChild(this._backdrop);
+    }
+    hide(){
+      this.root.classList.remove('show'); this.root.style.display='none'; this.root.setAttribute('aria-hidden','true');
+      document.body.classList.remove('modal-open');
+      if (this._backdrop){ this._backdrop.remove(); this._backdrop = null; }
+    }
+  }
+  class Toast { constructor(root){ this.root = root; } show(){ this.root.classList.add('show'); this.root.style.display='block'; setTimeout(()=>this.hide(), 2500);} hide(){ this.root.classList.remove('show'); this.root.style.display='none'; } }
+  return { Modal, Toast };
+})();
+
+const toast = new BS.Toast(el('toast'));
 const fmtTime = ms => {
   if (ms == null) return "—";
-  try {
-    const d = new Date(Number(ms));
-    const z = n => String(n).padStart(2,'0');
-    return `${z(d.getDate())}.${z(d.getMonth()+1)}.${d.getFullYear()}, ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
-  } catch { return "—"; }
+  const d = new Date(Number(ms));
+  if (isNaN(d.getTime())) return "—";
+  const z = n => String(n).padStart(2,'0');
+  return `${z(d.getDate())}.${z(d.getMonth()+1)}.${d.getFullYear()}, ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
 };
 const skin = (name, uuid) => {
   const u = (uuid||'').replaceAll('-', '');
   const qs = u ? `uuid=${u}` : `name=${encodeURIComponent(name||'')}`;
   return `/admin/gameservers/api/player-head?${qs}`;
 };
+
+function setCount(n){ if (!countEl) return; countEl.textContent = Number.isFinite(n) ? `${n} результатов` : '—'; }
+
 function render(data){
+  setCount(Array.isArray(data) ? data.length : 0);
   if(!data || !data.length){
     rows.innerHTML = `<tr><td colspan="8" class="text-secondary">ничего не найдено</td></tr>`;
     return;
@@ -86,8 +202,9 @@ function render(data){
     const last= fmtTime(r.lastlogin);
     const prem= (r.premium===1 || r.premium===true) ? "yes" : "—";
     const role= r.role || 'default';
-    return `<tr>
-      <td><img class="player-head me-2" src="${skin(nm, uid)}" alt=""> ${nm}</td>
+    return `
+    <tr class="cursor-pointer" data-uuid="${uid}" data-name="${nm}">
+      <td><img class="player-head me-2" src="${skin(nm, uid)}" alt=""> <a href="#" class="link-light text-decoration-none fw-semibold">${nm}</a></td>
       <td><span class="badge-role">${role}</span></td>
       <td class="small">${uid || '—'}</td>
       <td>${em}</td>
@@ -97,10 +214,18 @@ function render(data){
       <td>${prem}</td>
     </tr>`;
   }).join('');
+  rows.querySelectorAll('tr').forEach(tr=>{
+    tr.addEventListener('click', (e)=>{
+      openModal({uuid: tr.dataset.uuid, name: tr.dataset.name});
+      e.preventDefault();
+    });
+  });
 }
+
 async function fetchData(q=""){
   const url = new URL("/admin/accounts/api/search", location.origin);
   if(q) url.searchParams.set("q", q);
+  rows.innerHTML = `<tr><td colspan="8"><div class="skeleton rounded p-3">Загрузка…</div></td></tr>`;
   try{
     const res = await fetch(url, {cache:"no-store"});
     const j = await res.json();
@@ -108,15 +233,120 @@ async function fetchData(q=""){
     render(j.data || []);
   }catch(e){
     rows.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message}</td></tr>`;
+    setCount(0);
   }
 }
+
+const onInputDebounce = (fn, ms=400)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms);} };
+
 document.getElementById('btnSearch').addEventListener('click', ()=>{
   fetchData(document.getElementById('q').value.trim());
 });
 document.getElementById('q').addEventListener('keydown', (e)=>{
   if(e.key === 'Enter') document.getElementById('btnSearch').click();
 });
-/* авто-подгрузка «последних» на входе */
+document.getElementById('q').addEventListener('input', onInputDebounce(()=>document.getElementById('btnSearch').click(), 450));
+
+/* Modal */
+const m = {
+  root: el('accountModal'), head: el('mHead'), name: el('mName'), uuid: el('mUuid'), email: el('mEmail'), ip: el('mIp'),
+  reg: el('mReg'), last: el('mLast'), role: el('mRole'), loading: el('mLoading'),
+  online: el('mOnline'), key: el('mKey'), points: el('mPoints'), save: el('btnSavePoints'),
+  curr: el('mPointsCurr')
+};
+const modal = new BS.Modal(m.root);
+
+// Закрытие модалки в fallback
+document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn=>{
+  btn.addEventListener('click', ()=> modal.hide());
+});
+document.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape') modal.hide();
+});
+
+function setOnline(o){
+  const dot = m.online.querySelector('.status-dot');
+  const text = m.online.querySelector('span.align-middle');
+  dot.className = 'status-dot ' + (o===true?'status-online':o===false?'status-offline':'status-unknown');
+  text.textContent = o===true ? 'online' : o===false ? 'offline' : 'unknown';
+}
+
+function setPointsValue(v){
+  const num = Number.isFinite(v) ? Number(v) : 0;
+  m.points.value = num.toFixed(2);
+  if (m.curr) m.curr.textContent = num.toFixed(2);
+}
+
+async function openModal({uuid, name}){
+  m.loading.style.display = '';
+  setPointsValue(0);
+  m.save.disabled = true;
+  m.key.textContent = 'rubs';
+  m.name.textContent = name || '—';
+  m.uuid.textContent = uuid || '—';
+  m.email.textContent = '—';
+  m.ip.textContent = '—';
+  m.reg.textContent = '—';
+  m.last.textContent = '—';
+  m.role.textContent = 'default';
+  setOnline(null);
+  m.head.src = skin(name, uuid);
+
+  modal.show();
+
+  const url = new URL("/admin/accounts/api/details", location.origin);
+  if(uuid) url.searchParams.set('uuid', uuid);
+  if(name) url.searchParams.set('name', name);
+  try{
+    const res = await fetch(url, {cache:'no-store'});
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'error');
+    const d = j.data || {};
+    m.name.textContent = d.name || name || '—';
+    m.uuid.textContent = d.uuid || uuid || '—';
+    m.email.textContent = d.email || '—';
+    m.ip.textContent = d.ip || '—';
+    m.reg.textContent = fmtTime(d.regdate);
+    m.last.textContent = fmtTime(d.lastlogin);
+    m.role.textContent = d.role || 'default';
+    setOnline(d.online);
+    m.key.textContent = d.points_key || 'rubs';
+    setPointsValue(typeof d.points === 'number' ? d.points : 0);
+    m.save.disabled = !d.can_edit_points;
+  }catch(e){
+    document.getElementById('toastBody').textContent = 'Ошибка: ' + e.message;
+    toast.show();
+  }finally{
+    m.loading.style.display = 'none';
+  }
+}
+
+m.save.addEventListener('click', async ()=>{
+  const uuid = (m.uuid.textContent || '').trim();
+  const key = (m.key.textContent || 'rubs').trim();
+  const points = parseFloat(m.points.value);
+  if(!uuid || Number.isNaN(points)) return;
+  m.save.disabled = true;
+  try{
+    const res = await fetch('/admin/accounts/api/points', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ uuid, key, points })
+    });
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'error');
+    setPointsValue(j.data?.points ?? points);
+    document.getElementById('toastBody').textContent = 'Баланс сохранён';
+    toast.show();
+  }catch(e){
+    document.getElementById('toastBody').textContent = 'Ошибка: ' + e.message;
+    toast.show();
+  }finally{
+    m.save.disabled = false;
+  }
+});
+
+/* авто-подгрузка «последних» при входе */
 fetchData();
 </script>
 {% endblock %}

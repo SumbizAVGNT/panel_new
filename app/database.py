@@ -21,6 +21,7 @@ __all__ = [
     "get_db_connection",
     "get_authme_connection",
     "get_luckperms_connection",
+    "get_points_connection",      # <--- добавлено
     "init_db",
     "get_setting",
     "set_setting",
@@ -110,7 +111,7 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
     Возвращаем {prefix}{key}. Fallback:
       - для AUTHME_: -> DB_{key}
       - для LUCKPERMS_: -> AUTHME_{key} -> DB_{key}
-    Это полезно, если панельная БД локальная, а AuthMe/LuckPerms — на удалённом хосте.
+      - для POINTS_: -> DB_{key}
     """
     val = os.environ.get(f"{prefix}{key}")
 
@@ -122,6 +123,10 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
     if val is None and prefix == "LUCKPERMS_" and key in {"HOST", "PORT", "USER", "PASSWORD"}:
         val = os.environ.get(f"AUTHME_{key}") or os.environ.get(f"DB_{key}")
 
+    # POINTS_ берёт из DB_, если не заданы
+    if val is None and prefix == "POINTS_" and key in {"HOST", "PORT", "USER", "PASSWORD"}:
+        val = os.environ.get(f"DB_{key}")
+
     return val if val is not None else default
 
 
@@ -131,6 +136,8 @@ def _load_env(prefix: str):
         default_db = "authmedb"
     elif prefix == "LUCKPERMS_":
         default_db = "donate"
+    elif prefix == "POINTS_":          # <--- добавлено
+        default_db = "points"
     else:
         default_db = "panel"
 
@@ -205,6 +212,11 @@ def get_authme_connection() -> MySQLConnection:
 def get_luckperms_connection() -> MySQLConnection:
     """БД LuckPerms (prefix=LUCKPERMS_), без автосоздания."""
     return _mysql_connect(prefix="LUCKPERMS_", create_if_missing=False)
+
+
+def get_points_connection() -> MySQLConnection:
+    """БД донатных поинтов (prefix=POINTS_), без автосоздания."""
+    return _mysql_connect(prefix="POINTS_", create_if_missing=False)
 
 
 # =========================
