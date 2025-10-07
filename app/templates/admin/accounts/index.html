@@ -93,6 +93,7 @@
           <div class="d-flex flex-column gap-1">
             <div class="kv"><span class="k">Ник:</span><strong id="mName">—</strong> <span id="mOnline" class="ms-2"><span class="status-dot status-unknown me-1"></span><span class="align-middle">unknown</span></span></div>
             <div class="kv"><span class="k">UUID:</span><span id="mUuid" class="small">—</span></div>
+            <div class="kv"><span class="k">Email:</span><span id="mEmail" class="small">—</span></div>
             <div class="kv"><span class="k">IP:</span><span id="mIp" class="small">—</span></div>
             <div class="kv"><span class="k">Роль:</span><span id="mRole" class="badge-role">default</span></div>
           </div>
@@ -411,9 +412,12 @@ async function openModal({uuid, name}){
   m.head.src = skin(name, uuid);
   m.name.textContent = name || '—';
   m.uuid.textContent = uuid || '—';
-  m.email.textContent = '—'; m.ip.textContent = '—';
-  m.reg.textContent = '—'; m.last.textContent = '—';
-  m.role.textContent = 'default'; setOnline(null);
+  if (m.email) m.email.textContent = '—';
+  if (m.ip) m.ip.textContent = '—';
+  if (m.reg) m.reg.textContent = '—';
+  if (m.last) m.last.textContent = '—';
+  if (m.role) m.role.textContent = 'default';
+  setOnline(null);
   setPointsValue(0); m.save.disabled = true; m.pointsNote.textContent = '';
   m.keyWrap.textContent = '';
 
@@ -439,11 +443,11 @@ async function openModal({uuid, name}){
     m.title.textContent = d.name || 'Профиль';
     m.name.textContent = d.name || name || '—';
     m.uuid.textContent = d.uuid || uuid || '—';
-    m.email.textContent = d.email || '—';
-    m.ip.textContent = d.ip || '—';
-    m.reg.textContent = fmtTime(d.regdate);
-    m.last.textContent = fmtTime(d.lastlogin);
-    m.role.textContent = d.role || 'default';
+    if (m.email) m.email.textContent = d.email || '—';
+    if (m.ip) m.ip.textContent = d.ip || '—';
+    if (m.reg) m.reg.textContent = fmtTime(d.regdate);
+    if (m.last) m.last.textContent = fmtTime(d.lastlogin);
+    if (m.role) m.role.textContent = d.role || 'default';
     setOnline(d.online);
 
     // points
@@ -453,7 +457,7 @@ async function openModal({uuid, name}){
     m.save.disabled = !d.can_edit_points;
     m.pointsNote.textContent = d.can_edit_points ? '' : 'У вас нет прав изменять баланс.';
 
-    // donations included in details
+    // donations
     renderDonations(d.donations || []);
 
     // ban status
@@ -482,9 +486,9 @@ function showError(msg){
   m.alert.classList.remove('d-none');
 }
 
-function setBadge(node, text, ok){
+function setBadge(node, text, danger){
   node.textContent = text;
-  node.className = 'badge ' + (ok ? 'bg-danger' : 'bg-secondary');
+  node.className = 'badge ' + (danger ? 'bg-danger' : 'bg-secondary');
 }
 
 /* Tabs */
@@ -580,12 +584,12 @@ function fillHistTable(tbody, list){
 }
 
 /* Save points */
-m.save.addEventListener('click', async ()=>{
-  const uuid = (m.uuid.textContent || '').trim();
-  const key = (m.keyWrap.textContent || '(rubs)').replace(/[()]/g,'').trim() || 'rubs';
-  const points = parseFloat(m.points.value);
+el('btnSavePoints').addEventListener('click', async ()=>{
+  const uuid = (el('mUuid').textContent || '').trim();
+  const key = (el('mKeyWrap').textContent || '(rubs)').replace(/[()]/g,'').trim() || 'rubs';
+  const points = parseFloat(el('mPoints').value);
   if(!uuid || Number.isNaN(points)) return;
-  m.save.disabled = true;
+  el('btnSavePoints').disabled = true;
   try{
     const res = await fetch('/admin/accounts/api/points', {
       method:'POST',
@@ -595,22 +599,23 @@ m.save.addEventListener('click', async ()=>{
     const j = await res.json();
     if(!j.ok) throw new Error(j.error || 'error');
     const newVal = j.data?.points ?? points;
-    setPointsValue(newVal);
+    el('mPoints').value = Number(newVal).toFixed(2);
+    el('mPointsCurr').textContent = Number(newVal).toFixed(2);
     toastMsg('Баланс сохранён');
   }catch(e){
     toastMsg('Ошибка: ' + e.message);
   }finally{
-    m.save.disabled = false;
+    el('btnSavePoints').disabled = false;
   }
 });
 
 /* Ban / Unban */
-m.btnBan.addEventListener('click', async ()=>{
+el('btnBan').addEventListener('click', async ()=>{
   const body = {
-    uuid: current.uuid,
-    reason: m.banReason.value || undefined,
-    duration_seconds: parseInt(m.banDuration.value || '0', 10) || 0,
-    silent: !!m.banSilent.checked,
+    uuid: el('mUuid').textContent.trim(),
+    reason: el('banReason').value || undefined,
+    duration_seconds: parseInt(el('banDuration').value || '0', 10) || 0,
+    silent: !!el('banSilent').checked,
     ipban: false
   };
   try{
@@ -618,26 +623,19 @@ m.btnBan.addEventListener('click', async ()=>{
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'ban failed');
     toastMsg('Пользователь забанен');
-    openModal(current);
+    openModal({uuid: el('mUuid').textContent.trim(), name: el('mName').textContent.trim()});
   }catch(e){ showError(e.message); }
 });
 
-m.btnUnban.addEventListener('click', async ()=>{
+el('btnUnban').addEventListener('click', async ()=>{
   try{
-    const r = await fetch('/admin/accounts/api/unban', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uuid: current.uuid})});
+    const r = await fetch('/admin/accounts/api/unban', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uuid: el('mUuid').textContent.trim()})});
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'unban failed');
     toastMsg('Бан снят');
-    openModal(current);
+    openModal({uuid: el('mUuid').textContent.trim(), name: el('mName').textContent.trim()});
   }catch(e){ showError(e.message); }
 });
-
-/* helpers */
-function setBadgeText(id, text, ok){
-  const b = el(id);
-  b.textContent = text;
-  b.className = 'badge ' + (ok ? 'bg-success' : 'bg-secondary');
-}
 
 /* авто-подгрузка «последних» при входе */
 fetchData();
