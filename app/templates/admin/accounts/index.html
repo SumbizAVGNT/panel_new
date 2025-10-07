@@ -3,27 +3,42 @@
 
 {% block content %}
 <style>
-.card.glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px)}
+:root{
+  --glass-bg: rgba(13,17,23,.6);
+  --glass-br: 1px solid rgba(148,163,184,.18);
+  --muted: #9aa4b2;
+  --ok: #22c55e;
+  --bad: #ef4444;
+}
+.card.glass{background:var(--glass-bg);border:var(--glass-br);backdrop-filter:blur(8px)}
 .table>:not(caption)>*>*{background:transparent}
 .searchbar{display:flex;gap:.5rem;align-items:center}
 .searchbar .form-control{background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);color:#e5e7eb}
+.player-head{width:32px;height:32px;border-radius:8px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220}
 .badge-role{background:#0b1220;border:1px solid rgba(148,163,184,.24);padding:.25rem .5rem;border-radius:999px}
-.player-head{width:22px;height:22px;border-radius:4px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220}
-.hint{color:#9aa4b2;font-size:.9rem}
+.hint{color:var(--muted);font-size:.9rem}
 .cursor-pointer{cursor:pointer}
 .status-dot{display:inline-block;width:10px;height:10px;border-radius:50%}
-.status-online{background:#22c55e;box-shadow:0 0 10px #22c55e80}
-.status-offline{background:#ef4444}
+.status-online{background:var(--ok);box-shadow:0 0 10px #22c55e80}
+.status-offline{background:var(--bad)}
 .status-unknown{background:#9aa4b2}
 .sticky-th th{position:sticky;top:0;background:rgba(13,17,23,.9);backdrop-filter:blur(4px)}
-.skeleton{background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12),rgba(255,255,255,.06));background-size:200% 100%;animation:s 1.2s infinite}
+.skeleton{border-radius:.5rem;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12),rgba(255,255,255,.06));background-size:200% 100%;animation:s 1.1s linear infinite}
 @keyframes s{0%{background-position:200% 0}100%{background-position:-200% 0}}
-.small-muted{color:#9aa4b2;font-size:.85rem}
-.kv{display:flex;gap:.5rem;align-items:center}
-.kv .k{color:#9aa4b2}
-.table-xs td,.table-xs th{padding:.35rem .5rem;font-size:.9rem}
-.nav-link{cursor:pointer}
+.small-muted{color:var(--muted);font-size:.85rem}
+.kv{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.kv .k{color:var(--muted)}
+.table-xs td,.table-xs th{padding:.4rem .5rem;font-size:.92rem}
 .modal .form-control{background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);color:#e5e7eb}
+.nav-pills .nav-link{border:1px solid transparent}
+.nav-pills .nav-link.active{background:#111827;border-color:rgba(148,163,184,.25)}
+.metric{display:flex;flex-direction:column;gap:.2rem}
+.metric .val{font-weight:700;font-size:1.15rem}
+.metric .lbl{color:var(--muted);font-size:.8rem}
+.divider{border-top:1px dashed rgba(148,163,184,.28);margin:1rem 0}
+.btn-icon{display:inline-flex;align-items:center;gap:.4rem}
+.copy{cursor:pointer}
+.copy:hover{opacity:.85}
 </style>
 
 <div class="container-xxl py-4">
@@ -71,7 +86,7 @@
     </div>
   </div>
 
-  <div class="mt-2 hint">Клик по строке — подробная карточка (баланс, донаты, наказания). Поиск поддерживает ник, uuid (с/без дефисов), email и ip.</div>
+  <div class="mt-2 hint">Клик по строке — подробная карточка. Поиск поддерживает ник, uuid (с/без дефисов), email и ip.</div>
 </div>
 
 <!-- Modal -->
@@ -79,103 +94,136 @@
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content card glass">
       <div class="modal-header">
-        <h5 class="modal-title" id="mTitle">Профиль</h5>
+        <div class="d-flex align-items-center gap-2">
+          <img id="mHead" class="player-head" src="" alt="">
+          <div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="fw-semibold" id="mName">—</span>
+              <span id="mOnline"><span class="status-dot status-unknown me-1"></span><span class="align-middle">unknown</span></span>
+            </div>
+            <div class="small-muted">
+              <span id="mRole" class="badge-role">default</span>
+            </div>
+          </div>
+        </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
       <div class="modal-body">
-        <div id="mLoading" class="skeleton rounded p-3 mb-3" style="display:none">Загрузка…</div>
-        <div id="mAlert" class="alert alert-danger d-none"></div>
-
-        <!-- Header -->
-        <div class="d-flex align-items-center gap-3 mb-3">
-          <img id="mHead" class="player-head" src="" alt="">
-          <div class="d-flex flex-column gap-1">
-            <div class="kv"><span class="k">Ник:</span><strong id="mName">—</strong> <span id="mOnline" class="ms-2"><span class="status-dot status-unknown me-1"></span><span class="align-middle">unknown</span></span></div>
-            <div class="kv"><span class="k">UUID:</span><span id="mUuid" class="small">—</span></div>
-            <div class="kv"><span class="k">Email:</span><span id="mEmail" class="small">—</span></div>
-            <div class="kv"><span class="k">IP:</span><span id="mIp" class="small">—</span></div>
-            <div class="kv"><span class="k">Роль:</span><span id="mRole" class="badge-role">default</span></div>
-          </div>
-          <div class="ms-auto text-end small-muted">
-            <div>Регистрация: <span id="mReg">—</span></div>
-            <div>Последний вход: <span id="mLast">—</span></div>
-          </div>
-        </div>
-
-        <!-- Points + Ban row -->
-        <div class="row g-3 mb-3">
-          <div class="col-md-6">
-            <div class="card glass h-100">
-              <div class="card-body">
-                <div class="d-flex align-items-center justify-content-between mb-2">
-                  <div class="fw-bold">Донатная валюта <span id="mKeyWrap" class="text-secondary"></span></div>
-                  <span class="small-muted">Текущий баланс: <span id="mPointsCurr">0.00</span></span>
-                </div>
-                <div class="input-group">
-                  <input id="mPoints" type="number" min="0" step="0.01" class="form-control" placeholder="0.00">
-                  <button id="btnSavePoints" class="btn btn-success" disabled>Сохранить</button>
-                </div>
-                <div id="pointsNote" class="small-muted mt-1"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="col-md-6">
-            <div class="card glass h-100">
-              <div class="card-body">
-                <div class="d-flex align-items-center justify-content-between mb-2">
-                  <div class="fw-bold">Блокировка (LiteBans)</div>
-                  <span class="badge" id="banStatus">—</span>
-                </div>
-
-                <div id="banActiveBox" class="small d-none"></div>
-
-                <div class="row g-2 mt-2">
-                  <div class="col-md-8">
-                    <input id="banReason" class="form-control" placeholder="Причина (по умолчанию — Banned by an operator)">
-                  </div>
-                  <div class="col-md-4">
-                    <div class="input-group">
-                      <input id="banDuration" type="number" min="0" step="1" class="form-control" placeholder="Секунды (0 = навсегда)">
-                      <button id="btnBan" class="btn btn-outline-danger">Забанить</button>
-                      <button id="btnUnban" class="btn btn-outline-warning d-none">Разбанить</button>
-                    </div>
-                  </div>
-                </div>
-                <div class="form-check mt-2">
-                  <input class="form-check-input" type="checkbox" id="banSilent">
-                  <label class="form-check-label" for="banSilent">Silent</label>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tabs -->
+        <!-- tabs -->
         <ul class="nav nav-pills mb-3" id="mTabs">
-          <li class="nav-item"><a class="nav-link active" data-tab="donations">Донаты</a></li>
-          <li class="nav-item"><a class="nav-link" data-tab="punishments">Наказания</a></li>
+          <li class="nav-item"><a class="nav-link active" data-tab="overview"><i class="bi bi-person-badge"></i> Обзор</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="balance"><i class="bi bi-coin"></i> Баланс</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="donations"><i class="bi bi-bag-heart"></i> Донаты</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="punishments"><i class="bi bi-shield-exclamation"></i> Наказания</a></li>
         </ul>
 
-        <!-- Donations -->
-        <div id="tab-donations">
-          <div class="table-responsive">
-            <table class="table table-dark table-hover table-xs">
-              <thead>
-                <tr>
-                  <th>#Платёж</th><th>#Покупка</th><th>Продукт</th><th>Кол-во</th><th>Стоимость</th><th>Создано</th>
-                </tr>
-              </thead>
-              <tbody id="donationRows">
-                <tr><td colspan="6" class="text-secondary">Нет данных</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <div id="mLoading" class="skeleton p-3" style="display:none;height:54px;"></div>
+        <div id="mAlert" class="alert alert-danger d-none"></div>
 
-        <!-- Punishments -->
-        <div id="tab-punishments" class="d-none">
+        <!-- OVERVIEW -->
+        <section id="tab-overview">
+          <div class="row g-3">
+            <div class="col-lg-8">
+              <div class="card glass">
+                <div class="card-body">
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <div class="kv"><span class="k">UUID:</span>
+                        <span id="mUuid" class="copy" title="Скопировать"><i class="bi bi-clipboard"></i> —</span>
+                      </div>
+                      <div class="kv"><span class="k">Email:</span><span id="mEmail">—</span></div>
+                      <div class="kv"><span class="k">IP:</span><span id="mIp" class="copy" title="Скопировать"><i class="bi bi-clipboard"></i> —</span></div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="metric"><span class="lbl">Регистрация</span><span class="val" id="mReg">—</span></div>
+                      <div class="metric"><span class="lbl">Последний вход</span><span class="val" id="mLast">—</span></div>
+                    </div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="d-flex flex-wrap gap-3">
+                    <div class="metric"><span class="lbl">Премиум</span><span class="val" id="mPremium">—</span></div>
+                    <div class="metric"><span class="lbl">Текущая роль</span><span class="val"><span id="mRole2" class="badge-role">default</span></span></div>
+                    <div class="metric"><span class="lbl">Баланс</span><span class="val"><span id="mPointsCurrBig">0.00</span> <span class="small-muted" id="mKeyBig">(rubs)</span></span></div>
+                    <div class="metric"><span class="lbl">Статус бана</span><span class="val"><span class="badge" id="banStatus">—</span></span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="card glass h-100">
+                <div class="card-body">
+                  <div class="fw-bold mb-2"><i class="bi bi-shield-lock"></i> Быстрые действия</div>
+                  <div class="d-flex flex-column gap-2">
+                    <div class="input-group">
+                      <input id="banReason" class="form-control" placeholder="Причина бана">
+                    </div>
+                    <div class="input-group">
+                      <input id="banDuration" type="number" min="0" step="1" class="form-control" placeholder="Секунды (0=навеки)">
+                      <button id="btnBan" class="btn btn-outline-danger btn-icon"><i class="bi bi-slash-circle"></i> Забанить</button>
+                      <button id="btnUnban" class="btn btn-outline-warning btn-icon d-none"><i class="bi bi-arrow-counterclockwise"></i> Разбанить</button>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="banSilent">
+                      <label class="form-check-label" for="banSilent">Silent</label>
+                    </div>
+                  </div>
+                  <div id="banActiveBox" class="small mt-3 d-none"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- BALANCE -->
+        <section id="tab-balance" class="d-none">
+          <div class="card glass">
+            <div class="card-body">
+              <div class="d-flex align-items-end gap-3 flex-wrap">
+                <div class="metric">
+                  <span class="lbl">Донатная валюта</span>
+                  <span class="val"><span id="mKey">rubs</span></span>
+                </div>
+                <div class="metric">
+                  <span class="lbl">Текущий баланс</span>
+                  <span class="val" id="mPointsCurr">0.00</span>
+                </div>
+                <div class="ms-auto w-100 w-sm-auto" style="max-width:420px;">
+                  <div class="input-group">
+                    <input id="mPoints" type="number" min="0" step="0.01" class="form-control" placeholder="Новое значение">
+                    <button id="btnSavePoints" class="btn btn-success btn-icon" disabled><i class="bi bi-save"></i> Сохранить</button>
+                  </div>
+                  <div id="pointsNote" class="small-muted mt-1"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- DONATIONS -->
+        <section id="tab-donations" class="d-none">
+          <div class="card glass">
+            <div class="card-body">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="fw-bold"><i class="bi bi-bag-heart"></i> История донатов</div>
+                <span class="small-muted">последние 200</span>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-dark table-hover table-xs">
+                  <thead><tr>
+                    <th>#Платёж</th><th>#Покупка</th><th>Продукт</th><th>Кол-во</th><th>Стоимость</th><th>Создано</th>
+                  </tr></thead>
+                  <tbody id="donationRows">
+                    <tr><td colspan="6" class="text-secondary">Нет данных</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PUNISHMENTS -->
+        <section id="tab-punishments" class="d-none">
           <div id="punishSpinner" class="small-muted mb-2">Загрузка...</div>
           <div class="row g-3">
             <div class="col-md-6">
@@ -227,9 +275,8 @@
               </div>
             </div>
           </div><!-- /row -->
-        </div>
-
-      </div><!--/modal-body-->
+        </section>
+      </div>
 
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Закрыть</button>
@@ -270,33 +317,29 @@ const BS = (()=> {
       if (this._backdrop){ this._backdrop.remove(); this._backdrop = null; }
     }
   }
-  class Toast {
-    constructor(root){ this.root = root; }
-    show(){ this.root.classList.add('show'); this.root.style.display='block'; setTimeout(()=>this.hide(), 2500); }
+  class Toast { constructor(root){ this.root = root; }
+    show(){ this.root.classList.add('show'); this.root.style.display='block'; setTimeout(()=>this.hide(), 2400); }
     hide(){ this.root.classList.remove('show'); this.root.style.display='none'; }
   }
   return { Modal, Toast };
 })();
 
 const toast = new BS.Toast(el('toast'));
-function toastMsg(msg){ el('toastBody').textContent = msg; toast.show(); }
+const toastMsg = m => { el('toastBody').textContent = m; toast.show(); };
 
+const z2 = n => String(n).padStart(2,'0');
 const fmtTime = ms => {
   if (ms == null) return "—";
   try{
-    const d = new Date(Number(ms));
-    if (isNaN(d.getTime())) return "—";
-    const z = n => String(n).padStart(2,'0');
-    return `${z(d.getDate())}.${z(d.getMonth()+1)}.${d.getFullYear()}, ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
+    const d = new Date(Number(ms)); if (isNaN(d.getTime())) return "—";
+    return `${z2(d.getDate())}.${z2(d.getMonth()+1)}.${d.getFullYear()}, ${z2(d.getHours())}:${z2(d.getMinutes())}:${z2(d.getSeconds())}`;
   }catch{ return "—"; }
 };
-
 const skin = (name, uuid) => {
   const u = (uuid||'').replaceAll('-', '');
   const qs = u ? `uuid=${u}` : `name=${encodeURIComponent(name||'')}`;
   return `/admin/gameservers/api/player-head?${qs}`;
 };
-
 function setCount(n){ if (!countEl) return; countEl.textContent = Number.isFinite(n) ? `${n} результатов` : '—'; }
 
 function render(list){
@@ -337,7 +380,7 @@ function render(list){
 async function fetchData(q=""){
   const url = new URL("/admin/accounts/api/search", location.origin);
   if(q) url.searchParams.set("q", q);
-  rows.innerHTML = `<tr><td colspan="8"><div class="skeleton rounded p-3">Загрузка…</div></td></tr>`;
+  rows.innerHTML = `<tr><td colspan="8"><div class="skeleton p-3">Загрузка…</div></td></tr>`;
   try{
     const res = await fetch(url, {cache:"no-store"});
     const j = await res.json();
@@ -350,82 +393,93 @@ async function fetchData(q=""){
 }
 
 const onInputDebounce = (fn, ms=400)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms);} };
-
 el('btnSearch').addEventListener('click', ()=> fetchData(el('q').value.trim()));
 el('q').addEventListener('keydown', (e)=>{ if(e.key === 'Enter') el('btnSearch').click(); });
 el('q').addEventListener('input', onInputDebounce(()=>el('btnSearch').click(), 450));
 
-/* Modal refs */
+/* Modal state */
 const m = {
-  root: el('accountModal'), head: el('mHead'), name: el('mName'), uuid: el('mUuid'),
-  email: el('mEmail'), ip: el('mIp'), reg: el('mReg'), last: el('mLast'),
-  role: el('mRole'), loading: el('mLoading'), online: el('mOnline'),
-  keyWrap: el('mKeyWrap'), points: el('mPoints'), save: el('btnSavePoints'),
-  curr: el('mPointsCurr'), alert: el('mAlert'), title: el('mTitle'),
-  // ban
-  banStatus: el('banStatus'), banBox: el('banActiveBox'),
-  banReason: el('banReason'), banDuration: el('banDuration'),
-  btnBan: el('btnBan'), btnUnban: el('btnUnban'), banSilent: el('banSilent'),
+  root: el('accountModal'), head: el('mHead'), name: el('mName'),
+  uuid: el('mUuid'), email: el('mEmail'), ip: el('mIp'),
+  reg: el('mReg'), last: el('mLast'), role: el('mRole'), role2: el('mRole2'),
+  premium: el('mPremium'), loading: el('mLoading'), alert: el('mAlert'),
+  online: el('mOnline'),
+  // balance
+  key: el('mKey'), keyBig: el('mKeyBig'),
+  curr: el('mPointsCurr'), currBig: el('mPointsCurrBig'),
+  points: el('mPoints'), save: el('btnSavePoints'), note: el('pointsNote'),
   // tabs
-  tabDon: document.getElementById('tab-donations'),
-  tabPun: document.getElementById('tab-punishments'),
-  tabs: document.getElementById('mTabs'),
+  tabs: el('mTabs'),
+  secOverview: document.getElementById('tab-overview'),
+  secBalance: document.getElementById('tab-balance'),
+  secDon: document.getElementById('tab-donations'),
+  secPun: document.getElementById('tab-punishments'),
   donationRows: document.getElementById('donationRows'),
+  punishSpinner: document.getElementById('punishSpinner'),
   banRows: document.getElementById('banRows'),
   muteRows: document.getElementById('muteRows'),
   warnRows: document.getElementById('warnRows'),
   histRows: document.getElementById('histRows'),
-  punishSpinner: document.getElementById('punishSpinner'),
-  pointsNote: el('pointsNote'),
+  // ban
+  banStatus: el('banStatus'), banBox: el('banActiveBox'),
+  banReason: el('banReason'), banDuration: el('banDuration'),
+  btnBan: el('btnBan'), btnUnban: el('btnUnban'), banSilent: el('banSilent'),
 };
 const modal = new BS.Modal(m.root);
-
-// ensure close in fallback
-document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn=>{
-  btn.addEventListener('click', ()=> modal.hide());
-});
+document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn=> btn.addEventListener('click', ()=> modal.hide()));
 document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') modal.hide(); });
 
+function setBadge(node, text, danger){ node.textContent = text; node.className = 'badge ' + (danger ? 'bg-danger' : 'bg-secondary'); }
 function setOnline(o){
   const dot = m.online.querySelector('.status-dot');
   const text = m.online.querySelector('span.align-middle');
   dot.className = 'status-dot ' + (o===true?'status-online':o===false?'status-offline':'status-unknown');
   text.textContent = o===true ? 'online' : o===false ? 'offline' : 'unknown';
 }
-
 function setPointsValue(v){
   const num = Number.isFinite(v) ? Number(v) : 0;
   m.points.value = num.toFixed(2);
-  if (m.curr) m.curr.textContent = num.toFixed(2);
+  m.curr.textContent = num.toFixed(2);
+  m.currBig.textContent = num.toFixed(2);
+}
+function copyText(text){
+  if(!text) return;
+  navigator.clipboard?.writeText(text).then(()=>toastMsg('Скопировано'));
 }
 
-let current = { uuid: '', name: '' };
-let punishLoaded = false;
+let current = { uuid:'', name:'' }, punishLoaded = false;
+
+/* Tabs logic */
+function showTab(name){
+  m.tabs.querySelectorAll('.nav-link').forEach(a=> a.classList.toggle('active', a.dataset.tab === name));
+  m.secOverview.classList.toggle('d-none', name!=='overview');
+  m.secBalance.classList.toggle('d-none', name!=='balance');
+  m.secDon.classList.toggle('d-none', name!=='donations');
+  m.secPun.classList.toggle('d-none', name!=='punishments');
+  if (name === 'punishments' && !punishLoaded) loadPunishments(current.uuid);
+}
+m.tabs.querySelectorAll('.nav-link').forEach(a=> a.addEventListener('click', ()=> showTab(a.dataset.tab)));
 
 async function openModal({uuid, name}){
   current = {uuid: uuid||'', name: name||''};
+  showTab('overview');
+  punishLoaded = false;
 
-  // reset UI
+  // reset
   m.loading.style.display = '';
   m.alert.classList.add('d-none'); m.alert.textContent='';
-  m.title.textContent = 'Профиль';
   m.head.src = skin(name, uuid);
   m.name.textContent = name || '—';
-  m.uuid.textContent = uuid || '—';
-  if (m.email) m.email.textContent = '—';
-  if (m.ip) m.ip.textContent = '—';
-  if (m.reg) m.reg.textContent = '—';
-  if (m.last) m.last.textContent = '—';
-  if (m.role) m.role.textContent = 'default';
+  m.uuid.textContent = '—'; m.email.textContent = '—'; m.ip.textContent = '—';
+  m.reg.textContent = '—'; m.last.textContent = '—';
+  m.role.textContent = 'default'; m.role2.textContent = 'default';
+  m.premium.textContent = '—';
   setOnline(null);
-  setPointsValue(0); m.save.disabled = true; m.pointsNote.textContent = '';
-  m.keyWrap.textContent = '';
-
-  // ban ui reset
+  setPointsValue(0); m.save.disabled = true; m.note.textContent = '';
+  m.key.textContent = 'rubs'; m.keyBig.textContent = '(rubs)';
   setBadge(m.banStatus, '—', false);
   m.banBox.classList.add('d-none'); m.banBox.innerHTML = '';
   m.btnBan.disabled = true; m.btnUnban.classList.add('d-none');
-  punishLoaded = false; showTab('donations');
 
   modal.show();
 
@@ -438,29 +492,26 @@ async function openModal({uuid, name}){
     if(!j.ok) throw new Error(j.error || 'error');
     const d = j.data || {};
 
-    // header
-    m.head.src = skin(d.name, d.uuid);
-    m.title.textContent = d.name || 'Профиль';
     m.name.textContent = d.name || name || '—';
     m.uuid.textContent = d.uuid || uuid || '—';
-    if (m.email) m.email.textContent = d.email || '—';
-    if (m.ip) m.ip.textContent = d.ip || '—';
-    if (m.reg) m.reg.textContent = fmtTime(d.regdate);
-    if (m.last) m.last.textContent = fmtTime(d.lastlogin);
-    if (m.role) m.role.textContent = d.role || 'default';
+    m.email.textContent = d.email || '—';
+    m.ip.textContent = d.ip || '—';
+    m.reg.textContent = fmtTime(d.regdate);
+    m.last.textContent = fmtTime(d.lastlogin);
+    m.role.textContent = d.role || 'default';
+    m.role2.textContent = d.role || 'default';
+    m.premium.textContent = d.premium ? 'yes' : '—';
+    m.head.src = skin(d.name, d.uuid);
     setOnline(d.online);
 
-    // points
     const key = (d.points_key || 'rubs').trim();
-    m.keyWrap.textContent = key ? `(${key})` : '';
+    m.key.textContent = key;
+    m.keyBig.textContent = `(${key})`;
     setPointsValue(typeof d.points === 'number' ? d.points : 0);
     m.save.disabled = !d.can_edit_points;
-    m.pointsNote.textContent = d.can_edit_points ? '' : 'У вас нет прав изменять баланс.';
-
-    // donations
+    m.note.textContent = d.can_edit_points ? '' : 'У вас нет прав изменять баланс.';
     renderDonations(d.donations || []);
 
-    // ban status
     const ban = d.ban || {};
     setBadge(m.banStatus, ban.is_banned ? 'Забанен' : 'Не забанен', !!ban.is_banned);
     m.btnBan.disabled = !d.can_ban || !!ban.is_banned;
@@ -468,6 +519,7 @@ async function openModal({uuid, name}){
     if (ban.active) {
       m.banBox.classList.remove('d-none');
       m.banBox.innerHTML = `
+        <div class="small-muted">Активный бан:</div>
         <div><span class="k">Причина:</span> ${ban.active.reason || '—'}</div>
         <div><span class="k">От:</span> ${ban.active.actor_name || ban.active.banned_by_name || '—'}</div>
         <div><span class="k">С:</span> ${fmtTime(ban.active.time_ms)}</div>
@@ -475,38 +527,14 @@ async function openModal({uuid, name}){
       `;
     }
   }catch(e){
-    showError(e.message);
+    m.alert.textContent = e.message || 'Ошибка';
+    m.alert.classList.remove('d-none');
   }finally{
     m.loading.style.display = 'none';
   }
 }
 
-function showError(msg){
-  m.alert.textContent = msg || 'Ошибка';
-  m.alert.classList.remove('d-none');
-}
-
-function setBadge(node, text, danger){
-  node.textContent = text;
-  node.className = 'badge ' + (danger ? 'bg-danger' : 'bg-secondary');
-}
-
-/* Tabs */
-function showTab(name){
-  document.querySelectorAll('#mTabs .nav-link').forEach(a=>{
-    a.classList.toggle('active', a.dataset.tab === name);
-  });
-  m.tabDon.classList.toggle('d-none', name !== 'donations');
-  m.tabPun.classList.toggle('d-none', name !== 'punishments');
-  if (name === 'punishments' && !punishLoaded) {
-    loadPunishments(current.uuid);
-  }
-}
-m.tabs.querySelectorAll('.nav-link').forEach(a=>{
-  a.addEventListener('click', ()=> showTab(a.dataset.tab));
-});
-
-/* Donations render */
+/* donations */
 function renderDonations(list){
   if(!list || !list.length){
     m.donationRows.innerHTML = `<tr><td colspan="6" class="text-secondary">Нет данных</td></tr>`;
@@ -520,17 +548,12 @@ function renderDonations(list){
     const cost  = (r.cost != null) ? r.cost : '—';
     const created = r.payment_created_at || r.purchase_created_at || '—';
     return `<tr>
-      <td>${payId}</td>
-      <td>${purId}</td>
-      <td>${prod}</td>
-      <td>${amt}</td>
-      <td>${cost}</td>
-      <td>${created}</td>
+      <td>${payId}</td><td>${purId}</td><td>${prod}</td><td>${amt}</td><td>${cost}</td><td>${created}</td>
     </tr>`;
   }).join('');
 }
 
-/* Punishments */
+/* punishments */
 async function loadPunishments(uuid){
   if(!uuid) return;
   m.punishSpinner.style.display='';
@@ -547,7 +570,8 @@ async function loadPunishments(uuid){
     fillHistTable(m.histRows, d.history);
     punishLoaded = true;
   }catch(e){
-    showError('Не удалось загрузить наказания: ' + e.message);
+    m.alert.textContent = 'Не удалось загрузить наказания: ' + (e.message || 'unknown');
+    m.alert.classList.remove('d-none');
   }finally{
     m.punishSpinner.style.display='none';
   }
@@ -557,65 +581,59 @@ function fillPunTable(tbody, list, withActive){
     tbody.innerHTML = `<tr><td colspan="6" class="text-secondary">—</td></tr>`;
     return;
   }
-  tbody.innerHTML = list.map(x=>{
-    return `<tr>
+  tbody.innerHTML = list.map(x=>`
+    <tr>
       <td>${x.id ?? '—'}</td>
       <td>${x.reason || '—'}</td>
       <td>${x.banned_by_name || x.actor_name || '—'}</td>
       <td>${fmtTime(x.time_ms)}</td>
       <td>${x.until_ms ? fmtTime(x.until_ms) : '—'}</td>
       <td>${withActive ? (x.active ? 'yes' : 'no') : '—'}</td>
-    </tr>`;
-  }).join('');
+    </tr>
+  `).join('');
 }
 function fillHistTable(tbody, list){
   if(!list || !list.length){
     tbody.innerHTML = `<tr><td colspan="4" class="text-secondary">—</td></tr>`;
     return;
   }
-  tbody.innerHTML = list.map(x=>{
-    return `<tr>
+  tbody.innerHTML = list.map(x=>`
+    <tr>
       <td>${x.id ?? '—'}</td>
       <td>${x.date || '—'}</td>
       <td>${x.name || '—'}</td>
       <td>${x.ip || '—'}</td>
-    </tr>`;
-  }).join('');
+    </tr>
+  `).join('');
 }
 
-/* Save points */
-el('btnSavePoints').addEventListener('click', async ()=>{
-  const uuid = (el('mUuid').textContent || '').trim();
-  const key = (el('mKeyWrap').textContent || '(rubs)').replace(/[()]/g,'').trim() || 'rubs';
-  const points = parseFloat(el('mPoints').value);
+/* actions */
+m.save.addEventListener('click', async ()=>{
+  const uuid = (m.uuid.textContent || '').trim();
+  const key = (m.key.textContent || 'rubs').trim();
+  const points = parseFloat(m.points.value);
   if(!uuid || Number.isNaN(points)) return;
-  el('btnSavePoints').disabled = true;
+  m.save.disabled = true;
   try{
     const res = await fetch('/admin/accounts/api/points', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ uuid, key, points })
     });
     const j = await res.json();
     if(!j.ok) throw new Error(j.error || 'error');
     const newVal = j.data?.points ?? points;
-    el('mPoints').value = Number(newVal).toFixed(2);
-    el('mPointsCurr').textContent = Number(newVal).toFixed(2);
+    setPointsValue(newVal);
     toastMsg('Баланс сохранён');
-  }catch(e){
-    toastMsg('Ошибка: ' + e.message);
-  }finally{
-    el('btnSavePoints').disabled = false;
-  }
+  }catch(e){ toastMsg('Ошибка: ' + (e.message || 'save failed')); }
+  finally{ m.save.disabled = false; }
 });
 
-/* Ban / Unban */
-el('btnBan').addEventListener('click', async ()=>{
+m.btnBan.addEventListener('click', async ()=>{
   const body = {
-    uuid: el('mUuid').textContent.trim(),
-    reason: el('banReason').value || undefined,
-    duration_seconds: parseInt(el('banDuration').value || '0', 10) || 0,
-    silent: !!el('banSilent').checked,
+    uuid: (m.uuid.textContent||'').trim(),
+    reason: m.banReason.value || undefined,
+    duration_seconds: parseInt(m.banDuration.value || '0', 10) || 0,
+    silent: !!m.banSilent.checked,
     ipban: false
   };
   try{
@@ -623,21 +641,24 @@ el('btnBan').addEventListener('click', async ()=>{
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'ban failed');
     toastMsg('Пользователь забанен');
-    openModal({uuid: el('mUuid').textContent.trim(), name: el('mName').textContent.trim()});
-  }catch(e){ showError(e.message); }
+    openModal({uuid: (m.uuid.textContent||'').trim(), name: (m.name.textContent||'').trim()});
+  }catch(e){ m.alert.textContent = e.message || 'Ошибка'; m.alert.classList.remove('d-none'); }
 });
-
-el('btnUnban').addEventListener('click', async ()=>{
+m.btnUnban.addEventListener('click', async ()=>{
   try{
-    const r = await fetch('/admin/accounts/api/unban', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uuid: el('mUuid').textContent.trim()})});
+    const r = await fetch('/admin/accounts/api/unban', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uuid: (m.uuid.textContent||'').trim()})});
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'unban failed');
     toastMsg('Бан снят');
-    openModal({uuid: el('mUuid').textContent.trim(), name: el('mName').textContent.trim()});
-  }catch(e){ showError(e.message); }
+    openModal({uuid: (m.uuid.textContent||'').trim(), name: (m.name.textContent||'').trim()});
+  }catch(e){ m.alert.textContent = e.message || 'Ошибка'; m.alert.classList.remove('d-none'); }
 });
 
-/* авто-подгрузка «последних» при входе */
+/* copy handlers */
+m.uuid.addEventListener('click', ()=> copyText(m.uuid.textContent.replace(/\s+/g,'').replace(/^📋/,'').trim()));
+m.ip.addEventListener('click',   ()=> copyText(m.ip.textContent.replace(/^📋/,'').trim()));
+
+/* init */
 fetchData();
 </script>
 {% endblock %}
