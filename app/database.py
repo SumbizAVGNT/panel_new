@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Optional, Iterable, Any, Sequence
 
-# --- env (подхватываем заранее) ---
+# env
 try:
     from dotenv import load_dotenv, find_dotenv
     _env = find_dotenv(usecwd=True)
@@ -21,7 +21,9 @@ __all__ = [
     "get_db_connection",
     "get_authme_connection",
     "get_luckperms_connection",
-    "get_points_connection",      # <--- добавлено
+    "get_points_connection",
+    "get_easypayments_connection",
+    "get_litebans_connection",
     "init_db",
     "get_setting",
     "set_setting",
@@ -29,14 +31,11 @@ __all__ = [
     "IntegrityError",
 ]
 
-# =========================
-#   Обёртка соединения
-# =========================
+# -------------------------
+# MySQL wrapper
+# -------------------------
 class MySQLConnection:
-    """
-    Простая обёртка над PyMySQL с API, похожим на sqlite3.Connection.
-    Заменяет плейсхолдеры '?' -> '%s'.
-    """
+    """PyMySQL wrapper with sqlite-like API; converts '?' to '%s'."""
     def __init__(self, conn: pymysql.connections.Connection):
         self._conn = conn
         try:
@@ -103,41 +102,48 @@ class MySQLConnection:
         except Exception: return 0
 
 
-# =========================
-#   Конфиг / коннекты
-# =========================
+# -------------------------
+# Config / connectors
+# -------------------------
 def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[str]:
     """
-    Возвращаем {prefix}{key}. Fallback:
-      - для AUTHME_: -> DB_{key}
-      - для LUCKPERMS_: -> AUTHME_{key} -> DB_{key}
-      - для POINTS_: -> DB_{key}
+    {prefix}{key} with fallbacks:
+      AUTHME_  -> DB_
+      LUCKPERMS-> AUTHME_ -> DB_
+      POINTS_/EASYPAYMENTS_/LITEBANS_ -> DB_
+      SSL/SSL_CA also fallback to DB_.
     """
     val = os.environ.get(f"{prefix}{key}")
 
-    # AUTHME_ берёт базовые доступы из DB_ если не заданы
     if val is None and prefix == "AUTHME_" and key in {"HOST", "PORT", "USER", "PASSWORD"}:
         val = os.environ.get(f"DB_{key}")
 
-    # LUCKPERMS_ пробует AUTHME_, затем DB_
     if val is None and prefix == "LUCKPERMS_" and key in {"HOST", "PORT", "USER", "PASSWORD"}:
         val = os.environ.get(f"AUTHME_{key}") or os.environ.get(f"DB_{key}")
 
-    # POINTS_ берёт из DB_, если не заданы
-    if val is None and prefix == "POINTS_" and key in {"HOST", "PORT", "USER", "PASSWORD"}:
+    if val is None and prefix in {"POINTS_", "EASYPAYMENTS_", "LITEBANS_"} and key in {"HOST", "PORT", "USER", "PASSWORD"}:
         val = os.environ.get(f"DB_{key}")
+
+    # SSL/SSL_MODE/SSL_CA fallback к DB_
+    if val is None and key in {"SSL", "SSL_MODE", "SSL_CA"}:
+        base = os.environ.get(f"{prefix}{key}")
+        if base is None:
+            val = os.environ.get(f"DB_{key}")
 
     return val if val is not None else default
 
 
 def _load_env(prefix: str):
-    # дефолтные имена БД
     if prefix == "AUTHME_":
         default_db = "authmedb"
     elif prefix == "LUCKPERMS_":
         default_db = "donate"
-    elif prefix == "POINTS_":          # <--- добавлено
+    elif prefix == "POINTS_":
         default_db = "points"
+    elif prefix == "EASYPAYMENTS_":
+        default_db = "easypayments"
+    elif prefix == "LITEBANS_":
+        default_db = "litebansBD"
     else:
         default_db = "panel"
 
@@ -156,17 +162,9 @@ def _load_env(prefix: str):
 
 def _base_kwargs(host, port, user, password, database=None, use_ssl=False, ssl_ca=None):
     kwargs = dict(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        database=database,
-        charset="utf8mb4",
-        autocommit=False,
-        cursorclass=DictCursor,
-        connect_timeout=10,
-        read_timeout=30,
-        write_timeout=30,
+        host=host, port=port, user=user, password=password, database=database,
+        charset="utf8mb4", autocommit=False, cursorclass=DictCursor,
+        connect_timeout=10, read_timeout=30, write_timeout=30,
     )
     if use_ssl:
         kwargs["ssl"] = {"ca": ssl_ca} if (ssl_ca and str(ssl_ca).strip()) else {}
@@ -175,14 +173,12 @@ def _base_kwargs(host, port, user, password, database=None, use_ssl=False, ssl_c
 
 def _connect_with_auto_create(prefix: str, create_if_missing: bool) -> pymysql.connections.Connection:
     host, port, user, password, db, use_ssl, ssl_ca = _load_env(prefix)
-
     try:
         return pymysql.connect(**_base_kwargs(host, port, user, password, database=db, use_ssl=use_ssl, ssl_ca=ssl_ca))
     except mysql_err.OperationalError as e:
         if getattr(e, "args", [None])[0] != 1049 or not create_if_missing:
             raise
 
-    # создаём БД (если разрешено)
     admin = pymysql.connect(**_base_kwargs(host, port, user, password, database=None, use_ssl=use_ssl, ssl_ca=ssl_ca))
     try:
         with admin.cursor() as c:
@@ -195,33 +191,31 @@ def _connect_with_auto_create(prefix: str, create_if_missing: bool) -> pymysql.c
 
 
 def _mysql_connect(prefix: str, create_if_missing: bool) -> MySQLConnection:
-    conn = _connect_with_auto_create(prefix, create_if_missing=create_if_missing)
-    return MySQLConnection(conn)
+    return MySQLConnection(_connect_with_auto_create(prefix, create_if_missing=create_if_missing))
 
 
 def get_db_connection(_db_path: Optional[str] = None) -> MySQLConnection:
-    """Основная БД панели (prefix=DB_), автосоздание разрешено."""
     return _mysql_connect(prefix="DB_", create_if_missing=True)
 
-
 def get_authme_connection() -> MySQLConnection:
-    """БД авторизации (prefix=AUTHME_), без автосоздания."""
     return _mysql_connect(prefix="AUTHME_", create_if_missing=False)
 
-
 def get_luckperms_connection() -> MySQLConnection:
-    """БД LuckPerms (prefix=LUCKPERMS_), без автосоздания."""
     return _mysql_connect(prefix="LUCKPERMS_", create_if_missing=False)
 
-
 def get_points_connection() -> MySQLConnection:
-    """БД донатных поинтов (prefix=POINTS_), без автосоздания."""
     return _mysql_connect(prefix="POINTS_", create_if_missing=False)
 
+def get_easypayments_connection() -> MySQLConnection:
+    return _mysql_connect(prefix="EASYPAYMENTS_", create_if_missing=False)
 
-# =========================
-#   Схема панели (совместимая)
-# =========================
+def get_litebans_connection() -> MySQLConnection:
+    return _mysql_connect(prefix="LITEBANS_", create_if_missing=False)
+
+
+# -------------------------
+# Panel schema (optional)
+# -------------------------
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -329,9 +323,6 @@ CREATE TABLE IF NOT EXISTS post_targets (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
-# =========================
-#   Утилиты панели
-# =========================
 def init_db(conn: MySQLConnection) -> None:
     conn.executescript(SCHEMA_SQL)
 

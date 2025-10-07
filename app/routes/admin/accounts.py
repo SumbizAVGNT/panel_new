@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Set, List, Optional
 
 from flask import Blueprint, render_template, jsonify, request, current_app, session
 
 from ...decorators import login_required
-from ...database import get_authme_connection
+from ...database import get_authme_connection, MySQLConnection
 from ...modules.luckperms_repo import (
     roles_for_uuids,            # быстрый фолбэк (primary_group)
     effective_roles_for_uuids,  # «живые» роли: контексты + веса
@@ -21,6 +22,38 @@ except Exception:
         return None
     def set_points_by_uuid(_uuid: str, _new: float, *, key: str = "rubs"):
         raise RuntimeError("points_repo is missing; create app/modules/points_repo.py")
+
+# --- EasyPayments (история донатов) ---
+try:
+    from ...modules.easypayments_repo import donations_by_uuid  # type: ignore
+except Exception:
+    def donations_by_uuid(_uuid: str, limit: int = 200):
+        return []
+
+# --- LiteBans (чтение наказаний) ---
+try:
+    from ...modules.litebans_repo import (  # type: ignore
+        is_banned,
+        get_active_ban,
+        get_bans,
+        get_mutes,
+        get_warnings,
+        get_kicks,
+        get_history,
+    )
+    try:
+        from ...modules.litebans_repo import _conn as _lb_conn  # type: ignore
+    except Exception:
+        _lb_conn = None
+except Exception:
+    def is_banned(_uuid: str) -> bool: return False
+    def get_active_ban(_uuid: str): return None
+    def get_bans(_uuid: str, limit: int = 50, include_inactive: bool = True): return []
+    def get_mutes(_uuid: str, limit: int = 50, include_inactive: bool = True): return []
+    def get_warnings(_uuid: str, limit: int = 50): return []
+    def get_kicks(_uuid: str, limit: int = 50): return []
+    def get_history(_uuid: str, limit: int = 100): return []
+    _lb_conn = None
 
 # --- онлайн-мост (опционален) ---
 try:
@@ -36,6 +69,10 @@ POINTS_KEY = os.getenv("POINTS_KEY", "rubs").strip()
 POINTS_EDITOR_NAME = (os.getenv("HBusiwshu9whsd") or "").strip()
 POINTS_EDIT_ALL = (os.getenv("POINTS_EDIT_ALL") or "0").lower() in ("1", "true", "yes")
 POINTS_EDIT_ROLES = [x.strip().lower() for x in (os.getenv("POINTS_EDIT_ROLES") or "admin,superadmin").split(",") if x.strip()]
+
+# LiteBans insert defaults
+LB_SERVER_ORIGIN = os.getenv("LB_SERVER_ORIGIN", "panel")
+LB_ACTOR_UUID_DEFAULT = os.getenv("LB_ACTOR_UUID", "00000000-0000-0000-0000-000000000000")
 
 
 # ---------- HTML ----------
@@ -143,7 +180,6 @@ def _session_bool(*keys: str) -> bool:
 
 
 def _current_username() -> str:
-    # перебор популярных ключей имени
     return _session_str("username", "user", "login", "name", "nickname", "nick", "account", "account_name")
 
 
@@ -152,7 +188,6 @@ def _current_role_lower() -> str:
 
 
 def _has_admin_flag() -> bool:
-    # распространённые флаги админки
     if _session_bool("is_superadmin", "superadmin", "is_admin", "admin"):
         return True
     role = _current_role_lower()
@@ -168,6 +203,10 @@ def _can_edit_points() -> bool:
     if POINTS_EDITOR_NAME and u and u == POINTS_EDITOR_NAME.lower():
         return True
     return False
+
+
+def _can_ban() -> bool:
+    return _has_admin_flag()
 
 
 def _map_columns(cols: Set[str]) -> dict:
@@ -243,9 +282,6 @@ def _online_status(uuid: Optional[str], name: Optional[str]) -> Optional[bool]:
 @bp.get("/api/search")
 @login_required
 def api_search():
-    """
-    GET /admin/accounts/api/search?q=nick&limit=50
-    """
     q = (request.args.get("q") or "").strip()
     limit = min(max(int(request.args.get("limit") or 50), 1), 200)
 
@@ -323,13 +359,17 @@ def api_search():
 @bp.get("/api/details")
 @login_required
 def api_details():
-    """Детальная карточка: account + role + points + online + can_edit."""
+    """
+    Детальная карточка: account + role + points + online + can_edit,
+    донаты и статус блокировки.
+    """
     uuid = request.args.get("uuid") or ""
     name = request.args.get("name") or ""
     acc = _fetch_single_account(uuid=uuid, name=name)
     if not acc:
         return jsonify({"ok": False, "error": "Account not found"}), 404
 
+    # points
     points = None
     try:
         if acc.get("uuid"):
@@ -340,7 +380,29 @@ def api_details():
     if points is None:
         points = 0.0
 
+    # online
     online = _online_status(acc.get("uuid"), acc.get("name"))
+
+    # donations
+    donations = []
+    try:
+        if acc.get("uuid"):
+            donations = donations_by_uuid(acc["uuid"], limit=200) or []
+    except Exception as e:
+        current_app.logger.warning("donations fetch failed: %s", e)
+        donations = []
+
+    # bans (litebans)
+    lb_active = None
+    lb_is_banned = False
+    try:
+        if acc.get("uuid"):
+            lb_is_banned = bool(is_banned(acc["uuid"]))
+            lb_active = get_active_ban(acc["uuid"]) if lb_is_banned else None
+    except Exception as e:
+        current_app.logger.warning("litebans fetch failed: %s", e)
+        lb_active = None
+        lb_is_banned = False
 
     return jsonify({
         "ok": True,
@@ -350,8 +412,35 @@ def api_details():
             "points": points,
             "online": online,
             "can_edit_points": _can_edit_points(),
+            "can_ban": _can_ban(),
+            "ban": {
+                "is_banned": lb_is_banned,
+                "active": lb_active,
+            },
+            "donations": donations,
         },
     })
+
+
+@bp.get("/api/punishments")
+@login_required
+def api_punishments():
+    """Полная история наказаний по uuid (ленивая подгрузка вкладки)."""
+    uuid = (request.args.get("uuid") or "").strip()
+    if not uuid:
+        return jsonify({"ok": False, "error": "uuid is required"}), 400
+    try:
+        data = {
+            "bans": get_bans(uuid, limit=200, include_inactive=True) or [],
+            "mutes": get_mutes(uuid, limit=200, include_inactive=True) or [],
+            "warnings": get_warnings(uuid, limit=200) or [],
+            "kicks": get_kicks(uuid, limit=200) or [],
+            "history": get_history(uuid, limit=200) or [],
+        }
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.warning("litebans punishments fetch failed: %s", e)
+        return jsonify({"ok": False, "error": "Punishments fetch failed"}), 500
 
 
 @bp.post("/api/points")
@@ -375,6 +464,111 @@ def api_points_update():
     except Exception as e:
         current_app.logger.exception("points update failed: %s", e)
         return jsonify({"ok": False, "error": "Points update failed"}), 500
+
+
+# ---------------- LiteBans: бан/разбан ----------------
+def _litebans_conn() -> Optional[MySQLConnection]:
+    if _lb_conn is None:
+        return None
+    try:
+        return _lb_conn()  # type: ignore
+    except Exception as e:
+        current_app.logger.warning("litebans connect failed: %s", e)
+        return None
+
+
+@bp.post("/api/ban")
+@login_required
+def api_ban():
+    """Создать бан (LiteBans). body: {uuid, reason, duration_seconds?, silent?, ipban?}"""
+    if not _can_ban():
+        return jsonify({"ok": False, "error": "Forbidden"}), 403
+
+    js = request.get_json(silent=True) or {}
+    uuid = (_dash(js.get("uuid") or "") or "").strip()
+    reason = (js.get("reason") or "Banned by an operator").strip()
+    duration_seconds = int(js.get("duration_seconds") or 0)  # 0 → permanent
+    silent = bool(js.get("silent") or False)
+    ipban = bool(js.get("ipban") or False)
+
+    if not uuid or len(uuid) < 32:
+        return jsonify({"ok": False, "error": "uuid is required"}), 400
+
+    try:
+        if is_banned(uuid):
+            return jsonify({"ok": True, "data": {"already": True, "active": get_active_ban(uuid)}})
+    except Exception:
+        pass
+
+    conn = _litebans_conn()
+    if conn is None:
+        return jsonify({"ok": False, "error": "LiteBans connection not available"}), 500
+
+    now_ms = int(time.time() * 1000)
+    until_ms = 0 if duration_seconds <= 0 else now_ms + duration_seconds * 1000
+
+    actor_name = _current_username() or "CONSOLE"
+    actor_uuid = LB_ACTOR_UUID_DEFAULT
+
+    try:
+        conn.execute(
+            "INSERT INTO `litebans_bans` "
+            "(`uuid`,`ip`,`reason`,`banned_by_uuid`,`banned_by_name`,`removed_by_uuid`,`removed_by_name`,"
+            " `removed_by_reason`,`removed_by_date`,`time`,`until`,`template`,`server_scope`,`server_origin`,"
+            " `silent`,`ipban`,`ipban_wildcard`,`active`) "
+            "VALUES (?,?,?,?,?,NULL,NULL,NULL,NULL,?,?,?,?,?, ?, ?, ?, 1)",
+            (
+                uuid, None, reason, actor_uuid, actor_name,
+                now_ms, until_ms, 255, None, LB_SERVER_ORIGIN,
+                1 if silent else 0, 1 if ipban else 0, 0,
+            ),
+        )
+        conn.commit()
+        active = get_active_ban(uuid)
+        return jsonify({"ok": True, "data": {"banned": True, "active": active}})
+    except Exception as e:
+        current_app.logger.exception("litebans ban insert failed: %s", e)
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({"ok": False, "error": "Ban failed"}), 500
+
+
+@bp.post("/api/unban")
+@login_required
+def api_unban():
+    """Снять бан (LiteBans). body: {uuid, reason?} — снимает все активные по uuid."""
+    if not _can_ban():
+        return jsonify({"ok": False, "error": "Forbidden"}), 403
+
+    js = request.get_json(silent=True) or {}
+    uuid = (_dash(js.get("uuid") or "") or "").strip()
+    reason = (js.get("reason") or "Unbanned by an operator").strip()
+
+    if not uuid or len(uuid) < 32:
+        return jsonify({"ok": False, "error": "uuid is required"}), 400
+
+    conn = _litebans_conn()
+    if conn is None:
+        return jsonify({"ok": False, "error": "LiteBans connection not available"}), 500
+
+    actor_name = _current_username() or "CONSOLE"
+    actor_uuid = LB_ACTOR_UUID_DEFAULT
+
+    try:
+        conn.execute(
+            "UPDATE `litebans_bans` "
+            "SET `active` = 0, `removed_by_uuid` = ?, `removed_by_name` = ?, "
+            "    `removed_by_reason` = ?, `removed_by_date` = NOW() "
+            "WHERE `uuid` = ? AND `active` = 1",
+            (actor_uuid, actor_name, reason, uuid),
+        )
+        conn.commit()
+        return jsonify({"ok": True, "data": {"unbanned": True, "is_banned": bool(is_banned(uuid))}})
+    except Exception as e:
+        current_app.logger.exception("litebans unban failed: %s", e)
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({"ok": False, "error": "Unban failed"}), 500
 
 
 # ---------- register under /admin ----------
