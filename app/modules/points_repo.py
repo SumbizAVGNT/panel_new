@@ -1,8 +1,15 @@
 # app/modules/points_repo.py
-from typing import Optional
+from __future__ import annotations
 
-# отдельный коннектор к points-БД
+from typing import Optional
+import time
+
 from ..database import get_points_connection
+
+
+def _now_ms() -> int:
+    """Миллисекунды: нужен для pnts_syncing.LastEdited, чтобы сбросить кеш плагина."""
+    return int(time.time() * 1000)
 
 
 def get_points_by_uuid(uuid: str, *, key: str = "rubs") -> Optional[float]:
@@ -14,28 +21,30 @@ def get_points_by_uuid(uuid: str, *, key: str = "rubs") -> Optional[float]:
             "SELECT `Points` FROM `pnts_points` WHERE `Uuid` = ? AND `Key` = ? LIMIT 1",
             (uuid, key),
         )
-        return float(row["Points"]) if row else None
+        return float(row["Points"]) if row and "Points" in row else None
 
 
 def set_points_by_uuid(uuid: str, new_points: float, *, key: str = "rubs") -> float:
     """
-    Апсертом устанавливает Points для (Uuid, Key) и возвращает сохранённое значение.
+    Апсертом устанавливает Points для (Uuid, Key) и обновляет pnts_syncing.LastEdited.
+    Это обязательно, иначе игровой плагин может не подхватить новые значения из-за кеша.
     """
-    with get_points_connection() as conn:
-        exists = conn.query_one(
-            "SELECT 1 FROM `pnts_points` WHERE `Uuid` = ? AND `Key` = ? LIMIT 1",
-            (uuid, key),
-        ) is not None
+    value = float(new_points)
+    now = _now_ms()
 
-        if exists:
-            conn.execute(
-                "UPDATE `pnts_points` SET `Points` = ? WHERE `Uuid` = ? AND `Key` = ?",
-                (new_points, uuid, key),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO `pnts_points` (`Uuid`, `Key`, `Points`) VALUES (?, ?, ?)",
-                (uuid, key, new_points),
-            )
+    with get_points_connection() as conn:
+        # upsert баланса
+        conn.execute(
+            "INSERT INTO `pnts_points` (`Uuid`, `Key`, `Points`) VALUES (?, ?, ?) "
+            "ON DUPLICATE KEY UPDATE `Points` = VALUES(`Points`)",
+            (uuid, key, value),
+        )
+        # сигнал синхронизации для плагина
+        conn.execute(
+            "INSERT INTO `pnts_syncing` (`Uuid`, `LastEdited`) VALUES (?, ?) "
+            "ON DUPLICATE KEY UPDATE `LastEdited` = VALUES(`LastEdited`)",
+            (uuid, now),
+        )
         conn.commit()
-        return float(new_points)
+
+    return value
