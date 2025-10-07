@@ -13,7 +13,7 @@ from ...modules.luckperms_repo import (
     effective_roles_for_uuids,  # «живые» роли: контексты + веса
 )
 
-# --- points_repo может отсутствовать: даём заглушки, чтобы список аккаунтов грузился ---
+# --- points_repo может отсутствовать: не ломаем список аккаунтов ---
 try:
     from ...modules.points_repo import get_points_by_uuid, set_points_by_uuid  # type: ignore
 except Exception:
@@ -22,7 +22,7 @@ except Exception:
     def set_points_by_uuid(_uuid: str, _new: float, *, key: str = "rubs"):
         raise RuntimeError("points_repo is missing; create app/modules/points_repo.py")
 
-# --- онлайн-мост (тоже опционален) ---
+# --- онлайн-мост (опционален) ---
 try:
     from ...modules.bridge_client import BridgeClient  # type: ignore
 except Exception:
@@ -33,7 +33,9 @@ except Exception:
 bp = Blueprint("accounts", __name__, url_prefix="/accounts")
 
 POINTS_KEY = os.getenv("POINTS_KEY", "rubs").strip()
-POINTS_EDITOR_NAME = os.getenv("HBusiwshu9whsd", "").strip()  # имя пользователя, кто может редактировать
+POINTS_EDITOR_NAME = (os.getenv("HBusiwshu9whsd") or "").strip()
+POINTS_EDIT_ALL = (os.getenv("POINTS_EDIT_ALL") or "0").lower() in ("1", "true", "yes")
+POINTS_EDIT_ROLES = [x.strip().lower() for x in (os.getenv("POINTS_EDIT_ROLES") or "admin,superadmin").split(",") if x.strip()]
 
 
 # ---------- HTML ----------
@@ -53,10 +55,6 @@ def _current_schema(conn) -> Optional[str]:
 
 
 def _table_candidates() -> List[str]:
-    """
-    Порядок важен: сначала ENV, затем типичные варианты.
-    Добавлены: mc_auth_accounts (ваша), authme/accounts/users (классика).
-    """
     prefer = (os.environ.get("AUTHME_TABLE") or "").strip()
     base = ["mc_auth_accounts", "authme", "accounts", "users"]
     out: List[str] = []
@@ -70,18 +68,15 @@ def _table_candidates() -> List[str]:
 
 def _table_exists(conn, name: str) -> bool:
     db = _current_schema(conn)
-    # 1) Надёжно через information_schema
     try:
         row = conn.query_one(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = ? AND table_name = ? LIMIT 1",
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1",
             (db, name),
         )
         if row:
             return True
     except Exception:
         pass
-    # 2) Фолбэк
     try:
         rows = conn.query_all("SHOW TABLES LIKE ?", (name,))
         return len(rows) > 0
@@ -112,7 +107,6 @@ def _first_present(cols: Set[str], *variants) -> str | None:
 
 
 def _norm_ts(v):
-    """int -> ms (если похоже на секунды). Иначе None."""
     try:
         t = int(v)
     except Exception:
@@ -127,23 +121,56 @@ def _dash(uuid_any: str) -> str:
     return f"{s[0:8]}-{s[8:12]}-{s[12:16]}-{s[16:20]}-{s[20:32]}"
 
 
+# ---- auth helpers (из сессии) ----
+def _session_str(*keys: str) -> str:
+    for k in keys:
+        v = session.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _session_bool(*keys: str) -> bool:
+    for k in keys:
+        v = session.get(k)
+        if isinstance(v, bool) and v:
+            return True
+        if isinstance(v, (int,)) and v == 1:
+            return True
+        if isinstance(v, str) and v.lower() in ("1", "true", "yes", "on"):
+            return True
+    return False
+
+
 def _current_username() -> str:
-    """Право редактирования по имени пользователя в сессии."""
-    return (
-        (session.get("username") or "").strip()
-        or (session.get("user") or "").strip()
-        or (session.get("login") or "").strip()
-        or (session.get("name") or "").strip()
-    )
+    # перебор популярных ключей имени
+    return _session_str("username", "user", "login", "name", "nickname", "nick", "account", "account_name")
+
+
+def _current_role_lower() -> str:
+    return (_session_str("role", "user_role") or "").lower()
+
+
+def _has_admin_flag() -> bool:
+    # распространённые флаги админки
+    if _session_bool("is_superadmin", "superadmin", "is_admin", "admin"):
+        return True
+    role = _current_role_lower()
+    return role in set(POINTS_EDIT_ROLES)
 
 
 def _can_edit_points() -> bool:
-    u = _current_username()
-    return bool(u and POINTS_EDITOR_NAME and u == POINTS_EDITOR_NAME)
+    if POINTS_EDIT_ALL:
+        return True
+    if _has_admin_flag():
+        return True
+    u = (_current_username() or "").lower()
+    if POINTS_EDITOR_NAME and u and u == POINTS_EDITOR_NAME.lower():
+        return True
+    return False
 
 
 def _map_columns(cols: Set[str]) -> dict:
-    """Единый мэппинг под разные схемы AuthMe/кастомные."""
     return {
         "name": _first_present(cols, "realname", "username", "player_name", "name"),
         "uuid": _first_present(cols, "uuid", "unique_id"),
@@ -158,9 +185,6 @@ def _map_columns(cols: Set[str]) -> dict:
 
 
 def _fetch_single_account(*, uuid: Optional[str] = None, name: Optional[str] = None) -> Optional[dict]:
-    """
-    Точная выборка по uuid (приоритет) или имени. Возвращает унифицированный dict.
-    """
     conn = get_authme_connection()
     table = _pick_table(conn)
     if not table:
@@ -190,7 +214,6 @@ def _fetch_single_account(*, uuid: Optional[str] = None, name: Optional[str] = N
         "premium": bool(gv("premium")) if m.get("premium") else None,
     }
 
-    # роль: «живая» → primary → default
     try:
         u = data.get("uuid")
         role = None
@@ -222,9 +245,6 @@ def _online_status(uuid: Optional[str], name: Optional[str]) -> Optional[bool]:
 def api_search():
     """
     GET /admin/accounts/api/search?q=nick&limit=50
-    - q пустой -> «последние» записи (по lastlogin|regdate|id).
-    - Автодетект схемы (mc_auth_accounts/authme/accounts/users).
-    - Роли: сначала «живые» (LP контексты + веса), иначе primary_group.
     """
     q = (request.args.get("q") or "").strip()
     limit = min(max(int(request.args.get("limit") or 50), 1), 200)
@@ -245,7 +265,6 @@ def api_search():
 
     m = _map_columns(cols)
 
-    # SELECT с алиасами, чтобы фронту было удобно
     select_parts = []
     if m["name"]:      select_parts.append(f"`{m['name']}` AS `name`")
     if m["uuid"]:      select_parts.append(f"`{m['uuid']}` AS `uuid`")
@@ -258,7 +277,6 @@ def api_search():
     if not select_parts:
         select_parts = ["*"]
 
-    # WHERE
     where = ""
     params: List[str] = []
     if q:
@@ -267,7 +285,6 @@ def api_search():
             where = "WHERE " + " OR ".join(f"`{c}` LIKE ?" for c in like_fields)
             params = [f"%{q}%"] * len(like_fields)
 
-    # ORDER BY — «самые свежие сверху»
     order_by = m["lastlogin"] or m["regdate"] or "id"
     sql = f"SELECT {', '.join(select_parts)} FROM `{table}` {where} ORDER BY `{order_by}` DESC LIMIT {limit}"
 
@@ -277,14 +294,12 @@ def api_search():
         current_app.logger.exception("Auth query failed: %s", e)
         return jsonify({"ok": False, "error": "Query failed"}), 500
 
-    # нормализуем таймстемпы (в ms)
     for r in rows:
         if "lastlogin" in r and r["lastlogin"] is not None:
             r["lastlogin"] = _norm_ts(r["lastlogin"])
         if "regdate" in r and r["regdate"] is not None:
             r["regdate"] = _norm_ts(r["regdate"])
 
-    # подтягиваем роли из LuckPerms
     uuids_dashed = [_dash(r.get("uuid") or "") for r in rows if r.get("uuid")]
     roles_map = {}
     try:
@@ -315,7 +330,6 @@ def api_details():
     if not acc:
         return jsonify({"ok": False, "error": "Account not found"}), 404
 
-    # points (0.0 если записи нет)
     points = None
     try:
         if acc.get("uuid"):
@@ -326,21 +340,18 @@ def api_details():
     if points is None:
         points = 0.0
 
-    # online
     online = _online_status(acc.get("uuid"), acc.get("name"))
 
-    return jsonify(
-        {
-            "ok": True,
-            "data": {
-                **acc,
-                "points_key": POINTS_KEY,
-                "points": points,
-                "online": online,  # True/False/None
-                "can_edit_points": _can_edit_points(),
-            },
-        }
-    )
+    return jsonify({
+        "ok": True,
+        "data": {
+            **acc,
+            "points_key": POINTS_KEY,
+            "points": points,
+            "online": online,
+            "can_edit_points": _can_edit_points(),
+        },
+    })
 
 
 @bp.post("/api/points")
