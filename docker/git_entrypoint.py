@@ -49,6 +49,9 @@ GIT_VERBOSE     = env_bool("GIT_VERBOSE", True)
 PIP_ON_CHANGE   = env_bool("PIP_ON_CHANGE", True)
 PIP_FILE        = env_str("PIP_FILE", "requirements.txt")
 
+# Ревизионный «маячок» для перезапуска других контейнеров
+REV_FILE        = Path(env_str("REV_FILE", str(GIT_WORK_TREE / ".rev"))).resolve()
+
 # --------------------------- logging ---------------------------
 
 def log(*a):
@@ -133,18 +136,12 @@ def ensure_repo_initialized():
 
         if remote_url:
             run_git(["remote", "add", GIT_REMOTE_NAME, remote_url], check=False, allow_fail=True)
-            # ВАЖНО: корректный refspec только для remote-tracking веток
-            run_git([
-                "config",
-                f"remote.{GIT_REMOTE_NAME}.fetch",
-                f"+refs/heads/*:refs/remotes/{GIT_REMOTE_NAME}/*"
-            ], check=False, allow_fail=True)
             log(f"Remote set: {GIT_REMOTE_NAME} -> {remote_url}")
         else:
             log("WARNING: remote URL is not set (env GIT_URL empty and /app/.git missing). "
                 "Fetch/pull will be skipped until you set it.")
 
-    # Разрешаем безопасно работать с worktree
+    # Разрешаем безопасно работать с /app
     try:
         sp.run(["git", "config", "--global", "--add", "safe.directory", str(GIT_WORK_TREE)],
                text=True, check=False)
@@ -163,8 +160,8 @@ def fetch_branch() -> bool:
     if not remote_url_exists():
         vlog("No remote URL configured, skip fetch.")
         return False
-    # ВАЖНО: просто обновляем remote-tracking refs. Никаких main:main!
-    run_git(["fetch", "--prune", GIT_REMOTE_NAME], check=False)
+    # без записи напрямую в refs/heads, чтобы не ловить "refusing to fetch into branch ..."
+    run_git(["fetch", "--prune", GIT_REMOTE_NAME], check=False)  # allow_fail
     return True
 
 def current_head() -> Optional[str]:
@@ -190,7 +187,7 @@ def checkout_branch_if_needed():
         cur = ""
 
     if cur != GIT_BRANCH:
-        # Попробуем привязать к удалённой ветке, если есть
+        # Привязываем к удалённой ветке, если есть
         if remote_head():
             run_git(["checkout", "-B", GIT_BRANCH, f"{GIT_REMOTE_NAME}/{GIT_BRANCH}"], check=False)
         else:
@@ -198,7 +195,6 @@ def checkout_branch_if_needed():
 
 def hard_sync_to_remote() -> bool:
     """
-    Синхронизация рабочего дерева с origin/BRANCH.
     Возвращает True, если рабочее дерево изменилось.
     """
     before = current_head()
@@ -219,6 +215,15 @@ def hard_sync_to_remote() -> bool:
     else:
         vlog("No changes in repo.")
     return changed
+
+def write_rev_marker():
+    head = current_head() or ""
+    try:
+        REV_FILE.parent.mkdir(parents=True, exist_ok=True)
+        REV_FILE.write_text(f"{head}\n{int(time.time())}\n", encoding="utf-8")
+        vlog(f"rev marker updated: {REV_FILE} -> {head}")
+    except Exception as e:
+        log("rev marker write failed:", e)
 
 # --------------------------- pip helpers ---------------------------
 
@@ -247,7 +252,7 @@ def pip_install_if_needed(prev_hash: Optional[str]) -> Optional[str]:
         return new_hash
     return prev_hash
 
-# --------------------------- app runner ---------------------------
+# --------------------------- app runner (не используется тут) ---------------------------
 
 class AppProc:
     def __init__(self, cmd: str):
@@ -259,7 +264,6 @@ class AppProc:
             vlog("APP_CMD is empty, nothing to run.")
             return
         log("Starting app:", self.cmd)
-        # shell=False для безопасности
         args = shlex.split(self.cmd)
         self.proc = sp.Popen(args, cwd=str(GIT_WORK_TREE), env=os.environ.copy())
 
@@ -284,11 +288,19 @@ class AppProc:
 def one_update_cycle(prev_req_hash: Optional[str]) -> tuple[bool, Optional[str]]:
     """Возвращает (repo_changed, new_req_hash)."""
     changed = hard_sync_to_remote()
+    if changed:
+        write_rev_marker()
     new_hash = pip_install_if_needed(prev_req_hash)
     return changed, new_hash
 
 def main():
     ensure_repo_initialized()
+
+    # Запишем маркер и на холодном старте, чтобы он точно существовал
+    try:
+        write_rev_marker()
+    except Exception:
+        pass
 
     req_hash = sha256_of(GIT_WORK_TREE / PIP_FILE)
     # Первая синхронизация (best-effort)
@@ -297,12 +309,11 @@ def main():
     except Exception as e:
         log("Initial sync error:", e)
 
-    # Стартуем приложение
+    # Стартуем приложение (в этом контейнере обычно ничего не запускаем)
     app = AppProc(APP_CMD)
     app.start()
 
     if not GIT_ENABLE or GIT_MODE == "off":
-        # Просто ждём, чтобы контейнер не выходил
         log("Git watcher disabled (GIT_ENABLE=0 or GIT_MODE=off).")
         if app.running():
             app.proc.wait()
@@ -311,7 +322,6 @@ def main():
                 time.sleep(3600)
 
     elif GIT_MODE == "update":
-        # Один проход обновления — и всё
         log("Git mode=update: single update cycle done.")
         if app.running():
             app.proc.wait()
@@ -331,7 +341,6 @@ def main():
                     app.start()
             except Exception as e:
                 log("Watch update error:", e)
-                # продолжаем цикл
                 continue
     else:
         log(f"Unknown GIT_MODE='{GIT_MODE}', doing nothing.")
