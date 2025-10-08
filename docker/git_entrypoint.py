@@ -133,11 +133,18 @@ def ensure_repo_initialized():
 
         if remote_url:
             run_git(["remote", "add", GIT_REMOTE_NAME, remote_url], check=False, allow_fail=True)
+            # ВАЖНО: корректный refspec только для remote-tracking веток
+            run_git([
+                "config",
+                f"remote.{GIT_REMOTE_NAME}.fetch",
+                f"+refs/heads/*:refs/remotes/{GIT_REMOTE_NAME}/*"
+            ], check=False, allow_fail=True)
+            log(f"Remote set: {GIT_REMOTE_NAME} -> {remote_url}")
         else:
             log("WARNING: remote URL is not set (env GIT_URL empty and /app/.git missing). "
                 "Fetch/pull will be skipped until you set it.")
 
-    # Разрешаем безопасно работать с /app
+    # Разрешаем безопасно работать с worktree
     try:
         sp.run(["git", "config", "--global", "--add", "safe.directory", str(GIT_WORK_TREE)],
                text=True, check=False)
@@ -156,7 +163,8 @@ def fetch_branch() -> bool:
     if not remote_url_exists():
         vlog("No remote URL configured, skip fetch.")
         return False
-    run_git(["fetch", "--prune", GIT_REMOTE_NAME, GIT_BRANCH], check=False)  # allow_fail
+    # ВАЖНО: просто обновляем remote-tracking refs. Никаких main:main!
+    run_git(["fetch", "--prune", GIT_REMOTE_NAME], check=False)
     return True
 
 def current_head() -> Optional[str]:
@@ -190,6 +198,7 @@ def checkout_branch_if_needed():
 
 def hard_sync_to_remote() -> bool:
     """
+    Синхронизация рабочего дерева с origin/BRANCH.
     Возвращает True, если рабочее дерево изменилось.
     """
     before = current_head()

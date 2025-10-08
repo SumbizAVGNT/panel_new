@@ -1,54 +1,103 @@
-version: "3.9"
+volumes:
+  app_code: {}   # рабочее дерево (монтируем как /app)
+  git_repo: {}   # .git (история)
 
 services:
-  panel:
+  # -------- Git watcher/sync --------
+  git:
     build:
       context: .
       dockerfile: Dockerfile
-    entrypoint: ["python", "-u", "docker/git_entrypoint.py"]
-    working_dir: /app
-    ports:
-      - "5000:5000"
+    # запускаем установленный в образ/том скрипт
+    entrypoint: ["python", "-u", "/usr/local/bin/git_entrypoint.py"]
     environment:
-      # ---- App cmd ----
-      APP_CMD: "python -u run.py"
+      # --- только синхронизация git, без запуска приложения ---
+      APP_CMD: ""                      # ничего не запускаем внутри git-сервиса
       APP_DIR: "/app"
-
-      # ---- Git auto update (watcher) ----
       GIT_ENABLE: "1"
-      GIT_MODE: "watch"              # watch|update|off
+      GIT_MODE: "watch"                # watch|update|off
+      # УКАЖИ URL РЕПОЗИТОРИЯ (HTTPS или SSH)
+      GIT_URL: "${REPO_URL:-}"         # напр.: https://github.com/you/yourrepo.git
       GIT_REMOTE: "origin"
       GIT_BRANCH: "main"
       GIT_INTERVAL: "30"
       GIT_RESET: "1"
       GIT_RESTART: "0"
       GIT_VERBOSE: "1"
-      PIP_ON_CHANGE: "1"
+      PIP_ON_CHANGE: "0"
       PIP_FILE: "requirements.txt"
 
-      # >>> Разносим git-метаданные и рабочее дерево
+      # где хранить .git и рабочее дерево
       GIT_DIR: "/git/.git"
       GIT_WORK_TREE: "/app"
+    volumes:
+      - app_code:/app
+      - git_repo:/git
+      # важное: пробрасываем сам entrypoint-скрипт в фиксированный путь
+      - ./docker/git_entrypoint.py:/usr/local/bin/git_entrypoint.py:ro
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /app/requirements.txt -a -f /app/run.py -a -f /app/bridge/bridge.py || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
 
-      # ---- сеть панели ----
+  # -------- WebSocket bridge --------
+  bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    # ждём код, затем ставим зависимости и стартуем bridge
+    entrypoint: ["sh", "-c", "until [ -f bridge/bridge.py ]; do echo '[bridge] wait code...'; sleep 1; done; if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi; exec python -u bridge/bridge.py"]
+    environment:
+      BRIDGE_HOST: 0.0.0.0
+      BRIDGE_PORT: 8765
+      SP_TOKEN: SUPER_SECRET
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - app_code:/app
+    depends_on:
+      git:
+        condition: service_healthy
+    ports:
+      - "8765:8765"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',8765)); print('ok')"]
+      interval: 10s
+      timeout: 2s
+      retries: 10
+    restart: unless-stopped
+
+  # -------- Panel (backend/ui) --------
+  panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    # ждём код, затем ставим зависимости и стартуем панель
+    entrypoint: ["sh", "-c", "until [ -f run.py ]; do echo '[panel] wait code...'; sleep 1; done; if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi; exec python -u run.py"]
+    ports:
+      - "5000:5000"
+    environment:
       HOST: 0.0.0.0
       PORT: 5000
 
-      # ---- подключение к BRIDGE ----
+      # подключение к BRIDGE
       SP_BRIDGE_URL: ws://bridge:8765/ws
       SP_TOKEN: SUPER_SECRET
 
-      # ---- основная БД панели ----
+      # база панели
       DB_HOST: 79.174.89.178
       DB_PORT: 16844
       DB_USER: HBusiwshu9whsd
       DB_PASSWORD: "NIUhbsuhwSU*GB0w87ygs08"
       DB_NAME: panel
 
-      # ---- AuthMe ----
+      # AuthMe (если не задано — возьмёт из DB_*)
       AUTHME_NAME: authmedb
 
-      # ---- LuckPerms ----
+      # LuckPerms
       LUCKPERMS_HOST: 79.174.89.178
       LUCKPERMS_PORT: 16844
       LUCKPERMS_USER: donateLP
@@ -57,54 +106,10 @@ services:
 
       PYTHONUNBUFFERED: "1"
     volumes:
-      - ./:/app            # рабочее дерево (можно заменить на named volume в проде)
-      - gitcache:/git      # <— ОТДЕЛЬНЫЙ ТОМ ДЛЯ .git
+      - app_code:/app
     depends_on:
-      - bridge
+      git:
+        condition: service_healthy
+      bridge:
+        condition: service_started
     restart: unless-stopped
-
-  bridge:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    entrypoint: ["python", "-u", "docker/git_entrypoint.py"]
-    working_dir: /app
-    ports:
-      - "8765:8765"
-    environment:
-      # ---- App cmd ----
-      APP_CMD: "python -u bridge/bridge.py"
-      APP_DIR: "/app"
-
-      # ---- Git auto update ----
-      GIT_ENABLE: "1"
-      GIT_MODE: "watch"
-      GIT_REMOTE: "origin"
-      GIT_BRANCH: "main"
-      GIT_INTERVAL: "30"
-      GIT_RESET: "1"
-      GIT_RESTART: "1"      # при апдейте перезапускаем bridge
-      GIT_VERBOSE: "1"
-      PIP_ON_CHANGE: "1"
-      PIP_FILE: "requirements.txt"
-
-      # >>> Разносим git-метаданные и рабочее дерево
-      GIT_DIR: "/git/.git"
-      GIT_WORK_TREE: "/app"
-
-      BRIDGE_HOST: 0.0.0.0
-      BRIDGE_PORT: 8765
-      SP_TOKEN: SUPER_SECRET
-      PYTHONUNBUFFERED: "1"
-    volumes:
-      - ./:/app            # общее рабочее дерево (как и раньше)
-      - gitcache:/git      # общий кэш .git
-    healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',8765)); print('ok')"]
-      interval: 10s
-      timeout: 2s
-      retries: 10
-    restart: unless-stopped
-
-volumes:
-  gitcache:
