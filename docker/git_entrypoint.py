@@ -1,166 +1,339 @@
 #!/usr/bin/env python3
+# docker/git_entrypoint.py
 from __future__ import annotations
-import os, sys, time, shlex, subprocess, signal, threading, pathlib
 
-APP_DIR = pathlib.Path(os.getenv("APP_DIR", "/app"))
-GIT_ENABLE   = (os.getenv("GIT_ENABLE", "1").lower() in ("1","true","yes"))
-GIT_MODE     = os.getenv("GIT_MODE", "watch").lower()   # watch|update|off
-GIT_REMOTE   = os.getenv("GIT_REMOTE", "origin")
-GIT_BRANCH   = os.getenv("GIT_BRANCH", "main")
-GIT_INTERVAL = int(os.getenv("GIT_INTERVAL", "30"))
-GIT_RESET    = (os.getenv("GIT_RESET", "1").lower() in ("1","true","yes"))
-GIT_RESTART  = (os.getenv("GIT_RESTART", "1").lower() in ("1","true","yes"))
-GIT_VERBOSE  = (os.getenv("GIT_VERBOSE", "1").lower() in ("1","true","yes"))
-PIP_ON_CHANGE= (os.getenv("PIP_ON_CHANGE", "1").lower() in ("1","true","yes"))
-PIP_FILE     = os.getenv("PIP_FILE", "requirements.txt")
+import os
+import sys
+import time
+import shlex
+import hashlib
+import signal
+import subprocess as sp
+from pathlib import Path
+from typing import Optional
 
-APP_CMD      = os.getenv("APP_CMD", "python -u run.py")
-EXIT_ON_CRASH= (os.getenv("APP_EXIT_ON_CRASH", "0").lower() in ("1","true","yes"))
+# --------------------------- env helpers ---------------------------
 
-_restart_evt = threading.Event()
-_lock = threading.Lock()
+def env_str(key: str, default: str = "") -> str:
+    return os.environ.get(key, default)
 
-def log(msg: str): print(msg, flush=True)
-
-def run(cmd: str, cwd: pathlib.Path | None = None, check=True) -> subprocess.CompletedProcess:
-    if GIT_VERBOSE: log(f"[exec] {cmd}")
-    return subprocess.run(shlex.split(cmd), cwd=cwd, text=True, capture_output=not GIT_VERBOSE, check=check)
-
-def have_git() -> bool:
-    try: run("git --version"); return True
-    except Exception: return False
-
-def in_repo() -> bool: return (APP_DIR / ".git").exists()
-
-def get_rev(ref: str) -> str | None:
+def env_int(key: str, default: int) -> int:
     try:
-        cp = run(f"git rev-parse {ref}", cwd=APP_DIR)
-        return (cp.stdout or "").strip()
+        return int(os.environ.get(key, str(default)).strip())
+    except Exception:
+        return default
+
+def env_bool(key: str, default: bool = False) -> bool:
+    v = os.environ.get(key)
+    if v is None:
+        return default
+    v = str(v).strip().lower()
+    return v in ("1", "true", "yes", "y", "on")
+
+# Core app/git settings
+APP_CMD         = env_str("APP_CMD", "")
+APP_DIR         = Path(env_str("APP_DIR", "/app")).resolve()
+GIT_DIR         = Path(env_str("GIT_DIR", "/git/.git")).resolve()
+GIT_WORK_TREE   = Path(env_str("GIT_WORK_TREE", str(APP_DIR))).resolve()
+GIT_MODE        = env_str("GIT_MODE", "watch").lower()      # watch|update|off
+GIT_ENABLE      = env_bool("GIT_ENABLE", True)
+GIT_REMOTE_NAME = env_str("GIT_REMOTE", "origin")
+GIT_BRANCH      = env_str("GIT_BRANCH", "main")
+GIT_URL         = env_str("GIT_URL", "")                    # опционально, если нужно явно задать URL
+GIT_INTERVAL    = env_int("GIT_INTERVAL", 30)
+GIT_RESET       = env_bool("GIT_RESET", True)               # hard reset на origin/BRANCH
+GIT_RESTART     = env_bool("GIT_RESTART", False)            # рестартовать приложение при обнове
+GIT_VERBOSE     = env_bool("GIT_VERBOSE", True)
+
+# Python deps auto-install
+PIP_ON_CHANGE   = env_bool("PIP_ON_CHANGE", True)
+PIP_FILE        = env_str("PIP_FILE", "requirements.txt")
+
+# --------------------------- logging ---------------------------
+
+def log(*a):
+    print("[entry]", *a, flush=True)
+
+def vlog(*a):
+    if GIT_VERBOSE:
+        log(*a)
+
+# --------------------------- git helpers ---------------------------
+
+def git_env() -> dict:
+    e = dict(os.environ)
+    e["GIT_DIR"] = str(GIT_DIR)
+    e["GIT_WORK_TREE"] = str(GIT_WORK_TREE)
+    # чтобы git не ругался на "dubious ownership"
+    e.setdefault("HOME", "/tmp")
+    return e
+
+def run_git(args: list[str], check=True, capture=False, allow_fail=False) -> sp.CompletedProcess:
+    """Запуск git с GIT_DIR/GIT_WORK_TREE."""
+    cmd = ["git"] + args
+    vlog("git:", " ".join(shlex.quote(c) for c in cmd))
+    try:
+        return sp.run(
+            cmd,
+            env=git_env(),
+            cwd=str(GIT_WORK_TREE),
+            check=check,
+            text=True,
+            capture_output=capture
+        )
+    except sp.CalledProcessError as e:
+        if allow_fail:
+            return e
+        raise
+
+def run_git_app_tree(args: list[str], capture=True) -> Optional[str]:
+    """
+    Запуск git в рабочем дереве БЕЗ GIT_DIR/GIT_WORK_TREE —
+    полезно, чтобы прочитать URL из /app/.git, если он есть.
+    """
+    env = dict(os.environ)
+    env.pop("GIT_DIR", None)
+    env.pop("GIT_WORK_TREE", None)
+    try:
+        cp = sp.run(["git"] + args, cwd=str(GIT_WORK_TREE), text=True, capture_output=True, check=True, env=env)
+        return cp.stdout.strip()
     except Exception:
         return None
 
-def try_fix_lock():
+def ensure_dirs():
+    GIT_DIR.parent.mkdir(parents=True, exist_ok=True)
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    GIT_WORK_TREE.mkdir(parents=True, exist_ok=True)
+
+def ensure_repo_initialized():
+    """Инициализация репозитория в GIT_DIR + настройка origin/ветки."""
+    ensure_dirs()
+
+    # Проверяем, инициализирован ли репозиторий
+    inited = False
     try:
-        run(f"git remote prune {GIT_REMOTE}", cwd=APP_DIR, check=False)
-        run("git gc --prune=now", cwd=APP_DIR, check=False)
+        cp = run_git(["rev-parse", "--git-dir"], capture=True, check=True)
+        inited = (cp.stdout.strip() != "")
+    except Exception:
+        inited = False
+
+    if not inited:
+        log(f"Initializing repository: GIT_DIR={GIT_DIR}, WORK_TREE={GIT_WORK_TREE}")
+        run_git(["init"])
+        # Привязываем worktree (на случай, если git сам не увидел)
+        run_git(["config", "core.worktree", str(GIT_WORK_TREE)], check=False, allow_fail=True)
+
+        # Попробуем унаследовать URL origin из /app/.git, если он есть
+        remote_url = GIT_URL
+        if not remote_url:
+            inherited = run_git_app_tree(["config", "--get", f"remote.{GIT_REMOTE_NAME}.url"])
+            if inherited:
+                remote_url = inherited
+                vlog(f"Inherited remote URL from /app/.git: {remote_url}")
+
+        if remote_url:
+            run_git(["remote", "add", GIT_REMOTE_NAME, remote_url], check=False, allow_fail=True)
+        else:
+            log("WARNING: remote URL is not set (env GIT_URL empty and /app/.git missing). "
+                "Fetch/pull will be skipped until you set it.")
+
+    # Разрешаем безопасно работать с /app
+    try:
+        sp.run(["git", "config", "--global", "--add", "safe.directory", str(GIT_WORK_TREE)],
+               text=True, check=False)
     except Exception:
         pass
 
-def fetch_reset_once() -> tuple[bool, str, str]:
-    """(changed, old, new)"""
-    if not (GIT_ENABLE and have_git() and in_repo()):
-        if not have_git(): log("[git] git недоступен — автообновление выключено")
-        elif not in_repo(): log("[git] .git не найден — автообновление выключено")
-        return (False, "", "")
-
-    old_rev = get_rev("HEAD") or ""
+def remote_url_exists() -> bool:
     try:
-        run(f"git fetch {GIT_REMOTE} {GIT_BRANCH}", cwd=APP_DIR)
-    except subprocess.CalledProcessError as e:
-        if "cannot lock ref" in (e.stderr or "") or "unable to update local ref" in (e.stderr or ""):
-            log("[git] warning: lock ref issue -> prune/gc")
-            try_fix_lock()
-            run(f"git fetch {GIT_REMOTE} {GIT_BRANCH}", cwd=APP_DIR)
+        out = run_git(["config", "--get", f"remote.{GIT_REMOTE_NAME}.url"], capture=True, check=True)
+        return bool(out.stdout.strip())
+    except Exception:
+        return False
+
+def fetch_branch() -> bool:
+    """git fetch; True если прошло успешно и есть удалённый URL."""
+    if not remote_url_exists():
+        vlog("No remote URL configured, skip fetch.")
+        return False
+    run_git(["fetch", "--prune", GIT_REMOTE_NAME, GIT_BRANCH], check=False)  # allow_fail
+    return True
+
+def current_head() -> Optional[str]:
+    try:
+        out = run_git(["rev-parse", "HEAD"], capture=True, check=True)
+        return out.stdout.strip()
+    except Exception:
+        return None
+
+def remote_head() -> Optional[str]:
+    try:
+        out = run_git(["rev-parse", f"{GIT_REMOTE_NAME}/{GIT_BRANCH}"], capture=True, check=True)
+        return out.stdout.strip()
+    except Exception:
+        return None
+
+def checkout_branch_if_needed():
+    """Убедимся, что на нужной ветке (или создадим её)."""
+    try:
+        out = run_git(["symbolic-ref", "--short", "HEAD"], capture=True, check=True)
+        cur = out.stdout.strip()
+    except Exception:
+        cur = ""
+
+    if cur != GIT_BRANCH:
+        # Попробуем привязать к удалённой ветке, если есть
+        if remote_head():
+            run_git(["checkout", "-B", GIT_BRANCH, f"{GIT_REMOTE_NAME}/{GIT_BRANCH}"], check=False)
         else:
-            log(f"[git] fetch error: {e}")
-            return (False, old_rev, old_rev)
+            run_git(["checkout", "-B", GIT_BRANCH], check=False)
 
-    new_remote = f"{GIT_REMOTE}/{GIT_BRANCH}"
-    new_rev = get_rev(new_remote) or old_rev
+def hard_sync_to_remote() -> bool:
+    """
+    Возвращает True, если рабочее дерево изменилось.
+    """
+    before = current_head()
+    if not fetch_branch():
+        return False
+    checkout_branch_if_needed()
 
-    if old_rev != new_rev:
-        log(f"[git] update: {old_rev} -> {new_rev}")
-        if GIT_RESET:
-            run(f"git reset --hard {new_remote}", cwd=APP_DIR)
-        else:
-            run(f"git merge --ff-only {new_remote}", cwd=APP_DIR)
+    if GIT_RESET:
+        run_git(["reset", "--hard", f"{GIT_REMOTE_NAME}/{GIT_BRANCH}"], check=False)
+    else:
+        # ff-only merge
+        run_git(["merge", "--ff-only", f"{GIT_REMOTE_NAME}/{GIT_BRANCH}"], check=False)
 
-        if PIP_ON_CHANGE and (APP_DIR / PIP_FILE).exists():
-            log("[deps] installing requirements...")
-            run(f"pip install -r {PIP_FILE}", cwd=APP_DIR, check=False)
+    after = current_head()
+    changed = (before != after)
+    if changed:
+        vlog(f"Repo changed: {before} -> {after}")
+    else:
+        vlog("No changes in repo.")
+    return changed
 
-        return (True, old_rev, new_rev)
+# --------------------------- pip helpers ---------------------------
 
-    if GIT_VERBOSE: log("[git] up-to-date")
-    return (False, old_rev, new_rev)
+def sha256_of(path: Path) -> Optional[str]:
+    try:
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+def pip_install_if_needed(prev_hash: Optional[str]) -> Optional[str]:
+    """Если requirements.txt изменился — ставим зависимости. Возвращаем новый хэш."""
+    req = GIT_WORK_TREE / PIP_FILE
+    if not PIP_ON_CHANGE or not req.exists():
+        return prev_hash
+    new_hash = sha256_of(req)
+    if new_hash and new_hash != prev_hash:
+        log(f"requirements changed -> pip install -r {PIP_FILE}")
+        try:
+            sp.run([sys.executable, "-m", "pip", "install", "-r", str(req)], check=True)
+        except sp.CalledProcessError as e:
+            log("pip install failed:", e)
+        return new_hash
+    return prev_hash
+
+# --------------------------- app runner ---------------------------
 
 class AppProc:
     def __init__(self, cmd: str):
         self.cmd = cmd
-        self.p: subprocess.Popen | None = None
+        self.proc: Optional[sp.Popen] = None
 
     def start(self):
-        with _lock:
-            log(f"[app] starting: {self.cmd}")
-            self.p = subprocess.Popen(shlex.split(self.cmd), cwd=APP_DIR)
+        if not self.cmd:
+            vlog("APP_CMD is empty, nothing to run.")
+            return
+        log("Starting app:", self.cmd)
+        # shell=False для безопасности
+        args = shlex.split(self.cmd)
+        self.proc = sp.Popen(args, cwd=str(GIT_WORK_TREE), env=os.environ.copy())
 
-    def stop(self, timeout=10):
-        with _lock:
-            if not self.p: return
+    def stop(self):
+        if self.proc and self.proc.poll() is None:
+            log("Stopping app...")
             try:
-                self.p.terminate()
-                self.p.wait(timeout=timeout)
+                self.proc.send_signal(signal.SIGTERM)
+                try:
+                    self.proc.wait(timeout=10)
+                except sp.TimeoutExpired:
+                    self.proc.kill()
             except Exception:
-                try: self.p.kill()
-                except Exception: pass
+                pass
+        self.proc = None
 
-    def is_running(self) -> bool:
-        with _lock:
-            return bool(self.p and self.p.poll() is None)
+    def running(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
 
-def watch_git_loop():
-    log(f"[git] watch loop started (every {GIT_INTERVAL}s, branch {GIT_BRANCH})")
-    while True:
-        changed, *_ = fetch_reset_once()
-        if changed and GIT_RESTART:
-            log("[git] changes detected -> scheduling app restart")
-            _restart_evt.set()
-        time.sleep(GIT_INTERVAL)
+# --------------------------- main flow ---------------------------
+
+def one_update_cycle(prev_req_hash: Optional[str]) -> tuple[bool, Optional[str]]:
+    """Возвращает (repo_changed, new_req_hash)."""
+    changed = hard_sync_to_remote()
+    new_hash = pip_install_if_needed(prev_req_hash)
+    return changed, new_hash
 
 def main():
+    ensure_repo_initialized()
+
+    req_hash = sha256_of(GIT_WORK_TREE / PIP_FILE)
+    # Первая синхронизация (best-effort)
+    try:
+        repo_changed, req_hash = one_update_cycle(req_hash)
+    except Exception as e:
+        log("Initial sync error:", e)
+
+    # Стартуем приложение
     app = AppProc(APP_CMD)
-
-    if GIT_MODE == "off" or not GIT_ENABLE:
-        log("[git] disabled -> run app")
-        app.start()
-        while True:
-            if not app.is_running():
-                rc = app.p.returncode if app.p else 1
-                log(f"[app] exited rc={rc}")
-                if EXIT_ON_CRASH: sys.exit(rc or 0)
-                log("[app] restarting...")
-                app.start()
-            time.sleep(1)
-
-    # initial update if needed
-    fetch_reset_once()
     app.start()
 
-    if GIT_MODE == "update":
-        # one-time update, then stay up & auto-restart on crash
-        log("[git] one-shot update mode")
-    else:
-        t = threading.Thread(target=watch_git_loop, daemon=True)
-        t.start()
+    if not GIT_ENABLE or GIT_MODE == "off":
+        # Просто ждём, чтобы контейнер не выходил
+        log("Git watcher disabled (GIT_ENABLE=0 or GIT_MODE=off).")
+        if app.running():
+            app.proc.wait()
+        else:
+            while True:
+                time.sleep(3600)
 
-    # main supervisor loop
-    while True:
-        if _restart_evt.is_set():
-            _restart_evt.clear()
-            log("[supervisor] restarting app (git update)")
-            app.stop(timeout=8)
-            app.start()
-        elif not app.is_running():
-            rc = app.p.returncode if app.p else 1
-            log(f"[supervisor] app exited rc={rc}")
-            if EXIT_ON_CRASH:
-                log("[supervisor] exit on crash enabled -> stopping container")
-                sys.exit(rc or 0)
-            log("[supervisor] restarting app...")
-            app.start()
-        time.sleep(1)
+    elif GIT_MODE == "update":
+        # Один проход обновления — и всё
+        log("Git mode=update: single update cycle done.")
+        if app.running():
+            app.proc.wait()
+        else:
+            while True:
+                time.sleep(3600)
+
+    elif GIT_MODE == "watch":
+        log(f"Git mode=watch: interval={GIT_INTERVAL}s, restart_on_update={int(GIT_RESTART)}")
+        while True:
+            time.sleep(max(3, GIT_INTERVAL))
+            try:
+                changed, req_hash = one_update_cycle(req_hash)
+                if changed and GIT_RESTART:
+                    log("Changes detected -> restarting app")
+                    app.stop()
+                    app.start()
+            except Exception as e:
+                log("Watch update error:", e)
+                # продолжаем цикл
+                continue
+    else:
+        log(f"Unknown GIT_MODE='{GIT_MODE}', doing nothing.")
+        if app.running():
+            app.proc.wait()
+        else:
+            while True:
+                time.sleep(3600)
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    try: main()
-    except KeyboardInterrupt: pass
+    try:
+        main()
+    except KeyboardInterrupt:
+        log("Interrupted.")

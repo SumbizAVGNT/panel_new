@@ -5,7 +5,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # Запускаем наш python-entrypoint
     entrypoint: ["python", "-u", "docker/git_entrypoint.py"]
     working_dir: /app
     ports:
@@ -22,10 +21,14 @@ services:
       GIT_BRANCH: "main"
       GIT_INTERVAL: "30"
       GIT_RESET: "1"
-      GIT_RESTART: "0"               # панель не рестартуем на каждое изменение (опционально "1")
+      GIT_RESTART: "0"
       GIT_VERBOSE: "1"
       PIP_ON_CHANGE: "1"
       PIP_FILE: "requirements.txt"
+
+      # >>> Разносим git-метаданные и рабочее дерево
+      GIT_DIR: "/git/.git"
+      GIT_WORK_TREE: "/app"
 
       # ---- сеть панели ----
       HOST: 0.0.0.0
@@ -42,10 +45,10 @@ services:
       DB_PASSWORD: "NIUhbsuhwSU*GB0w87ygs08"
       DB_NAME: panel
 
-      # ---- AuthMe (если не задать HOST/PORT/USER/PASSWORD, код возьмёт из DB_*) ----
+      # ---- AuthMe ----
       AUTHME_NAME: authmedb
 
-      # ---- LuckPerms (свои креды) ----
+      # ---- LuckPerms ----
       LUCKPERMS_HOST: 79.174.89.178
       LUCKPERMS_PORT: 16844
       LUCKPERMS_USER: donateLP
@@ -54,7 +57,8 @@ services:
 
       PYTHONUNBUFFERED: "1"
     volumes:
-      - ./:/app
+      - ./:/app            # рабочее дерево (можно заменить на named volume в проде)
+      - gitcache:/git      # <— ОТДЕЛЬНЫЙ ТОМ ДЛЯ .git
     depends_on:
       - bridge
     restart: unless-stopped
@@ -72,9 +76,9 @@ services:
       APP_CMD: "python -u bridge/bridge.py"
       APP_DIR: "/app"
 
-      # ---- Git auto update (одноразово + рестарт на изменение) ----
+      # ---- Git auto update ----
       GIT_ENABLE: "1"
-      GIT_MODE: "watch"     # можно "update" если не нужен постоянный вотчер
+      GIT_MODE: "watch"
       GIT_REMOTE: "origin"
       GIT_BRANCH: "main"
       GIT_INTERVAL: "30"
@@ -84,15 +88,23 @@ services:
       PIP_ON_CHANGE: "1"
       PIP_FILE: "requirements.txt"
 
+      # >>> Разносим git-метаданные и рабочее дерево
+      GIT_DIR: "/git/.git"
+      GIT_WORK_TREE: "/app"
+
       BRIDGE_HOST: 0.0.0.0
       BRIDGE_PORT: 8765
       SP_TOKEN: SUPER_SECRET
       PYTHONUNBUFFERED: "1"
     volumes:
-      - ./:/app
+      - ./:/app            # общее рабочее дерево (как и раньше)
+      - gitcache:/git      # общий кэш .git
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',8765)); print('ok')"]
       interval: 10s
       timeout: 2s
       retries: 10
     restart: unless-stopped
+
+volumes:
+  gitcache:
