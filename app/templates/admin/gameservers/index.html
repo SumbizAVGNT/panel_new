@@ -37,14 +37,13 @@
 <script>
 /*
   Статическая группировка (кластер → дочерние реалмы).
-  Сейчас «anarxy-1» агрегирует «lobby». Позже можно хранить это в БД.
 */
 const STATIC_CLUSTERS = {
-  "anarxy-1": ["lobby"]
+  "anarchy-1": ["lobby"]
 };
 // куда вести по клику на кластер (по умолчанию — первый дочерний)
 const CLUSTER_DEFAULT_TARGET = {
-  "anarxy-1": "lobby"
+  "anarchy-1": "lobby"
 };
 
 function badgeHtml(isOnline, text){

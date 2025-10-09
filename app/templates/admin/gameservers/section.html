@@ -3,6 +3,7 @@
 
 {% block content %}
 <style>
+/* ... (CSS оставил без изменений из твоей версии) ... */
 .container-xxl.gs-scope{
   background:
     radial-gradient(700px 360px at 50% -12%, rgba(148,163,184,.10), transparent 70%),
@@ -102,7 +103,6 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
         {% for key, title in sections %}
           <a class="nav-link px-3 py-2" href="#{{ key }}"><span class="dot"></span>{{ title }}</a>
         {% endfor %}
-        <!-- external section: Accounts -->
         <a class="nav-link px-3 py-2" href="/admin/accounts">
           <span class="dot"></span>Accounts
         </a>
@@ -148,7 +148,7 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
 
           <div class="mt-3">
             <canvas id="tpsChart" height="92"></canvas>
-            <div class="form-text">Мини-график последних значений TPS.</div>
+            <div class="form-text">Мини-график последних значений TPS (1m).</div>
           </div>
         </div>
       </section>
@@ -310,27 +310,40 @@ function unskeleton(){
   }
 }
 
+/* helpers to read normalized stats */
+function avgTps(tps){
+  if(!tps) return null;
+  const arr = [tps["1m"], tps["5m"], tps["15m"]].filter(v=>typeof v==="number");
+  if(!arr.length) return null;
+  return arr.reduce((a,b)=>a+b,0) / arr.length;
+}
+
 /* render stats */
 function render(p){
   lastStats = p;
-  const online = typeof p.online === "number" ? p.online : (p.players||[]).length;
-  const status = (p.tps?.length || online>0) ? "online" : "offline";
+
+  const mspt = p?.tps?.mspt ?? p.mspt ?? null;
+  const tpsAvg = avgTps(p.tps);
+  const tps1m = p?.tps?.["1m"];
+  const online = (p?.players?.online ?? null);
+
+  const status = (typeof online === "number" && online>0) || (typeof tps1m === "number" && tps1m>0) ? "online" : "offline";
   setStatusBadge(status);
 
-  const avgTPS = (p.tps && p.tps.length) ? (p.tps.reduce((a,b)=>a+b,0)/p.tps.length).toFixed(2) : "—";
-  document.getElementById("t-mspt").textContent = p.mspt ?? "—";
-  document.getElementById("t-tps").textContent  = avgTPS;
-  document.getElementById("t-online").textContent = online ?? "—";
-  document.getElementById("t-players").textContent = (p.players||[]).map(x=>x.name).join(", ") || "—";
+  document.getElementById("t-mspt").textContent = (typeof mspt==="number") ? mspt.toFixed(2) : "—";
+  document.getElementById("t-tps").textContent  = (typeof tpsAvg==="number") ? tpsAvg.toFixed(2) : "—";
+  document.getElementById("t-online").textContent = (typeof online==="number") ? online : "—";
+
+  const playersArr = p.players_list || []; // если когда-то добавишь список
+  document.getElementById("t-players").textContent = playersArr.map(x=>x.name).join(", ") || "—";
   unskeleton();
 
-  const last = (p.tps && p.tps.length) ? p.tps[p.tps.length-1] : null;
-  if(last!=null){ tpsSeries.push(last); if(tpsSeries.length>60) tpsSeries.shift(); }
+  if(typeof tps1m==="number"){ tpsSeries.push(tps1m); if(tpsSeries.length>60) tpsSeries.shift(); }
   drawSparkline(document.getElementById("tpsChart"), tpsSeries);
 
+  // Таблицы (если в будущем начнёшь отдавать подробные lists)
   const pt = document.getElementById("tbl-players");
-  const players = p.players||[];
-  pt.innerHTML = players.length ? players.map(pl=>`
+  pt.innerHTML = playersArr.length ? playersArr.map(pl=>`
     <tr><td>${pl.name}</td><td class="small">${pl.uuid||""}</td><td>${pl.world||""}</td></tr>
   `).join("") : `<tr><td colspan="3" class="text-secondary">нет данных</td></tr>`;
 
@@ -362,7 +375,7 @@ async function fetchStats(){
 function openPlayersModal(){
   const list = document.getElementById("players-list");
   list.innerHTML = "";
-  const players = (lastStats?.players)||[];
+  const players = (lastStats?.players_list)||[];
   if(players.length===0){
     list.innerHTML = `<div class="text-secondary">Игроков нет.</div>`;
   } else {

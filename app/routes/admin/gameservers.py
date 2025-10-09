@@ -19,8 +19,16 @@ from flask import render_template, jsonify, request, send_file, current_app
 
 from ...decorators import login_required
 from ...modules.bridge_client import (
-    bridge_list, stats_query, console_exec,
-    maintenance_set, maintenance_whitelist,
+    bridge_list, bridge_info, stats_query, console_exec,
+    maintenance_set, maintenance_whitelist, normalize_server_stats,
+    # LuckPerms
+    lp_web_open, lp_web_apply,
+    lp_user_perm_add, lp_user_perm_remove,
+    lp_user_group_add, lp_user_group_remove,
+    lp_group_perm_add, lp_group_perm_remove,
+    lp_user_info, lp_group_info,
+    # JustPoints
+    jp_balance_get, jp_balance_set, jp_balance_add, jp_balance_take,
 )
 from . import admin_bp  # существующий Blueprint всего админ-раздела
 
@@ -50,6 +58,18 @@ def api_list():
         current_app.logger.exception("bridge_list failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
 
+@admin_bp.route("/gameservers/api/bridge-info")
+@login_required
+def api_bridge_info():
+    try:
+        data = bridge_info()
+        if data.get("type") != "bridge.info.result":
+            return jsonify({"ok": False, "error": data.get("error") or "bridge unavailable"}), 502
+        return jsonify({"ok": True, "data": data.get("payload", {})})
+    except Exception as e:
+        current_app.logger.exception("bridge_info failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
 @admin_bp.route("/gameservers/api/stats")
 @login_required
 def api_stats():
@@ -57,10 +77,13 @@ def api_stats():
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
     try:
-        data = stats_query(realm)
-        if data.get("type") == "bridge.error":
-            return jsonify({"ok": False, "error": data.get("error") or "bridge error"}), 502
-        return jsonify({"ok": True, "data": data.get("payload") or data})
+        raw = stats_query(realm)
+        if raw.get("type") == "bridge.error":
+            return jsonify({"ok": False, "error": raw.get("error") or "bridge error"}), 502
+        norm = normalize_server_stats(raw)
+        if norm.get("type") == "bridge.error":
+            return jsonify({"ok": True, "data": raw})
+        return jsonify({"ok": True, "data": norm})
     except Exception as e:
         current_app.logger.exception("stats_query failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
@@ -220,6 +243,7 @@ def api_console_stream():
 
     BRIDGE_URL = os.getenv("SP_BRIDGE_URL", "ws://127.0.0.1:8765/ws")
     BRIDGE_TOKEN = os.getenv("SP_TOKEN", "SUPER_SECRET")
+    BRIDGE_MAX_SIZE = int(os.getenv("SP_MAX_SIZE", "131072"))
 
     q: Queue = Queue(maxsize=256)
     STOP = object()
@@ -229,7 +253,11 @@ def api_console_stream():
             headers = {"Authorization": f"Bearer {BRIDGE_TOKEN}"}
             try:
                 async with websockets.connect(
-                    BRIDGE_URL, extra_headers=headers, ping_interval=20, ping_timeout=20
+                    BRIDGE_URL,
+                    extra_headers=headers,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    max_size=BRIDGE_MAX_SIZE,
                 ) as ws:
                     while True:
                         raw = await ws.recv()
@@ -238,9 +266,14 @@ def api_console_stream():
                         except Exception:
                             continue
                         t = obj.get("type")
-                        if t not in ("console.stream", "bridge.log"):
+                        if t not in ("console.stream", "bridge.log", "console.out"):
                             continue
-                        r = obj.get("realm") or (obj.get("payload") or {}).get("realm")
+                        # realm может приезжать в корне, payload.realm или data.realm
+                        r = (
+                            obj.get("realm")
+                            or (obj.get("payload") or {}).get("realm")
+                            or (obj.get("data") or {}).get("realm")
+                        )
                         if r != realm:
                             continue
                         payload = obj.get("payload") or obj
@@ -267,18 +300,20 @@ def api_console_stream():
     threading.Thread(target=worker, daemon=True).start()
 
     def gen():
+        # рекомендуемое значение ретрая для SSE (милисекунды)
         yield "retry: 2000\n\n"
         try:
             while True:
                 try:
                     item = q.get(timeout=20)
                 except Empty:
+                    # keep-alive комментарий, чтобы не рвались прокси
                     yield ": keepalive\n\n"
                     continue
                 if item is STOP:
                     break
                 if isinstance(item, dict) and "_err" in item:
-                    yield f"event: err\ndata: {json.dumps(item)}\n\n"
+                    yield f"event: err\ndata: {json.dumps(item, ensure_ascii=False)}\n\n"
                     continue
                 yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
         except GeneratorExit:
@@ -288,3 +323,236 @@ def api_console_stream():
     resp.headers["Cache-Control"] = "no-cache"
     resp.headers["X-Accel-Buffering"] = "no"
     return resp
+
+# ===================== LuckPerms API =====================
+
+def _parse_bool(val) -> bool:
+    if isinstance(val, bool):
+        return val
+    s = (str(val) or "").strip().lower()
+    return s in ("1", "true", "yes", "y", "on")
+
+@admin_bp.route("/gameservers/api/lp/web/open", methods=["POST"])
+@login_required
+def api_lp_web_open():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    if not realm:
+        return jsonify({"ok": False, "error": "realm required"}), 400
+    try:
+        data = lp_web_open(realm)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_web_open failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/web/apply", methods=["POST"])
+@login_required
+def api_lp_web_apply():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    code = (j.get("code") or "").strip()
+    if not realm or not code:
+        return jsonify({"ok": False, "error": "realm and code required"}), 400
+    try:
+        data = lp_web_apply(realm, code)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_web_apply failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/user/perm/add", methods=["POST"])
+@login_required
+def api_lp_user_perm_add():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    user = (j.get("user") or "").strip()
+    permission = (j.get("permission") or "").strip()
+    value = _parse_bool(j.get("value", True))
+    if not realm or not user or not permission:
+        return jsonify({"ok": False, "error": "realm, user, permission required"}), 400
+    try:
+        data = lp_user_perm_add(realm, user, permission, value=value)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_user_perm_add failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/user/perm/remove", methods=["POST"])
+@login_required
+def api_lp_user_perm_remove():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    user = (j.get("user") or "").strip()
+    permission = (j.get("permission") or "").strip()
+    if not realm or not user or not permission:
+        return jsonify({"ok": False, "error": "realm, user, permission required"}), 400
+    try:
+        data = lp_user_perm_remove(realm, user, permission)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_user_perm_remove failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/user/group/add", methods=["POST"])
+@login_required
+def api_lp_user_group_add():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    user = (j.get("user") or "").strip()
+    group = (j.get("group") or "").strip()
+    if not realm or not user or not group:
+        return jsonify({"ok": False, "error": "realm, user, group required"}), 400
+    try:
+        data = lp_user_group_add(realm, user, group)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_user_group_add failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/user/group/remove", methods=["POST"])
+@login_required
+def api_lp_user_group_remove():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    user = (j.get("user") or "").strip()
+    group = (j.get("group") or "").strip()
+    if not realm or not user or not group:
+        return jsonify({"ok": False, "error": "realm, user, group required"}), 400
+    try:
+        data = lp_user_group_remove(realm, user, group)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_user_group_remove failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/group/perm/add", methods=["POST"])
+@login_required
+def api_lp_group_perm_add():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    group = (j.get("group") or "").strip()
+    permission = (j.get("permission") or "").strip()
+    value = _parse_bool(j.get("value", True))
+    if not realm or not group or not permission:
+        return jsonify({"ok": False, "error": "realm, group, permission required"}), 400
+    try:
+        data = lp_group_perm_add(realm, group, permission, value=value)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_group_perm_add failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/group/perm/remove", methods=["POST"])
+@login_required
+def api_lp_group_perm_remove():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    group = (j.get("group") or "").strip()
+    permission = (j.get("permission") or "").strip()
+    if not realm or not group or not permission:
+        return jsonify({"ok": False, "error": "realm, group, permission required"}), 400
+    try:
+        data = lp_group_perm_remove(realm, group, permission)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_group_perm_remove failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/user/info")
+@login_required
+def api_lp_user_info():
+    realm = (request.args.get("realm") or "").strip()
+    user = (request.args.get("user") or "").strip()
+    if not realm or not user:
+        return jsonify({"ok": False, "error": "realm and user required"}), 400
+    try:
+        data = lp_user_info(realm, user)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_user_info failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/lp/group/info")
+@login_required
+def api_lp_group_info():
+    realm = (request.args.get("realm") or "").strip()
+    group = (request.args.get("group") or "").strip()
+    if not realm or not group:
+        return jsonify({"ok": False, "error": "realm and group required"}), 400
+    try:
+        data = lp_group_info(realm, group)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("lp_group_info failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+# ===================== JustPoints API =====================
+
+@admin_bp.route("/gameservers/api/jp/balance")
+@login_required
+def api_jp_balance_get():
+    realm = (request.args.get("realm") or "").strip()
+    user = (request.args.get("user") or "").strip()
+    if not realm or not user:
+        return jsonify({"ok": False, "error": "realm and user required"}), 400
+    try:
+        data = jp_balance_get(realm, user)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("jp_balance_get failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+def _parse_amount(j) -> Optional[float]:
+    try:
+        return float(j.get("amount"))
+    except Exception:
+        return None
+
+@admin_bp.route("/gameservers/api/jp/balance/set", methods=["POST"])
+@login_required
+def api_jp_balance_set():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    user = (j.get("user") or "").strip()
+    amount = _parse_amount(j)
+    if not realm or not user or amount is None:
+        return jsonify({"ok": False, "error": "realm, user, amount required"}), 400
+    try:
+        data = jp_balance_set(realm, user, amount)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("jp_balance_set failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/jp/balance/add", methods=["POST"])
+@login_required
+def api_jp_balance_add():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    user = (j.get("user") or "").strip()
+    amount = _parse_amount(j)
+    if not realm or not user or amount is None:
+        return jsonify({"ok": False, "error": "realm, user, amount required"}), 400
+    try:
+        data = jp_balance_add(realm, user, amount)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("jp_balance_add failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/jp/balance/take", methods=["POST"])
+@login_required
+def api_jp_balance_take():
+    j = request.get_json(silent=True) or {}
+    realm = (j.get("realm") or "").strip()
+    user = (j.get("user") or "").strip()
+    amount = _parse_amount(j)
+    if not realm or not user or amount is None:
+        return jsonify({"ok": False, "error": "realm, user, amount required"}), 400
+    try:
+        data = jp_balance_take(realm, user, amount)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        current_app.logger.exception("jp_balance_take failed: %s", e)
+        return jsonify({"ok": False, "error": "bridge error"}), 502
