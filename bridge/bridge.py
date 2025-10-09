@@ -7,6 +7,7 @@ import json
 import argparse
 import os
 from urllib.parse import urlparse, parse_qs
+from datetime import datetime
 
 import websockets
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
@@ -16,7 +17,7 @@ PLUGINS: dict[str, set] = {}
 # admin connections
 ADMINS: set = set()
 
-# какие типы обычно шлёт плагин
+# какие типы обычно шлёт плагин (для приоритета логов)
 PLUGIN_TYPICAL_TYPES = {
     "console_out", "console_done",
     "server.stats",
@@ -61,9 +62,9 @@ def _extract_realm(ws, path: str, first_msg: dict | None, default_realm: str) ->
     # 3) из первого сообщения
     if not realm and isinstance(first_msg, dict):
         realm = (
-            first_msg.get("realm") or
-            (first_msg.get("payload") or {}).get("realm") or
-            ""
+            first_msg.get("realm")
+            or (first_msg.get("payload") or {}).get("realm")
+            or ""
         )
     return realm or default_realm
 
@@ -96,7 +97,10 @@ async def route_to_realm(realm: str | None, msg: dict):
         print(f"[bridge] NO PLUGIN for realm='{realm}', drop: {msg.get('type')}")
         await broadcast_admin({
             "type": "bridge.warn",
-            "payload": {"message": f"No plugin online for realm '{realm}'", "request": msg}
+            "payload": {
+                "message": f"No plugin online for realm '{realm}'",
+                "request": msg
+            }
         })
         return
     t = msg.get("type")
@@ -115,7 +119,7 @@ async def route_to_realm(realm: str | None, msg: dict):
 
 def _map_admin_request(obj: dict) -> dict:
     """
-    Приводим старые типы к новым и нормализуем payload.
+    Нормализуем вход от админов в единый формат для плагина.
     Возвращаем НОВЫЙ объект, который пойдёт плагину как есть.
     """
     t = obj.get("type")
@@ -124,37 +128,36 @@ def _map_admin_request(obj: dict) -> dict:
 
     # --- console / exec ---
     if t in ("console.exec", "cmd.exec"):
-        cmd = p.get("cmd") or p.get("command") or obj.get("command")
-        return {"type": "cmd.exec", "realm": realm, "command": cmd}
+        cmd = p.get("command") or p.get("cmd") or obj.get("command")
+        return {"type": "console.exec", "realm": realm, "id": p.get("id"), "command": cmd}
 
     if t in ("console.execLines", "cmd.execLines"):
         lines = p.get("lines") or obj.get("lines") or []
-        return {"type": "cmd.execLines", "realm": realm, "lines": lines}
+        return {"type": "console.execLines", "realm": realm, "id": p.get("id"), "lines": lines}
 
     # --- stats ---
     if t in ("stats.query", "server.stats"):
-        # Плагину достаточно послать type=server.stats — он ответит этим же типом с данными
+        # Плагин слушает общий поток PANEL_IN и понимает server.stats (или сам шлёт периодику)
         return {"type": "server.stats", "realm": realm}
 
     # --- maintenance ---
     if t == "maintenance.set":
         enabled = bool(p.get("enabled"))
         message = p.get("message") or ""
-        # Маппим в консольную команду плагина /realm maintenance ...
+        # Маппим в консольные команды плагина
         if enabled:
             cmd = "realm maintenance on"
             if message:
                 cmd += " kick " + message
         else:
             cmd = "realm maintenance off"
-        return {"type": "cmd.exec", "realm": realm, "command": cmd}
+        return {"type": "console.exec", "realm": realm, "command": cmd}
 
     if t == "maintenance.whitelist":
-        # нет нативного API в плагине — пусть тоже идёт как консольная команда
-        action = p.get("action") or "list"
-        user = p.get("user") or ""
+        action = (p.get("action") or "list").strip()
+        user = (p.get("user") or "").strip()
         cmd = f"realm maintwl {action} {user}".strip()
-        return {"type": "cmd.exec", "realm": realm, "command": cmd}
+        return {"type": "console.exec", "realm": realm, "command": cmd}
 
     # --- broadcast ---
     if t == "broadcast":
@@ -179,12 +182,14 @@ async def handler(ws, path, token_required: str, default_realm: str):
     # auth
     provided = _extract_token(ws, path)
     if token_required and provided != token_required:
-        print(f"[bridge] unauthorized from {ws.remote_address}. "
-              f"Provided token len={len(provided)} matches={provided == token_required}")
+        print(
+            f"[bridge] unauthorized from {ws.remote_address}. "
+            f"Provided token len={len(provided)} matches={provided == token_required}"
+        )
         await ws.close(code=4401, reason="unauthorized")
         return
 
-    role = "plugin"  # по умолчанию считаем, что это плагин (под новый клиент без hello)
+    role = "plugin"  # по умолчанию — плагин (тихий клиент без hello)
     realm = None
     print(f"[bridge] connect from {ws.remote_address}")
 
@@ -202,20 +207,14 @@ async def handler(ws, path, token_required: str, default_realm: str):
             first_msg = None
 
         # Определяем роль
-        if isinstance(first_msg, dict) and first_msg.get("type") == "hello":
-            role = "plugin"
-        elif isinstance(first_msg, dict) and first_msg.get("type") in PLUGIN_TYPICAL_TYPES:
-            role = "plugin"
+        if isinstance(first_msg, dict) and first_msg.get("type") in {
+            "bridge.list", "console.exec", "cmd.exec", "cmd.execLines",
+            "stats.query", "server.stats", "maintenance.set", "broadcast", "player.is_online"
+        }:
+            role = "admin"
         else:
-            # если пришёл «админский» тип (list/exec и т.п.) — это админ
-            if isinstance(first_msg, dict) and first_msg.get("type") in {
-                "bridge.list", "console.exec", "cmd.exec", "cmd.execLines",
-                "stats.query", "server.stats", "maintenance.set", "broadcast", "player.is_online"
-            }:
-                role = "admin"
-            else:
-                # если вообще ничего не пришло — пусть будет плагин (он может просто молчать)
-                role = "plugin"
+            # если пришёл «плагинский» тип или ничего не пришло — это плагин
+            role = "plugin"
 
         # realm
         realm = _extract_realm(ws, path, first_msg, default_realm)
@@ -224,46 +223,77 @@ async def handler(ws, path, token_required: str, default_realm: str):
         if role == "plugin":
             PLUGINS.setdefault(realm, set()).add(ws)
             print(f"[bridge] plugin registered realm='{realm}'")
-            await broadcast_admin({"type": "bridge.info",
-                                   "payload": {"message": f"Plugin online realm='{realm}'"}})
+            # Отвечаем плагину, что связь OK (иначе некоторые клиенты ждут ACK)
+            await _send_json(ws, {
+                "type": "hello.ok",
+                "realm": realm,
+                "server_time": datetime.utcnow().isoformat() + "Z"
+            })
+            await broadcast_admin({
+                "type": "bridge.info",
+                "payload": {"message": f"Plugin online realm='{realm}'"}
+            })
         else:
             ADMINS.add(ws)
             print("[bridge] admin connected")
-
-        # если первое сообщение админское — обработаем
-        if role == "admin" and isinstance(first_msg, dict) and first_msg:
-            await process_admin(ws, first_msg)
+            # если первое сообщение админское — обработаем
+            if isinstance(first_msg, dict) and first_msg:
+                await process_admin(ws, first_msg)
 
         # основной цикл
-        try:
-            async for raw in ws:
-                try:
-                    obj = json.loads(raw)
-                except Exception:
-                    print("[bridge] bad json:", raw)
+        async for raw in ws:
+            # допускаем ping/pong текстовые
+            if isinstance(raw, (bytes, bytearray)):
+                # бинарь транслируем админам как есть
+                await broadcast_admin({"type": "bridge.binary", "realm": realm, "len": len(raw)})
+                continue
+
+            try:
+                obj = json.loads(raw)
+            except Exception:
+                # не-JSON от плагина — ретранслируем админам как echo
+                if role == "plugin":
+                    await broadcast_admin({"type": "bridge.echo", "realm": realm, "payload": raw})
+                else:
+                    await _send_json(ws, {"type": "bridge.ack", "payload": {"seenText": raw}})
+                continue
+
+            if role == "plugin":
+                t = obj.get("type")
+                # базовые сервисные ответы
+                if t == "ping":
+                    await _send_json(ws, {"type": "pong", "realm": realm})
+                    continue
+                if t == "hello":
+                    await _send_json(ws, {
+                        "type": "hello.ok",
+                        "realm": realm,
+                        "server_time": datetime.utcnow().isoformat() + "Z"
+                    })
                     continue
 
-                if role == "plugin":
-                    t = obj.get("type")
-                    print(f"[bridge] <- {t} from {realm}")
-
-                    # транслируем админам важные события/ответы
-                    if t in {"console_out", "console_done", "server.stats",
-                             "player.online", "broadcast.ok", "error", "pong"}:
-                        await broadcast_admin(obj)
-                    else:
-                        # echo на всякий случай
-                        await broadcast_admin({"type": "bridge.echo", "payload": obj})
+                # логируем приоритетные типы, остальное тоже транслируем
+                tag = t or "?"
+                if t in PLUGIN_TYPICAL_TYPES:
+                    print(f"[bridge] <- {tag} from realm='{realm}'")
                 else:
-                    await process_admin(ws, obj)
+                    print(f"[bridge] <- other:{tag} from realm='{realm}'")
 
-        except (ConnectionClosedOK, ConnectionClosedError):
-            pass
+                # транслируем админам ВСЁ (раньше мы теряли полезные кадры)
+                await broadcast_admin({**obj, "realm": realm})
+            else:
+                await process_admin(ws, obj)
 
+    except (ConnectionClosedOK, ConnectionClosedError):
+        pass
     finally:
         if role == "plugin" and realm:
             PLUGINS.get(realm, set()).discard(ws)
             print(f"[bridge] plugin disconnected realm='{realm}'")
+            await broadcast_admin({
+                "type": "bridge.info",
+                "payload": {"message": f"Plugin offline realm='{realm}'"}
+            })
         elif role == "admin":
             ADMINS.discard(ws)
             print("[bridge] admin disconnected")
@@ -275,8 +305,14 @@ async def process_admin(ws, obj: dict):
     p = norm.get("payload") or {}
     realm = norm.get("realm") or p.get("realm")
 
-    if t in {"cmd.exec", "cmd.execLines", "server.stats",
-             "broadcast", "player.is_online"}:
+    # быстрые ACK’и админам
+    if t not in {"bridge.list"}:
+        try:
+            await _send_json(ws, {"type": "bridge.ack", "payload": {"seenType": t}})
+        except Exception:
+            pass
+
+    if t in {"console.exec", "console.execLines", "server.stats", "broadcast", "player.is_online"}:
         await route_to_realm(realm, norm)
         return
 
@@ -285,21 +321,21 @@ async def process_admin(ws, obj: dict):
         await _send_json(ws, {"type": "bridge.list.result", "payload": listing})
         return
 
-    # по умолчанию — ack
-    await _send_json(ws, {"type": "bridge.ack", "payload": {"seenType": t}})
+    # неизвестное — просто подтвердим
+    await _send_json(ws, {"type": "bridge.ack", "payload": {"seenType": t, "note": "unknown"}})
 
 # ------------------ REPL (optional) ------------------
 
 async def repl(uri, token, default_realm: str):
     async with websockets.connect(uri, extra_headers={"Authorization": f"Bearer {token}"}) as ws:
         print("REPL ready. Commands:")
-        print("  list")
-        print("  exec <realm?> <cmd...>")
-        print("  execm <realm?>  # множественные строки, окончание пустой строкой")
-        print("  stats <realm?>")
-        print("  maint <realm?> on|off [kick message]")
-        print("  bc <realm?> <message>")
-        print("  online <realm?> <name|uuid>")
+        print(" list")
+        print(" exec <realm?> <cmd...>")
+        print(" execm <realm?> # множественные строки, окончание пустой строкой")
+        print(" stats <realm?>")
+        print(" maint <realm?> on|off [kick message]")
+        print(" bc <realm?> <message>")
+        print(" online <realm?> <name|uuid>")
 
         async def reader():
             async for m in ws:
@@ -312,65 +348,60 @@ async def repl(uri, token, default_realm: str):
                     continue
                 if line == "list":
                     await ws.send(json.dumps({"type": "bridge.list"})); continue
+
                 if line.startswith("execm"):
-                    # многократные строки команд
                     parts = line.split(" ", 1)
-                    realm = None
-                    if len(parts) > 1 and parts[1]:
-                        realm = parts[1].strip()
+                    realm = parts[1].strip() if len(parts) > 1 and parts[1] else None
                     print("enter commands, blank line to finish")
                     lines = []
                     while True:
                         l = input("")
                         if not l: break
                         lines.append(l)
-                    payload = {"type": "cmd.execLines"}
-                    if realm: payload["realm"] = realm
-                    payload["lines"] = lines
+                    payload = {"type": "console.execLines", **({"realm": realm} if realm else {}), "lines": lines}
                     await ws.send(json.dumps(payload)); continue
+
                 if line.startswith("exec "):
                     _, *rest = line.split(" ")
+                    if not rest:
+                        print("usage: exec <realm?> <cmd...>"); continue
                     # если указан realm — он первый
-                    if rest:
-                        # предполагаем, что если realm без пробелов и онлайн ровно один — можно его опустить
-                        realm = rest[0]
-                        cmd = " ".join(rest[1:]) if len(rest) > 1 else ""
-                        if not cmd:
-                            print("usage: exec <realm?> <cmd...>")
-                            continue
-                        await ws.send(json.dumps({"type": "cmd.exec", "realm": realm, "command": cmd})); continue
+                    realm = rest[0] if len(rest) > 1 else None
+                    cmd = " ".join(rest[1:]) if len(rest) > 1 else " ".join(rest)
+                    if not cmd:
+                        print("usage: exec <realm?> <cmd...>"); continue
+                    await ws.send(json.dumps({"type": "console.exec", **({"realm": realm} if realm else {}), "command": cmd})); continue
+
                 if line.startswith("stats"):
                     _, *rest = line.split(" ", 1)
                     realm = rest[0] if rest else None
                     await ws.send(json.dumps({"type": "server.stats", **({"realm": realm} if realm else {})})); continue
+
                 if line.startswith("maint "):
                     _, *rest = line.split(" ")
-                    if len(rest) < 1:
+                    if not rest:
                         print("usage: maint <realm?> on|off [kick message]"); continue
-                    # если realm не указан явно — попытаемся без него (бридж сам подставит если ровно один)
                     if rest[0] in ("on", "off"):
-                        realm = None
-                        state = rest[0]
-                        msg = " ".join(rest[1:]) if len(rest) > 1 else ""
+                        realm = None; state = rest[0]; msg = " ".join(rest[1:]) if len(rest) > 1 else ""
                     else:
                         realm = rest[0]
                         if len(rest) < 2:
                             print("usage: maint <realm> on|off [kick message]"); continue
-                        state = rest[1]
-                        msg = " ".join(rest[2:]) if len(rest) > 2 else ""
+                        state = rest[1]; msg = " ".join(rest[2:]) if len(rest) > 2 else ""
                     await ws.send(json.dumps({
                         "type": "maintenance.set",
                         **({"realm": realm} if realm else {}),
                         "payload": {"realm": realm, "enabled": state.lower() == "on", "message": msg}
                     })); continue
+
                 if line.startswith("bc "):
                     _, *rest = line.split(" ")
                     if not rest:
                         print("usage: bc <realm?> <message>"); continue
-                    # если realm был — он первый
                     realm = None
                     message = " ".join(rest)
                     await ws.send(json.dumps({"type": "broadcast", **({"realm": realm} if realm else {}), "message": message})); continue
+
                 if line.startswith("online "):
                     _, *rest = line.split(" ")
                     if not rest:
@@ -378,7 +409,9 @@ async def repl(uri, token, default_realm: str):
                     realm = None
                     who = rest[-1]
                     await ws.send(json.dumps({"type": "player.is_online", **({"realm": realm} if realm else {}), "name": who})); continue
+
                 print("unknown command")
+
         await asyncio.gather(reader(), writer())
 
 # ------------------ main ------------------
@@ -388,8 +421,7 @@ async def main():
     ap.add_argument("--host", default=os.getenv("SP_BRIDGE_HOST", "0.0.0.0"))
     ap.add_argument("--port", type=int, default=int(os.getenv("SP_BRIDGE_PORT", "8765")))
     ap.add_argument("--token", default=os.getenv("SP_TOKEN", "SUPER_SECRET"))
-    ap.add_argument("--realm", default=os.getenv("SP_REALM", "default"),
-                    help="default realm for plugin connections without hello/realm")
+    ap.add_argument("--realm", default=os.getenv("SP_REALM", "default"), help="default realm for plugin connections without hello/realm")
     ap.add_argument("--repl", action="store_true", help="run local REPL admin client")
     args = ap.parse_args()
 
@@ -400,7 +432,8 @@ async def main():
 
     print(f"[bridge] starting ws server on ws://{args.host}:{args.port}/ws "
           f"(token len={len(args.token)}, default realm='{args.realm}')")
-    async with websockets.serve(ws_handler, args.host, args.port, ping_interval=20, ping_timeout=20):
+
+    async with websockets.serve(ws_handler, args.host, args.port, ping_interval=20, ping_timeout=20, max_size=131072):
         if args.repl:
             await repl(f"ws://127.0.0.1:{args.port}/ws", args.token, args.realm)
         else:
