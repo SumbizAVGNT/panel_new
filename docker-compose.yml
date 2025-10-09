@@ -25,10 +25,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    working_dir: /app
     entrypoint:
       - python
       - -u
-      - /usr/local/bin/git_entrypoint.py
+      - docker/git_entrypoint.py
     environment:
       APP_CMD: ""
       APP_DIR: "/app"
@@ -120,9 +121,10 @@ services:
           fi
         done
     environment:
-      BRIDGE_HOST: 0.0.0.0
-      BRIDGE_PORT: 8765
+      SP_BRIDGE_HOST: 0.0.0.0
+      SP_BRIDGE_PORT: 8765
       SP_TOKEN: SUPER_SECRET
+      SP_REALM: anarchy
       PYTHONUNBUFFERED: "1"
     volumes:
       - app_code:/app
@@ -227,7 +229,7 @@ services:
       git:
         condition: service_healthy
       bridge:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     <<: *common_limits
     mem_limit: 768m
