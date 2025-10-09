@@ -46,6 +46,8 @@ services:
       PIP_FILE: "requirements.txt"
       GIT_DIR: "/git/.git"
       GIT_WORK_TREE: "/app"
+      # файл-маркер ревизии — по нему подхватывают изменения другие контейнеры
+      REV_FILE: "/app/.rev"
     volumes:
       - app_code:/app
       - git_repo:/git
@@ -72,13 +74,22 @@ services:
         set -Eeuo pipefail
         cd /app
 
-        until [ -f bridge/bridge.py ]; do echo '[bridge] wait code...'; sleep 1; done
-        if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+        # ждём код (или ревизию)
+        until [ -f bridge/bridge.py ] || [ -f .rev ]; do echo '[bridge] wait code...'; sleep 1; done
+        [ -f requirements.txt ] && pip install -r requirements.txt || true
 
         checksum() {
-          find . -type f \( -name '*.py' -o -name 'requirements.txt' \) \
-            -not -path './.git/*' -not -path './__pycache__/*' \
-            -printf '%P %T@ %s\n' | sort | md5sum | awk '{print $1}'
+          {
+            [ -f .rev ] && echo ".rev $(stat -c '%Y %s' .rev 2>/dev/null)";
+            find . -type f \
+              \( -name '*.py' -o -name '*.txt' -o -name '*.md' \
+                 -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \
+                 -o -name '*.ini'  -o -name '*.cfg' \
+                 -o -name '*.html' -o -name '*.jinja' -o -name '*.jinja2' -o -name '*.tpl' \
+                 -path './templates/*' -o -path './static/*' \) \
+              -not -path './.git/*' -not -path './__pycache__/*' \
+              -printf '%P %T@ %s\n' 2>/dev/null
+          } | sort | md5sum | awk '{print $1}'
         }
 
         CS="$$(checksum || true)"
@@ -156,13 +167,22 @@ services:
         set -Eeuo pipefail
         cd /app
 
-        until [ -f run.py ]; do echo '[panel] wait code...'; sleep 1; done
-        if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+        # ждём код (или ревизию)
+        until [ -f run.py ] || [ -f .rev ]; do echo '[panel] wait code...'; sleep 1; done
+        [ -f requirements.txt ] && pip install -r requirements.txt || true
 
         checksum() {
-          find . -type f \( -name '*.py' -o -name 'requirements.txt' \) \
-            -not -path './.git/*' -not -path './__pycache__/*' \
-            -printf '%P %T@ %s\n' | sort | md5sum | awk '{print $1}'
+          {
+            [ -f .rev ] && echo ".rev $(stat -c '%Y %s' .rev 2>/dev/null)";
+            find . -type f \
+              \( -name '*.py' -o -name '*.txt' -o -name '*.md' \
+                 -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \
+                 -o -name '*.ini'  -o -name '*.cfg' \
+                 -o -name '*.html' -o -name '*.jinja' -o -name '*.jinja2' -o -name '*.tpl' \
+                 -path './templates/*' -o -path './static/*' \) \
+              -not -path './.git/*' -not -path './__pycache__/*' \
+              -printf '%P %T@ %s\n' 2>/dev/null
+          } | sort | md5sum | awk '{print $1}'
         }
 
         CS="$$(checksum || true)"
