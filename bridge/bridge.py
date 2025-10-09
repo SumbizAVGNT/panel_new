@@ -20,15 +20,23 @@ ADMINS: set = set()
 
 # типы, которые чаще всего шлёт плагин — логируем их заметнее
 PLUGIN_TYPICAL_TYPES = {
-    "console_out", "console_done",
+    # консоль
+    "console.out", "console_done",
+    # телеметрия
     "server.stats", "stats.report",
+    # базовые
     "player.online", "broadcast.ok",
-    "error", "pong", "bridge.log"
+    "error", "pong", "bridge.log",
+    # ops/cmdwl
+    "ops.stats", "ops.list", "cmdwl.stats", "cmdwl.list", "cmdwl.commands",
+    # luckperms
+    "lp.user.changed", "lp.group.changed", "lp.web.url", "lp.web.apply.ok",
+    # justpoints
+    "jp.balance", "jp.ok"
 }
 
 # === LOG HELPERS ===
 def _short_json(obj, limit=2000) -> str:
-    """Компактный json без пробелов, с усечением."""
     try:
         s = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
     except Exception:
@@ -42,21 +50,15 @@ def _pretty_tag(obj) -> str:
     return t or "?"
 
 def _log_recv(tag: str, realm: str | None, obj: dict, verbose: bool) -> None:
-    """Гибкое логирование входящих от плагина кадров."""
-    # Всегда раскрываем полезные метрики
     if tag in ("server.stats", "stats.report"):
         print(f"[bridge] <- {tag} from realm='{realm}' payload={_short_json(obj)}")
         return
-
-    # Типовые — короткая строка (и payload при verbose)
     if tag in PLUGIN_TYPICAL_TYPES:
         if verbose:
             print(f"[bridge] <- {tag} from realm='{realm}' payload={_short_json(obj)}")
         else:
             print(f"[bridge] <- {tag} from realm='{realm}'")
         return
-
-    # Остальные — печатаем только при verbose
     if verbose:
         print(f"[bridge] <- other:{tag} from realm='{realm}' payload={_short_json(obj)}")
     else:
@@ -71,7 +73,6 @@ def _extract_qs(path: str) -> dict[str, list[str]]:
         return {}
 
 def _extract_token(ws, path: str) -> str:
-    """Токен из Authorization / X-Auth-Token / query ?token="""
     h = ws.request_headers  # case-insensitive
     auth = h.get("Authorization") or h.get("authorization") or ""
     token = ""
@@ -89,14 +90,11 @@ def _extract_token(ws, path: str) -> str:
     return token or ""
 
 def _extract_realm(ws, path: str, first_msg: dict | None, default_realm: str) -> str:
-    # 1) из заголовка
     h = ws.request_headers
     realm = h.get("X-Realm") or h.get("x-realm") or ""
-    # 2) из query
     if not realm:
         q = _extract_qs(path)
         realm = (q.get("realm") or [""])[0]
-    # 3) из первого сообщения
     if not realm and isinstance(first_msg, dict):
         realm = (
             first_msg.get("realm")
@@ -127,7 +125,6 @@ def _single_online_realm() -> str | None:
     return live[0] if len(live) == 1 else None
 
 async def route_to_realm(realm: str | None, msg: dict):
-    # если realm не указан, а есть ровно один — возьмём его
     if not realm:
         realm = _single_online_realm()
     if not realm or not realm_has_plugins(realm):
@@ -154,6 +151,22 @@ async def route_to_realm(realm: str | None, msg: dict):
 
 # ------------------ admin side mapping ------------------
 
+_ADMIN_FIRST_TYPES = {
+    # существующие
+    "bridge.list", "console.exec", "cmd.exec", "cmd.execLines",
+    "stats.query", "server.stats", "maintenance.set", "broadcast", "player.is_online",
+    # новые: ops/cmdwl
+    "ops.set", "cmdwl.set", "cmdwl.commands",
+    # luckperms
+    "lp.web.open", "lp.web.apply",
+    "lp.user.perm.add", "lp.user.perm.remove",
+    "lp.user.group.add", "lp.user.group.remove",
+    "lp.group.perm.add", "lp.group.perm.remove",
+    "lp.user.info", "lp.group.info",
+    # justpoints
+    "jp.balance.get", "jp.balance.set", "jp.balance.add", "jp.balance.take",
+}
+
 def _map_admin_request(obj: dict) -> dict:
     """
     Нормализуем вход от админов в единый формат для плагина.
@@ -174,14 +187,12 @@ def _map_admin_request(obj: dict) -> dict:
 
     # --- stats ---
     if t in ("stats.query", "server.stats"):
-        # Плагин слушает общий поток и может сам отвечать "server.stats" (или "stats.report")
         return {"type": "server.stats", "realm": realm}
 
     # --- maintenance ---
     if t == "maintenance.set":
         enabled = bool(p.get("enabled"))
         message = p.get("message") or p.get("kickMessage") or p.get("reason") or ""
-        # Маппим в консольные команды плагина (универсально)
         if enabled:
             cmd = "realm maintenance on"
             if message:
@@ -190,8 +201,8 @@ def _map_admin_request(obj: dict) -> dict:
             cmd = "realm maintenance off"
         return {"type": "console.exec", "realm": realm, "command": cmd}
 
+    # --- maintenance whitelist via console alias ---
     if t == "maintenance.whitelist":
-        # принимаем оба варианта ключей
         action = (p.get("action") or p.get("op") or "list").strip()
         user = (p.get("user") or p.get("player") or "").strip()
         cmd = f"realm maintwl {action} {user}".strip()
@@ -211,6 +222,24 @@ def _map_admin_request(obj: dict) -> dict:
             "name": p.get("name") or obj.get("name"),
         }
 
+    # --- OPS/CMDWL прямые события, плагин их уже понимает ---
+    if t in ("ops.set", "cmdwl.set", "cmdwl.commands"):
+        return {"type": t, "realm": realm, "payload": p}
+
+    # --- LuckPerms: сразу транзит (плагин реализует обработку этих типов) ---
+    if t in {
+        "lp.web.open", "lp.web.apply",
+        "lp.user.perm.add", "lp.user.perm.remove",
+        "lp.user.group.add", "lp.user.group.remove",
+        "lp.group.perm.add", "lp.group.perm.remove",
+        "lp.user.info", "lp.group.info"
+    }:
+        return {"type": t, "realm": realm, "payload": p}
+
+    # --- JustPoints: сразу транзит ---
+    if t in {"jp.balance.get", "jp.balance.set", "jp.balance.add", "jp.balance.take"}:
+        return {"type": t, "realm": realm, "payload": p}
+
     # по умолчанию пропускаем как есть
     return obj
 
@@ -227,7 +256,7 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
         await ws.close(code=4401, reason="unauthorized")
         return
 
-    role = "plugin"  # по умолчанию — плагин (тихий клиент без hello)
+    role = "plugin"  # по умолчанию — плагин
     realm = None
     print(f"[bridge] connect from {ws.remote_address}")
 
@@ -244,11 +273,8 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
         except Exception:
             first_msg = None
 
-        # Определяем роль
-        if isinstance(first_msg, dict) and first_msg.get("type") in {
-            "bridge.list", "console.exec", "cmd.exec", "cmd.execLines",
-            "stats.query", "server.stats", "maintenance.set", "broadcast", "player.is_online"
-        }:
+        # Определяем роль (учитываем новые админ-типы)
+        if isinstance(first_msg, dict) and first_msg.get("type") in _ADMIN_FIRST_TYPES:
             role = "admin"
         else:
             role = "plugin"
@@ -260,7 +286,6 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
         if role == "plugin":
             PLUGINS.setdefault(realm, set()).add(ws)
             print(f"[bridge] plugin registered realm='{realm}'")
-            # Отвечаем плагину, что связь OK
             await _send_json(ws, {
                 "type": "hello.ok",
                 "realm": realm,
@@ -270,6 +295,10 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
                 "type": "bridge.info",
                 "payload": {"message": f"Plugin online realm='{realm}'"}
             })
+            # если плагин первым прислал кадр (например, hello) — отдадим ACK/ok ниже в основном цикле
+            if isinstance(first_msg, dict) and first_msg:
+                _log_recv(first_msg.get("type") or "?", realm, first_msg, verbose)
+                await broadcast_admin({**first_msg, "realm": realm})
         else:
             ADMINS.add(ws)
             print("[bridge] admin connected")
@@ -279,16 +308,13 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
 
         # основной цикл
         async for raw in ws:
-            # допускаем ping/pong текстовые
             if isinstance(raw, (bytes, bytearray)):
-                # бинарь транслируем админам как есть
                 await broadcast_admin({"type": "bridge.binary", "realm": realm, "len": len(raw)})
                 continue
 
             try:
                 obj = json.loads(raw)
             except Exception:
-                # не-JSON от плагина — ретранслируем админам как echo
                 if role == "plugin":
                     await broadcast_admin({"type": "bridge.echo", "realm": realm, "payload": raw})
                 else:
@@ -309,10 +335,8 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
                     })
                     continue
 
-                # гибкое логирование входящих кадров
                 _log_recv(t, realm, obj, verbose)
-
-                # транслируем админам ВСЁ
+                # транслируем админам ВСЁ, добавив realm
                 await broadcast_admin({**obj, "realm": realm})
             else:
                 await process_admin(ws, obj, verbose=verbose)
@@ -338,12 +362,24 @@ async def process_admin(ws, obj: dict, *, verbose: bool):
     p = norm.get("payload") or {}
     realm = norm.get("realm") or p.get("realm")
 
-    # быстрые ACK’и админам (обернём на всякий)
+    # быстрые ACK’и админам
     if t not in {"bridge.list"}:
         with contextlib.suppress(Exception):
             await _send_json(ws, {"type": "bridge.ack", "payload": {"seenType": t}})
 
-    if t in {"console.exec", "console.execLines", "server.stats", "broadcast", "player.is_online"}:
+    # прямые типы, которые должен обработать плагин:
+    direct_to_plugin = {
+        "console.exec", "console.execLines",
+        "server.stats", "broadcast", "player.is_online",
+        "ops.set", "cmdwl.set", "cmdwl.commands",
+        "lp.web.open", "lp.web.apply",
+        "lp.user.perm.add", "lp.user.perm.remove",
+        "lp.user.group.add", "lp.user.group.remove",
+        "lp.group.perm.add", "lp.group.perm.remove",
+        "lp.user.info", "lp.group.info",
+        "jp.balance.get", "jp.balance.set", "jp.balance.add", "jp.balance.take",
+    }
+    if t in direct_to_plugin:
         await route_to_realm(realm, norm)
         return
 
@@ -367,6 +403,18 @@ async def repl(uri, token, default_realm: str, *, verbose: bool):
         print(" maint <realm?> on|off [kick message]")
         print(" bc <realm?> <message>")
         print(" online <realm?> <name|uuid>")
+        print(" lpopen <realm?>")
+        print(" lpapply <realm?> <code>")
+        print(" lpuadd <realm?> <user> <perm> [true|false]")
+        print(" lpurem <realm?> <user> <perm>")
+        print(" lpugadd <realm?> <user> <group>")
+        print(" lpugrem <realm?> <user> <group>")
+        print(" lpgadd <realm?> <group> <perm> [true|false]")
+        print(" lpgrem <realm?> <group> <perm>")
+        print(" jpget <realm?> <user>")
+        print(" jpset <realm?> <user> <amount>")
+        print(" jpadd <realm?> <user> <amount>")
+        print(" jptake <realm?> <user> <amount>")
 
         async def reader():
             async for m in ws:
@@ -400,7 +448,6 @@ async def repl(uri, token, default_realm: str, *, verbose: bool):
                     _, *rest = line.split(" ")
                     if not rest:
                         print("usage: exec <realm?> <cmd...>"); continue
-                    # если указан realm — он первый
                     realm = rest[0] if len(rest) > 1 else None
                     cmd = " ".join(rest[1:]) if len(rest) > 1 else " ".join(rest)
                     if not cmd:
@@ -444,6 +491,130 @@ async def repl(uri, token, default_realm: str, *, verbose: bool):
                     realm = None
                     who = rest[-1]
                     await ws.send(json.dumps({"type": "player.is_online", **({"realm": realm} if realm else {}), "name": who})); continue
+
+                # ---- LuckPerms REPL helpers ----
+                if line.startswith("lpopen"):
+                    _, *rest = line.split(" ", 1)
+                    realm = (rest[0].strip() if rest else None) or None
+                    await ws.send(json.dumps({"type": "lp.web.open", **({"realm": realm} if realm else {})})); continue
+
+                if line.startswith("lpapply "):
+                    _, *rest = line.split(" ", 1)
+                    if not rest:
+                        print("usage: lpapply <realm?> <code>"); continue
+                    parts = rest[0].split(" ")
+                    if len(parts) == 1:
+                        realm = None; code = parts[0]
+                    else:
+                        realm = parts[0]; code = parts[1]
+                    await ws.send(json.dumps({"type": "lp.web.apply", **({"realm": realm} if realm else {}), "payload": {"code": code}})); continue
+
+                if line.startswith("lpuadd "):
+                    # lpuadd <realm?> <user> <perm> [true|false]
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: lpuadd <realm?> <user> <perm> [true|false]"); continue
+                    if len(rest) == 2:
+                        realm = None; user, perm = rest
+                        val = True
+                    else:
+                        realm = rest[0]; user = rest[1]; perm = rest[2]; val = (rest[3].lower() == "true") if len(rest) > 3 else True
+                    await ws.send(json.dumps({"type": "lp.user.perm.add", **({"realm": realm} if realm else {}), "payload": {"user": user, "permission": perm, "value": val}})); continue
+
+                if line.startswith("lpurem "):
+                    # lpurem <realm?> <user> <perm>
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: lpurem <realm?> <user> <perm>"); continue
+                    if len(rest) == 2:
+                        realm = None; user, perm = rest
+                    else:
+                        realm = rest[0]; user = rest[1]; perm = rest[2]
+                    await ws.send(json.dumps({"type": "lp.user.perm.remove", **({"realm": realm} if realm else {}), "payload": {"user": user, "permission": perm}})); continue
+
+                if line.startswith("lpugadd "):
+                    # lpugadd <realm?> <user> <group>
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: lpugadd <realm?> <user> <group>"); continue
+                    if len(rest) == 2:
+                        realm = None; user, group = rest
+                    else:
+                        realm = rest[0]; user = rest[1]; group = rest[2]
+                    await ws.send(json.dumps({"type": "lp.user.group.add", **({"realm": realm} if realm else {}), "payload": {"user": user, "group": group}})); continue
+
+                if line.startswith("lpugrem "):
+                    # lpugrem <realm?> <user> <group>
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: lpugrem <realm?> <user> <group>"); continue
+                    if len(rest) == 2:
+                        realm = None; user, group = rest
+                    else:
+                        realm = rest[0]; user = rest[1]; group = rest[2]
+                    await ws.send(json.dumps({"type": "lp.user.group.remove", **({"realm": realm} if realm else {}), "payload": {"user": user, "group": group}})); continue
+
+                if line.startswith("lpgadd "):
+                    # lpgadd <realm?> <group> <perm> [true|false]
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: lpgadd <realm?> <group> <perm> [true|false]"); continue
+                    if len(rest) == 2:
+                        realm = None; group, perm = rest
+                        val = True
+                    else:
+                        realm = rest[0]; group = rest[1]; perm = rest[2]; val = (rest[3].lower() == "true") if len(rest) > 3 else True
+                    await ws.send(json.dumps({"type": "lp.group.perm.add", **({"realm": realm} if realm else {}), "payload": {"group": group, "permission": perm, "value": val}})); continue
+
+                if line.startswith("lpgrem "):
+                    # lpgrem <realm?> <group> <perm>
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: lpgrem <realm?> <group> <perm>"); continue
+                    if len(rest) == 2:
+                        realm = None; group, perm = rest
+                    else:
+                        realm = rest[0]; group = rest[1]; perm = rest[2]
+                    await ws.send(json.dumps({"type": "lp.group.perm.remove", **({"realm": realm} if realm else {}), "payload": {"group": group, "permission": perm}})); continue
+
+                # ---- JustPoints REPL helpers ----
+                if line.startswith("jpget "):
+                    _, *rest = line.split(" ")
+                    if len(rest) == 1:
+                        realm = None; user = rest[0]
+                    else:
+                        realm = rest[0]; user = rest[1]
+                    await ws.send(json.dumps({"type": "jp.balance.get", **({"realm": realm} if realm else {}), "payload": {"user": user}})); continue
+
+                if line.startswith("jpset "):
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: jpset <realm?> <user> <amount>"); continue
+                    if len(rest) == 2:
+                        realm = None; user, amt = rest
+                    else:
+                        realm = rest[0]; user = rest[1]; amt = rest[2]
+                    await ws.send(json.dumps({"type": "jp.balance.set", **({"realm": realm} if realm else {}), "payload": {"user": user, "amount": float(amt)}})); continue
+
+                if line.startswith("jpadd "):
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: jpadd <realm?> <user> <amount>"); continue
+                    if len(rest) == 2:
+                        realm = None; user, amt = rest
+                    else:
+                        realm = rest[0]; user = rest[1]; amt = rest[2]
+                    await ws.send(json.dumps({"type": "jp.balance.add", **({"realm": realm} if realm else {}), "payload": {"user": user, "amount": float(amt)}})); continue
+
+                if line.startswith("jptake "):
+                    _, *rest = line.split(" ")
+                    if len(rest) < 2:
+                        print("usage: jptake <realm?> <user> <amount>"); continue
+                    if len(rest) == 2:
+                        realm = None; user, amt = rest
+                    else:
+                        realm = rest[0]; user = rest[1]; amt = rest[2]
+                    await ws.send(json.dumps({"type": "jp.balance.take", **({"realm": realm} if realm else {}), "payload": {"user": user, "amount": float(amt)}})); continue
 
                 print("unknown command")
 
