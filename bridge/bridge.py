@@ -6,22 +6,27 @@ import asyncio
 import json
 import argparse
 import os
+import sys
 import contextlib
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
+from collections import deque
+from typing import Dict, Set, Optional
 
 import websockets
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
-# realm -> set(ws)
-PLUGINS: dict[str, set] = {}
-# admin connections
-ADMINS: set = set()
+# ------------------ state ------------------
 
-# типы, которые чаще всего шлёт плагин — логируем их заметнее
+# realm -> set(ws)
+PLUGINS: Dict[str, Set] = {}
+# admin connections
+ADMINS: Set = set()
+
+# типы, которые чаще всего шлёт плагин — логируем их заметнее (единый стиль: dot.case)
 PLUGIN_TYPICAL_TYPES = {
     # консоль
-    "console.out", "console_done",
+    "console.out", "console.done",
     # телеметрия
     "server.stats", "stats.report",
     # базовые
@@ -32,8 +37,24 @@ PLUGIN_TYPICAL_TYPES = {
     # luckperms
     "lp.user.changed", "lp.group.changed", "lp.web.url", "lp.web.apply.ok",
     # justpoints
-    "jp.balance", "jp.ok"
+    "jp.balance", "jp.ok",
 }
+
+# простая защита от флуда (token bucket per-connection)
+RATE_LIMIT = int(os.getenv("SP_RATE_LIMIT", "30"))   # сообщений
+RATE_WINDOW = float(os.getenv("SP_RATE_WINDOW", "5"))  # секунд
+MAX_TEXT_LEN = int(os.getenv("SP_MAX_TEXT_LEN", "4096"))
+
+class RateLimiter:
+    def __init__(self, limit: int = RATE_LIMIT, window: float = RATE_WINDOW):
+        self.limit, self.window = limit, window
+        self.ts = deque()
+    def hit(self) -> bool:
+        now = asyncio.get_event_loop().time()
+        self.ts.append(now)
+        while self.ts and (now - self.ts[0]) > self.window:
+            self.ts.popleft()
+        return len(self.ts) <= self.limit
 
 # === LOG HELPERS ===
 def _short_json(obj, limit=2000) -> str:
@@ -124,7 +145,7 @@ def _single_online_realm() -> str | None:
     live = [r for r, s in PLUGINS.items() if len(s) > 0]
     return live[0] if len(live) == 1 else None
 
-async def route_to_realm(realm: str | None, msg: dict):
+async def route_to_realm(realm: Optional[str], msg: dict):
     if not realm:
         realm = _single_online_realm()
     if not realm or not realm_has_plugins(realm):
@@ -165,6 +186,8 @@ _ADMIN_FIRST_TYPES = {
     "lp.user.info", "lp.group.info",
     # justpoints
     "jp.balance.get", "jp.balance.set", "jp.balance.add", "jp.balance.take",
+    # health
+    "bridge.ping", "bridge.info",
 }
 
 def _map_admin_request(obj: dict) -> dict:
@@ -226,7 +249,7 @@ def _map_admin_request(obj: dict) -> dict:
     if t in ("ops.set", "cmdwl.set", "cmdwl.commands"):
         return {"type": t, "realm": realm, "payload": p}
 
-    # --- LuckPerms: сразу транзит (плагин реализует обработку этих типов) ---
+    # --- LuckPerms: транзит ---
     if t in {
         "lp.web.open", "lp.web.apply",
         "lp.user.perm.add", "lp.user.perm.remove",
@@ -236,9 +259,13 @@ def _map_admin_request(obj: dict) -> dict:
     }:
         return {"type": t, "realm": realm, "payload": p}
 
-    # --- JustPoints: сразу транзит ---
+    # --- JustPoints: транзит ---
     if t in {"jp.balance.get", "jp.balance.set", "jp.balance.add", "jp.balance.take"}:
         return {"type": t, "realm": realm, "payload": p}
+
+    # health (обрабатываются в process_admin, здесь оставим как есть)
+    if t in {"bridge.ping", "bridge.info", "bridge.list"}:
+        return obj
 
     # по умолчанию пропускаем как есть
     return obj
@@ -249,15 +276,18 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
     # auth
     provided = _extract_token(ws, path)
     if token_required and provided != token_required:
+        addr = getattr(ws, "remote_address", None)
         print(
-            f"[bridge] unauthorized from {ws.remote_address}. "
+            f"[bridge] unauthorized from {addr}. "
             f"Provided token len={len(provided)} matches={provided == token_required}"
         )
         await ws.close(code=4401, reason="unauthorized")
         return
 
     role = "plugin"  # по умолчанию — плагин
-    realm = None
+    realm: Optional[str] = None
+    rl = RateLimiter()
+
     print(f"[bridge] connect from {ws.remote_address}")
 
     first_msg = None
@@ -308,8 +338,20 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
 
         # основной цикл
         async for raw in ws:
+            # rate-limit
+            if not rl.hit():
+                with contextlib.suppress(Exception):
+                    await _send_json(ws, {"type": "bridge.error", "payload": {"reason": "rate_limited"}})
+                await ws.close(code=4412, reason="rate_limited")
+                return
+
             if isinstance(raw, (bytes, bytearray)):
                 await broadcast_admin({"type": "bridge.binary", "realm": realm, "len": len(raw)})
+                continue
+
+            if isinstance(raw, str) and len(raw) > MAX_TEXT_LEN:
+                with contextlib.suppress(Exception):
+                    await _send_json(ws, {"type": "bridge.error", "payload": {"reason": "text_too_long"}})
                 continue
 
             try:
@@ -362,8 +404,22 @@ async def process_admin(ws, obj: dict, *, verbose: bool):
     p = norm.get("payload") or {}
     realm = norm.get("realm") or p.get("realm")
 
-    # быстрые ACK’и админам
-    if t not in {"bridge.list"}:
+    # быстрый health
+    if t == "bridge.ping":
+        await _send_json(ws, {"type": "bridge.pong", "server_time": datetime.utcnow().isoformat()+"Z"})
+        return
+
+    if t == "bridge.info":
+        payload = {
+            "realms": {r: len(s) for r, s in PLUGINS.items()},
+            "admins": len(ADMINS),
+            "server_time": datetime.utcnow().isoformat()+"Z"
+        }
+        await _send_json(ws, {"type": "bridge.info.result", "payload": payload})
+        return
+
+    # быстрые ACK’и админам (кроме явных list/info/ping)
+    if t not in {"bridge.list", "bridge.info", "bridge.ping"}:
         with contextlib.suppress(Exception):
             await _send_json(ws, {"type": "bridge.ack", "payload": {"seenType": t}})
 
@@ -380,6 +436,10 @@ async def process_admin(ws, obj: dict, *, verbose: bool):
         "jp.balance.get", "jp.balance.set", "jp.balance.add", "jp.balance.take",
     }
     if t in direct_to_plugin:
+        # если realm указали, но он оффлайн — сразу скажем отправителю
+        if realm and not realm_has_plugins(realm):
+            await _send_json(ws, {"type": "bridge.error", "payload": {"reason": f"no_plugin_for_realm:{realm}"}})
+            return
         await route_to_realm(realm, norm)
         return
 
@@ -425,8 +485,10 @@ async def repl(uri, token, default_realm: str, *, verbose: bool):
                     print("[recv]", m)
 
         async def writer():
+            loop = asyncio.get_running_loop()
             while True:
-                line = input("> ").strip()
+                line = await loop.run_in_executor(None, sys.stdin.readline)
+                line = (line or "").strip()
                 if not line:
                     continue
                 if line == "list":
@@ -438,8 +500,10 @@ async def repl(uri, token, default_realm: str, *, verbose: bool):
                     print("enter commands, blank line to finish")
                     lines = []
                     while True:
-                        l = input("")
-                        if not l: break
+                        l = await loop.run_in_executor(None, sys.stdin.readline)
+                        l = l.rstrip("\n")
+                        if not l:
+                            break
                         lines.append(l)
                     payload = {"type": "console.execLines", **({"realm": realm} if realm else {}), "lines": lines}
                     await ws.send(json.dumps(payload)); continue
@@ -633,6 +697,11 @@ async def main():
     ap.add_argument("--verbose", action="store_true",
                     default=os.getenv("BRIDGE_VERBOSE", "0") not in ("0", "", "false", "False"),
                     help="print full payloads for all frames")
+    # Тонкая настройка сервера
+    ap.add_argument("--max-size", type=int, default=int(os.getenv("SP_MAX_SIZE", "131072")))
+    ap.add_argument("--max-queue", type=int, default=int(os.getenv("SP_MAX_QUEUE", "32")))
+    ap.add_argument("--read-limit", type=int, default=int(os.getenv("SP_READ_LIMIT", str(2**16))))
+    ap.add_argument("--write-limit", type=int, default=int(os.getenv("SP_WRITE_LIMIT", str(2**16))))
     args = ap.parse_args()
 
     async def ws_handler(ws, path):
@@ -643,8 +712,11 @@ async def main():
     print(f"[bridge] starting ws server on ws://{args.host}:{args.port}/ws "
           f"(token len={len(args.token)}, default realm='{args.realm}')")
 
-    async with websockets.serve(ws_handler, args.host, args.port,
-                                ping_interval=20, ping_timeout=20, max_size=131072):
+    async with websockets.serve(
+        ws_handler, args.host, args.port,
+        ping_interval=20, ping_timeout=20, max_size=args.max_size,
+        max_queue=args.max_queue, read_limit=args.read_limit, write_limit=args.write_limit,
+    ):
         if args.repl:
             await repl(f"ws://127.0.0.1:{args.port}/ws", args.token, args.realm, verbose=args.verbose)
         else:
