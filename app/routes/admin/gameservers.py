@@ -1,3 +1,4 @@
+# admin/gameservers.py
 from __future__ import annotations
 
 import os
@@ -14,35 +15,30 @@ from typing import Optional
 import requests
 import websockets
 from PIL import Image
-from flask import (
-    Blueprint, render_template, jsonify, request,
-    send_file, current_app
-)
+from flask import render_template, jsonify, request, send_file, current_app
 
 from ...decorators import login_required
 from ...modules.bridge_client import (
     bridge_list, stats_query, console_exec,
     maintenance_set, maintenance_whitelist,
 )
-from . import admin_bp
+from . import admin_bp  # существующий Blueprint всего админ-раздела
 
-bp = Blueprint("gameservers", __name__, url_prefix="/gameservers")
+# ===================== HTML =====================
 
-# ---------- HTML ----------
-
-@bp.route("/")
+@admin_bp.route("/gameservers")
 @login_required
-def index():
+def gameservers_index():
     return render_template("admin/gameservers/index.html")
 
-@bp.route("/<realm>")
+@admin_bp.route("/gameservers/<realm>")
 @login_required
-def realm_page(realm: str):
+def gameservers_section(realm: str):
     return render_template("admin/gameservers/section.html", realm=realm)
 
-# ---------- API: list/stats/console ----------
+# ===================== API: list / stats / console =====================
 
-@bp.route("/api/list")
+@admin_bp.route("/gameservers/api/list")
 @login_required
 def api_list():
     try:
@@ -54,7 +50,7 @@ def api_list():
         current_app.logger.exception("bridge_list failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
 
-@bp.route("/api/stats")
+@admin_bp.route("/gameservers/api/stats")
 @login_required
 def api_stats():
     realm = (request.args.get("realm") or "").strip()
@@ -69,7 +65,7 @@ def api_stats():
         current_app.logger.exception("stats_query failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
 
-@bp.route("/api/console", methods=["POST"])
+@admin_bp.route("/gameservers/api/console", methods=["POST"])
 @login_required
 def api_console():
     j = request.get_json(silent=True) or {}
@@ -84,9 +80,9 @@ def api_console():
         current_app.logger.exception("console_exec failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
 
-# ---------- API: maintenance / whitelist ----------
+# ===================== API: maintenance =====================
 
-@bp.route("/api/maintenance", methods=["POST"])
+@admin_bp.route("/gameservers/api/maintenance", methods=["POST"])
 @login_required
 def api_maintenance_toggle():
     j = request.get_json(silent=True) or {}
@@ -104,7 +100,7 @@ def api_maintenance_toggle():
         current_app.logger.exception("maintenance_set failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
 
-@bp.route("/api/maintenance/whitelist", methods=["POST"])
+@admin_bp.route("/gameservers/api/maintenance/whitelist", methods=["POST"])
 @login_required
 def api_maintenance_whitelist():
     j = request.get_json(silent=True) or {}
@@ -122,7 +118,7 @@ def api_maintenance_whitelist():
         current_app.logger.exception("maintenance_whitelist failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
 
-# ---------- Player head proxy ----------
+# ===================== Player head proxy =====================
 
 REQ_TIMEOUT = (4, 6)
 MOJANG_UUID_URL    = "https://api.mojang.com/users/profiles/minecraft/{name}"
@@ -179,7 +175,7 @@ def _compose_head_png_from_crafatar(uuid_nodash: str) -> io.BytesIO:
         pass
     buf = io.BytesIO(); face.save(buf, format="PNG"); buf.seek(0); return buf
 
-@bp.route("/api/player-head")
+@admin_bp.route("/gameservers/api/player-head")
 @login_required
 def api_player_head():
     name = (request.args.get("name") or "").strip()
@@ -209,9 +205,9 @@ def api_player_head():
     bio = io.BytesIO(); img.save(bio, format="PNG"); bio.seek(0)
     return send_file(bio, mimetype="image/png", max_age=120)
 
-# ---------- SSE live console (bridge -> browser) ----------
+# ===================== SSE: console stream =====================
 
-@bp.route("/api/console/stream")
+@admin_bp.route("/gameservers/api/console/stream")
 @login_required
 def api_console_stream():
     """
@@ -235,7 +231,6 @@ def api_console_stream():
                 async with websockets.connect(
                     BRIDGE_URL, extra_headers=headers, ping_interval=20, ping_timeout=20
                 ) as ws:
-                    # админ-клиент: слушаем и фильтруем
                     while True:
                         raw = await ws.recv()
                         try:
@@ -287,23 +282,9 @@ def api_console_stream():
                     continue
                 yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
         except GeneratorExit:
-            pass  # клиент закрыл соединение
+            pass
 
     resp = current_app.response_class(gen(), mimetype="text/event-stream")
     resp.headers["Cache-Control"] = "no-cache"
     resp.headers["X-Accel-Buffering"] = "no"
     return resp
-
-# ---------- register ----------
-
-admin_bp.register_blueprint(bp)
-
-@admin_bp.get("/gameservers", endpoint="gameservers_index")
-@login_required
-def _gs_index_alias():
-    return render_template("admin/gameservers/index.html")
-
-@admin_bp.get("/gameservers/<realm>", endpoint="gameservers_section")
-@login_required
-def _gs_section_alias(realm: str):
-    return render_template("admin/gameservers/section.html", realm=realm)

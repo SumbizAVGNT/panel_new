@@ -17,10 +17,10 @@ PLUGINS: dict[str, set] = {}
 # admin connections
 ADMINS: set = set()
 
-# какие типы обычно шлёт плагин (для приоритета логов)
+# типы, которые чаще всего шлёт плагин — логируем их чуть заметнее
 PLUGIN_TYPICAL_TYPES = {
     "console_out", "console_done",
-    "server.stats",
+    "server.stats", "stats.report",
     "player.online", "broadcast.ok",
     "error", "pong", "bridge.log"
 }
@@ -137,14 +137,14 @@ def _map_admin_request(obj: dict) -> dict:
 
     # --- stats ---
     if t in ("stats.query", "server.stats"):
-        # Плагин слушает общий поток PANEL_IN и понимает server.stats (или сам шлёт периодику)
+        # Плагин слушает общий поток и может сам отвечать "server.stats" (или "stats.report")
         return {"type": "server.stats", "realm": realm}
 
     # --- maintenance ---
     if t == "maintenance.set":
         enabled = bool(p.get("enabled"))
-        message = p.get("message") or ""
-        # Маппим в консольные команды плагина
+        message = p.get("message") or p.get("kickMessage") or p.get("reason") or ""
+        # Маппим в консольные команды плагина (универсально)
         if enabled:
             cmd = "realm maintenance on"
             if message:
@@ -154,8 +154,9 @@ def _map_admin_request(obj: dict) -> dict:
         return {"type": "console.exec", "realm": realm, "command": cmd}
 
     if t == "maintenance.whitelist":
-        action = (p.get("action") or "list").strip()
-        user = (p.get("user") or "").strip()
+        # принимаем оба варианта ключей
+        action = (p.get("action") or p.get("op") or "list").strip()
+        user = (p.get("user") or p.get("player") or "").strip()
         cmd = f"realm maintwl {action} {user}".strip()
         return {"type": "console.exec", "realm": realm, "command": cmd}
 
@@ -213,7 +214,6 @@ async def handler(ws, path, token_required: str, default_realm: str):
         }:
             role = "admin"
         else:
-            # если пришёл «плагинский» тип или ничего не пришло — это плагин
             role = "plugin"
 
         # realm
@@ -223,7 +223,7 @@ async def handler(ws, path, token_required: str, default_realm: str):
         if role == "plugin":
             PLUGINS.setdefault(realm, set()).add(ws)
             print(f"[bridge] plugin registered realm='{realm}'")
-            # Отвечаем плагину, что связь OK (иначе некоторые клиенты ждут ACK)
+            # Отвечаем плагину, что связь OK
             await _send_json(ws, {
                 "type": "hello.ok",
                 "realm": realm,
@@ -279,7 +279,7 @@ async def handler(ws, path, token_required: str, default_realm: str):
                 else:
                     print(f"[bridge] <- other:{tag} from realm='{realm}'")
 
-                # транслируем админам ВСЁ (раньше мы теряли полезные кадры)
+                # транслируем админам ВСЁ
                 await broadcast_admin({**obj, "realm": realm})
             else:
                 await process_admin(ws, obj)
@@ -307,10 +307,8 @@ async def process_admin(ws, obj: dict):
 
     # быстрые ACK’и админам
     if t not in {"bridge.list"}:
-        try:
+        with contextlib.suppress(Exception):
             await _send_json(ws, {"type": "bridge.ack", "payload": {"seenType": t}})
-        except Exception:
-            pass
 
     if t in {"console.exec", "console.execLines", "server.stats", "broadcast", "player.is_online"}:
         await route_to_realm(realm, norm)
@@ -421,7 +419,8 @@ async def main():
     ap.add_argument("--host", default=os.getenv("SP_BRIDGE_HOST", "0.0.0.0"))
     ap.add_argument("--port", type=int, default=int(os.getenv("SP_BRIDGE_PORT", "8765")))
     ap.add_argument("--token", default=os.getenv("SP_TOKEN", "SUPER_SECRET"))
-    ap.add_argument("--realm", default=os.getenv("SP_REALM", "default"), help="default realm for plugin connections without hello/realm")
+    ap.add_argument("--realm", default=os.getenv("SP_REALM", "default"),
+                    help="default realm for plugin connections without hello/realm")
     ap.add_argument("--repl", action="store_true", help="run local REPL admin client")
     args = ap.parse_args()
 
@@ -433,7 +432,8 @@ async def main():
     print(f"[bridge] starting ws server on ws://{args.host}:{args.port}/ws "
           f"(token len={len(args.token)}, default realm='{args.realm}')")
 
-    async with websockets.serve(ws_handler, args.host, args.port, ping_interval=20, ping_timeout=20, max_size=131072):
+    async with websockets.serve(ws_handler, args.host, args.port,
+                                ping_interval=20, ping_timeout=20, max_size=131072):
         if args.repl:
             await repl(f"ws://127.0.0.1:{args.port}/ws", args.token, args.realm)
         else:

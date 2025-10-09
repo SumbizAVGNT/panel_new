@@ -1,3 +1,4 @@
+# modules/bridge_client.py
 from __future__ import annotations
 
 import os
@@ -18,8 +19,7 @@ BRIDGE_TIMEOUT: float = float(os.getenv("BRIDGE_TIMEOUT", "6"))  # sec
 def _run(coro) -> Any:
     """
     Безопасно выполнить async-корутину из синхронного кода.
-    Если уже есть запущенный loop (например, внутри другого async контекста) —
-    исполним в отдельном треде со своим event loop.
+    Если уже есть запущенный loop — исполним в отдельном треде со своим event loop.
     """
     try:
         asyncio.get_running_loop()
@@ -36,10 +36,8 @@ def _run(coro) -> Any:
         except Exception as e:
             box["error"] = e
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 loop.run_until_complete(asyncio.sleep(0))
-            except Exception:
-                pass
             loop.close()
 
     t = threading.Thread(target=runner, name="bridge-client-runner", daemon=True)
@@ -80,8 +78,8 @@ async def _send_and_wait(
 ) -> Dict[str, Any]:
     """
     Отправить message и дождаться кадра одного из типов expect_types.
-    Если expect_types=None — вернём самый первый принятый кадр как есть.
-    При указании realm дополнительно фильтруем ответы по полю realm (в корне/в payload).
+    Если expect_types=None — вернуть первый полученный кадр.
+    При указании realm фильтруем ответы по полю realm (в корне/в payload).
     """
     ws = await _connect()
     try:
@@ -105,9 +103,7 @@ async def _send_and_wait(
 
 
 async def _send_only(message: Dict[str, Any]) -> None:
-    """
-    Fire-and-forget отправка кадра (без ожидания ответа).
-    """
+    """Fire-and-forget отправка кадра (без ожидания ответа)."""
     ws = await _connect()
     try:
         await ws.send(json.dumps(message, ensure_ascii=False))
@@ -127,17 +123,24 @@ def bridge_list() -> Dict[str, Any]:
 
 
 def stats_query(realm: str) -> Dict[str, Any]:
+    """
+    Запрос статуса сервера.
+    Плагин/бридж может прислать как {"type":"server.stats", ...}, так и {"type":"stats.report", ...}.
+    """
     msg = {"type": "stats.query", "realm": realm, "payload": {"realm": realm}}
     try:
-        return _run(_send_and_wait(msg, expect_types=("stats.report",), realm=realm))
+        return _run(_send_and_wait(msg, expect_types=("server.stats", "stats.report"), realm=realm))
     except Exception as e:
         return {"type": "bridge.error", "error": str(e), "payload": {}}
 
 
 def console_exec(realm: str, cmd: str) -> Dict[str, Any]:
+    """
+    Выполнить одну консольную команду.
+    Ждём первый ответ (ACK/echo), чтобы фронт не висел.
+    """
     msg = {"type": "console.exec", "realm": realm, "payload": {"realm": realm, "cmd": cmd}}
     try:
-        # ждём первый фрейм (echo/ack/result) — фронту достаточно, чтобы не висеть
         return _run(_send_and_wait(msg, expect_types=None))
     except Exception as e:
         return {
@@ -157,7 +160,7 @@ def bridge_send(obj: Dict[str, Any]) -> bool:
 # -------- maintenance helpers --------
 def maintenance_set(realm: str, enabled: bool, kick_message: str = "") -> bool:
     """
-    Включить/выключить техработы. Текст дублим в разных ключах (совместимость).
+    Включить/выключить техработы. Текст дублируем в разных ключах (совместимость).
     """
     msg = (kick_message or "").strip()
     payload = {
@@ -173,12 +176,16 @@ def maintenance_set(realm: str, enabled: bool, kick_message: str = "") -> bool:
 
 
 def maintenance_whitelist(realm: str, op: str, player: str) -> bool:
+    """
+    Управление локальным whitelist в режиме техработ.
+    Поддержаны оба формата ключей: (action,user) и (op,player).
+    """
     op_l = (op or "").lower()
     if op_l not in ("add", "remove"):
         raise ValueError("op must be 'add' or 'remove'")
     obj = {
         "type": "maintenance.whitelist",
         "realm": realm,
-        "payload": {"realm": realm, "op": op_l, "player": player},
+        "payload": {"realm": realm, "op": op_l, "player": player, "action": op_l, "user": player},
     }
     return bridge_send(obj)
