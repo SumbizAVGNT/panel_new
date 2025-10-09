@@ -121,7 +121,7 @@
           {% if role in ['admin','superadmin'] %}
             <!-- NEW: Game Servers -->
             <a class="nav-link {{ 'active' if ep.startswith('admin.gameservers') or ep.startswith('admin.game_console') else '' }}"
-               href="{{ url_for('admin.gameservers.index') }}">Game&nbsp;Servers</a>
+               href="{{ url_for('admin.gameservers_index') }}">Game&nbsp;Servers</a>
 
             <a class="nav-link {{ 'active' if 'admin.admin_users' in ep else '' }}"
                href="{{ url_for('admin.admin_users') }}">Users</a>
