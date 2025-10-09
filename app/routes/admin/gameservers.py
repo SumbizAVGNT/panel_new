@@ -556,14 +556,3 @@ def api_jp_balance_take():
     except Exception as e:
         current_app.logger.exception("jp_balance_take failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
-# ===================== HTML =====================
-
-@admin_bp.route("/gameservers", endpoint="gameservers.index")
-@login_required
-def gameservers_index():
-    return render_template("admin/gameservers/index.html")
-
-@admin_bp.route("/gameservers/<realm>", endpoint="gameservers.section")
-@login_required
-def gameservers_section(realm: str):
-    return render_template("admin/gameservers/section.html", realm=realm)
