@@ -11,7 +11,7 @@ import threading
 import time
 from functools import lru_cache
 from queue import Queue, Empty
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Iterable
 
 import requests
 import websockets
@@ -31,6 +31,34 @@ from ...modules.bridge_client import (
     # JustPoints
     jp_balance_get, jp_balance_set, jp_balance_add, jp_balance_take,
 )
+# --- DB: stats storage (soft import with fallbacks) ---
+try:
+    # preferred names
+    from ...database import (
+        get_db_connection,
+    )
+    try:
+        from ...database import (
+            ensure_stats_schema,           # (conn) -> None
+            stats_save_snapshot,           # (conn, realm, data) -> int snapshot_id
+            stats_get_latest,              # (conn, realm) -> dict | None
+            stats_get_series,              # (conn, realm, *, since_ts=None, limit=..., step_sec=None) -> list[dict]
+        )
+    except Exception:
+        # alt names we might have used earlier
+        from ...database import (
+            init_stats_schema as ensure_stats_schema,            # type: ignore
+            save_stats_snapshot as stats_save_snapshot,          # type: ignore
+            get_stats_latest as stats_get_latest,                # type: ignore
+            get_stats_series as stats_get_series,                # type: ignore
+        )
+except Exception:  # ultimate fallback when db module is absent
+    get_db_connection = None  # type: ignore
+    ensure_stats_schema = None  # type: ignore
+    stats_save_snapshot = None  # type: ignore
+    stats_get_latest = None  # type: ignore
+    stats_get_series = None  # type: ignore
+
 from . import admin_bp  # Blueprint всего админ-раздела
 
 # ===================== HTML =====================
@@ -43,6 +71,10 @@ def gameservers_index():
 @admin_bp.route("/gameservers/<realm>")
 @login_required
 def gameservers_section(realm: str):
+    """
+    Страница конкретного сервера.
+    TODO (frontend): сделать плитки кликабельными; при клике — запрашивать историю/детали из /api/stats/series и /api/stats/latest
+    """
     return render_template("admin/gameservers/section.html", realm=realm)
 
 # ===================== helpers: client meta =====================
@@ -98,9 +130,9 @@ def _client_meta(j: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Собираем метаданные клиента из body + заголовков (+ query для SSE)."""
     meta = _client_from_headers()
     if request.method == "GET" and request.args:
-        meta.update({k:v for k,v in _client_from_query().items() if v not in (None, "", [])})
+        meta.update({k: v for k, v in _client_from_query().items() if v not in (None, "", [])})
     if request.method == "POST":
-        meta.update({k:v for k,v in _client_from_body(j).items() if v not in (None, "", [])})
+        meta.update({k: v for k, v in _client_from_body(j).items() if v not in (None, "", [])})
     return meta
 
 def _log_client(action: str, realm: str, meta: Dict[str, Any], extra: Optional[Dict[str, Any]] = None):
@@ -201,6 +233,31 @@ def _merge_with_cache(realm: str, norm: Dict[str, Any]) -> Dict[str, Any]:
 
     return out
 
+def _db_stats_enabled() -> bool:
+    return bool(get_db_connection and stats_save_snapshot and stats_get_latest and stats_get_series)
+
+def _try_save_stats_to_db(realm: str, norm: Dict[str, Any]) -> Optional[int]:
+    """
+    Пытаемся сохранить снимок статистики в БД (если функции доступны).
+    Возвращает snapshot_id или None.
+    """
+    if not _db_stats_enabled():
+        return None
+    try:
+        with get_db_connection() as conn:  # type: ignore[misc]
+            if ensure_stats_schema:
+                ensure_stats_schema(conn)  # type: ignore[misc]
+            snap_id = stats_save_snapshot(conn, realm, norm)  # type: ignore[misc]
+            conn.commit()
+            return int(snap_id) if snap_id is not None else None
+    except Exception as e:
+        current_app.logger.warning("stats DB save failed realm=%s: %s", realm, e)
+        try:
+            conn.rollback()  # type: ignore[name-defined]
+        except Exception:
+            pass
+        return None
+
 @admin_bp.route("/gameservers/api/stats")
 @login_required
 def api_stats():
@@ -210,17 +267,109 @@ def api_stats():
     try:
         raw = stats_query(realm)
         if raw.get("type") == "bridge.error":
+            # при ошибке бриджа попробуем вернуть последний снимок из БД, если есть
+            if _db_stats_enabled():
+                try:
+                    with get_db_connection() as conn:  # type: ignore[misc]
+                        latest = stats_get_latest(conn, realm)  # type: ignore[misc]
+                    if latest:
+                        return jsonify({"ok": True, "data": latest, "source": "db-cache"}), 200
+                except Exception:
+                    pass
             return jsonify({"ok": False, "error": raw.get("error") or "bridge error"}), 502
 
         norm = normalize_server_stats(raw)
-
         # Подмешаем players_list/worlds из кэша при необходимости
         norm = _merge_with_cache(realm, norm)
+
+        # Сохраняем слепок в БД (best-effort)
+        snap_id = _try_save_stats_to_db(realm, norm)
+        if snap_id is not None:
+            norm = dict(norm)
+            norm["_snapshot_id"] = snap_id
 
         return jsonify({"ok": True, "data": norm})
     except Exception as e:
         current_app.logger.exception("stats_query failed: %s", e)
+        # fallback к БД, если возможно
+        if _db_stats_enabled():
+            try:
+                with get_db_connection() as conn:  # type: ignore[misc]
+                    latest = stats_get_latest(conn, realm)  # type: ignore[misc]
+                if latest:
+                    return jsonify({"ok": True, "data": latest, "source": "db-cache"}), 200
+            except Exception:
+                pass
         return jsonify({"ok": False, "error": "bridge error"}), 502
+
+@admin_bp.route("/gameservers/api/stats/latest")
+@login_required
+def api_stats_latest_from_db():
+    """
+    Возвращает последний сохранённый снимок статистики по серверу из БД.
+    """
+    realm = (request.args.get("realm") or "").strip()
+    if not realm:
+        return jsonify({"ok": False, "error": "realm required"}), 400
+    if not _db_stats_enabled():
+        return jsonify({"ok": False, "error": "db stats are not configured"}), 501
+    try:
+        with get_db_connection() as conn:  # type: ignore[misc]
+            if ensure_stats_schema:
+                ensure_stats_schema(conn)  # type: ignore[misc]
+            latest = stats_get_latest(conn, realm)  # type: ignore[misc]
+        if not latest:
+            return jsonify({"ok": True, "data": None})
+        return jsonify({"ok": True, "data": latest})
+    except Exception as e:
+        current_app.logger.exception("stats_latest db failed: %s", e)
+        return jsonify({"ok": False, "error": "db error"}), 500
+
+@admin_bp.route("/gameservers/api/stats/series")
+@login_required
+def api_stats_series_from_db():
+    """
+    История метрик из БД для построения графиков / «кликабельных плиток».
+    Параметры:
+      realm: обязательный
+      minutes: сколько минут назад (по умолчанию 180)
+      step: шаг агрегации в секундах (например, 60/120/300). По умолчанию 60.
+      limit: максимальное число точек (бэкап-ограничение), по умолчанию 720.
+      fields: CSV из известных ключей (players_online, tps_1m, mspt, heap_used, cpu_system_load, cpu_process_load, etc)
+    """
+    realm = (request.args.get("realm") or "").strip()
+    if not realm:
+        return jsonify({"ok": False, "error": "realm required"}), 400
+    if not _db_stats_enabled():
+        return jsonify({"ok": False, "error": "db stats are not configured"}), 501
+
+    def _int(v, dv):
+        try:
+            return int(v)
+        except Exception:
+            return dv
+
+    minutes = _int(request.args.get("minutes"), 180)
+    step = _int(request.args.get("step"), 60)
+    limit = _int(request.args.get("limit"), 720)
+    fields_raw = (request.args.get("fields") or "").strip()
+    fields: Optional[Iterable[str]] = None
+    if fields_raw:
+        fields = [f.strip() for f in fields_raw.split(",") if f.strip()]
+
+    since_ts = int(time.time() - minutes * 60)
+
+    try:
+        with get_db_connection() as conn:  # type: ignore[misc]
+            if ensure_stats_schema:
+                ensure_stats_schema(conn)  # type: ignore[misc]
+            series = stats_get_series(  # type: ignore[misc]
+                conn, realm, since_ts=since_ts, step_sec=step, limit=limit, fields=fields
+            )
+        return jsonify({"ok": True, "data": series})
+    except Exception as e:
+        current_app.logger.exception("stats_series db failed: %s", e)
+        return jsonify({"ok": False, "error": "db error"}), 500
 
 @admin_bp.route("/gameservers/api/console", methods=["POST"])
 @login_required

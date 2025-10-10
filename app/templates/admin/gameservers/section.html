@@ -72,6 +72,7 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
 .toastx{background:rgba(13,17,23,.96);border:1px solid rgba(148,163,184,.28);color:#e2e8f0;padding:10px 12px;border-radius:12px}
 .toastx.ok{border-color:rgba(34,197,94,.6)}
 .toastx.err{border-color:rgba(239,68,68,.6)}
+
 /* grid helpers */
 .g-tiles{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
 @media(max-width:1200px){.g-tiles{grid-template-columns:repeat(8,1fr)}}
@@ -138,67 +139,67 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
         <div class="card-body">
           <!-- KPI tiles -->
           <div class="g-tiles">
-            <div class="tile span-3">
+            <button class="tile span-3 text-start" type="button" data-click data-metric="mspt" title="История MSPT (по БД)">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-speedometer2"></i> MSPT</div>
               <div class="kpi d-flex align-items-baseline gap-2">
                 <div id="t-mspt" class="value skel" style="height:20px;width:64px"></div>
                 <div class="text-secondary small">ms</div>
               </div>
               <div class="caption">Среднее время тика</div>
-            </div>
+            </button>
 
-            <div class="tile span-3">
+            <button class="tile span-3 text-start" type="button" data-click data-metric="tps" title="История TPS (по БД)">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-graph-up-arrow"></i> TPS (avg)</div>
               <div id="t-tps" class="value skel" style="height:20px;width:64px"></div>
               <div class="caption">Среднее 1m/5m/15m</div>
-            </div>
+            </button>
 
-            <button id="players-tile" class="tile span-3 text-start" type="button" data-click>
+            <button id="players-tile" class="tile span-3 text-start" type="button" data-click data-metric="players">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-people"></i> Players</div>
               <div id="t-players" class="value skel text-light" style="height:20px;width:80%"></div>
               <div class="small text-secondary">open list ⟶</div>
             </button>
 
-            <div class="tile span-3">
+            <button class="tile span-3 text-start" type="button" data-click data-metric="online" title="История онлайн (по БД)">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-person-check"></i> Online</div>
               <div id="t-online" class="value skel" style="height:20px;width:64px"></div>
               <div class="caption">Онлайн игроков</div>
-            </div>
+            </button>
 
-            <div class="tile span-4">
+            <button class="tile span-4 text-start" type="button" data-click data-metric="cpu" title="История загрузки CPU (по БД)">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-cpu"></i> CPU</div>
               <div class="d-flex justify-content-between sub"><span>system</span><span id="cpu-system-lbl">—</span></div>
               <div class="meter mb-2"><span id="cpu-system" style="width:0%"></span></div>
               <div class="d-flex justify-content-between sub"><span>process</span><span id="cpu-proc-lbl">—</span></div>
               <div class="meter"><span id="cpu-proc" style="width:0%"></span></div>
-            </div>
+            </button>
 
-            <div class="tile span-4">
+            <button class="tile span-4 text-start" type="button" data-click data-metric="heap" title="История памяти (по БД)">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-memory"></i> Heap</div>
               <div class="d-flex justify-content-between sub"><span id="heap-used-lbl">—</span><span id="heap-max-lbl">—</span></div>
               <div class="meter"><span id="heap-bar" style="width:0%"></span></div>
               <div class="sub mt-1">Non-heap: <span id="nonheap-lbl">—</span></div>
-            </div>
+            </button>
 
-            <div class="tile span-4">
+            <button class="tile span-4 text-start" type="button" data-click data-metric="disk" title="История диска (по БД)">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-hdd"></i> Disk</div>
               <div class="sub">Root free: <span id="fs-free">—</span></div>
               <div class="sub">Root total: <span id="fs-total">—</span></div>
               <div class="tcap mt-2 d-flex align-items-center gap-1"><i class="bi bi-clock-history"></i> Uptime</div>
               <div class="sub"><span id="uptime">—</span></div>
-            </div>
+            </button>
 
-            <div class="tile span-6">
+            <button class="tile span-6 text-start" type="button" data-click data-metric="tps1m" title="Открыть график TPS (1m) по БД">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-activity"></i> TPS (1m) Sparkline</div>
               <canvas id="tpsChart" height="92"></canvas>
               <div class="form-text">Последние значения TPS (1m)</div>
-            </div>
+            </button>
 
-            <div class="tile span-6">
+            <button class="tile span-6 text-start" type="button" data-click data-metric="entities" title="Топ сущностей (последний снимок)">
               <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-diagram-3"></i> Top Entities</div>
               <canvas id="entChart" height="120"></canvas>
               <div class="sub">Топ типов сущностей за снимок</div>
-            </div>
+            </button>
           </div>
         </div>
       </section>
@@ -327,6 +328,42 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
   </div>
 </div>
 
+<!-- metrics modal (универсальный для кликабельных плиток) -->
+<div class="modal fade" id="metricsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-xl">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h5 class="modal-title" id="metricsTitle">Metrics</h5>
+        <div class="d-flex align-items-center gap-2">
+          <select id="m-range" class="form-select form-select-sm">
+            <option value="60">1h</option>
+            <option value="180" selected>3h</option>
+            <option value="720">12h</option>
+            <option value="1440">24h</option>
+            <option value="4320">3d</option>
+          </select>
+          <select id="m-step" class="form-select form-select-sm">
+            <option value="30">30s</option>
+            <option value="60" selected>60s</option>
+            <option value="120">2m</option>
+            <option value="300">5m</option>
+          </select>
+        </div>
+        <button type="button" class="btn-close ms-2" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <canvas id="metricsChart" height="280" style="width:100%"></canvas>
+        <div class="small text-secondary mt-2">Данные берутся из БД (/api/stats/series). Если сервер офлайн — можно смотреть историю.</div>
+        <div id="metricsLegend" class="small mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="exportCsv" type="button" class="btn btn-outline-info btn-sm"><i class="bi bi-download"></i> CSV</button>
+        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toasts" aria-live="polite" aria-atomic="true"></div>
 
 <script>
@@ -418,6 +455,62 @@ function drawBars(canvas, items){
     const label = (it.name||"").slice(0,10);
     ctx.fillText(label, x + bw/2, h-16);
   });
+}
+
+/* multi-line chart for modal */
+function drawLines(canvas, seriesMap, opts={}){
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width = canvas.clientWidth, h = canvas.height = canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  const labels = Object.keys(seriesMap);
+  const all = [];
+  labels.forEach(k=>{ all.push(...seriesMap[k].map(p=>p.y).filter(v=>v!=null && !isNaN(v))); });
+  if(!all.length){ ctx.fillText("Нет данных", 12, 16); return; }
+  const min = Math.min(...all), max = Math.max(...all);
+  const padL = 42, padR = 10, padT = 14, padB = 24;
+
+  const xs = seriesMap[labels[0]].map(p=>p.x);
+  const x0 = xs[0], x1 = xs[xs.length-1] || (x0+1);
+
+  function X(ts){ return padL + (w-padL-padR) * ((ts - x0)/((x1-x0)||1)); }
+  function Y(val){
+    const v = (opts.y01? Math.max(0, Math.min(1, val)) : val);
+    const mi = opts.y01 ? 0 : min;
+    const ma = opts.y01 ? 1 : Math.max(max, min+1e-9);
+    return h - padB - (h-padT-padB) * ((v - mi)/((ma - mi)||1));
+  }
+
+  ctx.font="12px system-ui,-apple-system,Segoe UI,Roboto";
+  ctx.fillStyle="#94a3b8";
+  // y-axis ticks
+  for(let i=0;i<=4;i++){
+    const yy = padT + (h-padT-padB)*i/4;
+    ctx.globalAlpha=.25; ctx.beginPath(); ctx.moveTo(padL,yy); ctx.lineTo(w-padR,yy); ctx.stroke(); ctx.globalAlpha=1;
+    const val = (opts.y01 ? (1 - i/4) : (max - (max-min)*i/4));
+    const lbl = opts.y01 ? Math.round(val*100)+"%" : (Math.abs(val)>=1000 ? Math.round(val) : val.toFixed(2));
+    ctx.fillText(lbl, 6, yy+4);
+  }
+  // x-axis labels (start/end)
+  const fmt = ts => new Date(ts*1000).toLocaleTimeString();
+  ctx.fillText(fmt(x0), padL, h-6);
+  ctx.textAlign="right"; ctx.fillText(fmt(x1), w-10, h-6); ctx.textAlign="left";
+
+  // draw lines
+  labels.forEach((label, idx)=>{
+    const pts = seriesMap[label];
+    ctx.beginPath();
+    pts.forEach((p,i)=>{ const x=X(p.x), y=Y(p.y); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+}
+
+/* export CSV */
+function toCSV(rows){
+  if(!rows.length) return "";
+  const keys = Object.keys(rows[0]);
+  const esc=v=> `"${String(v??"").replace(/"/g,'""')}"`;
+  return [keys.join(","), ...rows.map(r=>keys.map(k=>esc(r[k])).join(","))].join("\n");
 }
 
 /* unskeleton */
@@ -531,7 +624,7 @@ function render(payload){
   document.getElementById("t-players").textContent = playersArr.map(x=>x.name).join(", ") || "—";
   unskeleton();
 
-  // charts
+  // charts (inline)
   if(typeof tps1m==="number"){ tpsSeries.push(tps1m); if(tpsSeries.length>60) tpsSeries.shift(); }
   drawSparkline(document.getElementById("tpsChart"), tpsSeries);
 
@@ -557,8 +650,10 @@ function render(payload){
   document.getElementById("nonheap-lbl").textContent = bytesFmt(nhu);
 
   // FS
-  document.getElementById("fs-free").textContent  = bytesFmt(p.fs?.root_free);
-  document.getElementById("fs-total").textContent = bytesFmt(p.fs?.root_total);
+  const rf = p.fs?.root_free ?? p.fs?.free;
+  const rt = p.fs?.root_total ?? p.fs?.total;
+  document.getElementById("fs-free").textContent  = bytesFmt(rf);
+  document.getElementById("fs-total").textContent = bytesFmt(rt);
 
   // Uptime
   document.getElementById("uptime").textContent = humanMs(p.jvm?.uptime_ms);
@@ -630,6 +725,111 @@ function openPlayersModal(){
     }
   }
   bootstrap.Modal.getOrCreateInstance(document.getElementById('playersModal')).show();
+}
+
+/* ---------- DB Series: modal loader ---------- */
+async function fetchSeries({minutes=180, step=60, fields=[]}){
+  const params = new URLSearchParams({
+    realm, minutes:String(minutes), step:String(step),
+    ...(fields.length? {fields: fields.join(",")} : {})
+  });
+  const r = await fetch(`/admin/gameservers/api/stats/series?`+params.toString(), {cache:"no-store"});
+  const j = await r.json();
+  if(!j.ok) throw new Error(j.error||"db error");
+  return j.data||[];
+}
+
+function openMetric(kind){
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('metricsModal'));
+  const title = document.getElementById("metricsTitle");
+  const canvas = document.getElementById("metricsChart");
+  const legend = document.getElementById("metricsLegend");
+
+  let fields = [], titleText = "", y01=false, post = (v)=>v, legends=[];
+  switch(kind){
+    case "mspt":
+      fields = ["mspt"]; titleText = "MSPT (tick duration, ms)"; break;
+    case "tps":
+      fields = ["tps_1m","tps_5m","tps_15m"]; titleText = "TPS (1m / 5m / 15m)"; break;
+    case "tps1m":
+      fields = ["tps_1m"]; titleText = "TPS (1m)"; break;
+    case "online":
+    case "players":
+      fields = ["players_online"]; titleText = "Онлайн игроков"; break;
+    case "cpu":
+      fields = ["cpu_system_load","cpu_process_load"]; titleText = "CPU load (system / process)"; y01=true; break;
+    case "heap":
+      fields = ["heap_used","heap_max","nonheap_used"]; titleText = "Память Heap / Non-heap (байты)"; break;
+    case "disk":
+      fields = ["fs_root_free","fs_root_total"]; titleText = "Диск (root free / total, байты)"; break;
+    case "entities":
+      // Покажем список из последнего снимка (не временной ряд)
+      title.textContent = "Top entities (последний снимок)";
+      legend.innerHTML = "";
+      drawLines(canvas, {"none":[]}); // clear
+      const data = lastStats?.entities_top || {};
+      const items = Object.entries(data).map(([name,val])=>({name,value:val})).sort((a,b)=>b.value-a.value);
+      const ctx = canvas.getContext("2d"); ctx.clearRect(0,0,canvas.width=canvas.clientWidth, canvas.height=280);
+      drawBars(canvas, items.slice(0,16));
+      modal.show(); return;
+    default:
+      fields = []; titleText = "Metrics";
+  }
+
+  title.textContent = `${titleText} · ${realm}`;
+  legend.textContent = "Загрузка…";
+  const minutes = parseInt(document.getElementById("m-range").value,10)||180;
+  const step = parseInt(document.getElementById("m-step").value,10)||60;
+
+  fetchSeries({minutes, step, fields}).then(rows=>{
+    if(!rows.length){ legend.textContent = "Нет данных за выбранный период"; drawLines(canvas, {"": []}); modal.show(); return; }
+    // Build series map
+    const seriesMap = {};
+    fields.forEach(f=> seriesMap[f]=[]);
+    rows.forEach(r=>{
+      const ts = r.ts || r.time || r.timestamp || r.t || Math.floor(Date.now()/1000);
+      fields.forEach(f=>{
+        let v = r[f];
+        if(v==null) return;
+        if (y01 && typeof v === "number") v = Math.max(0, Math.min(1, v));
+        seriesMap[f].push({x: ts, y: v});
+      });
+    });
+    // prune empty
+    Object.keys(seriesMap).forEach(k=>{ if(!seriesMap[k].length) delete seriesMap[k]; });
+
+    drawLines(canvas, seriesMap, {y01});
+
+    // legend
+    const names = {
+      mspt: "MSPT",
+      tps_1m: "TPS 1m", tps_5m:"TPS 5m", tps_15m:"TPS 15m",
+      players_online:"Players online",
+      cpu_system_load:"CPU system", cpu_process_load:"CPU process",
+      heap_used:"Heap used", heap_max:"Heap max", nonheap_used:"Non-heap used",
+      fs_root_free:"Root free", fs_root_total:"Root total"
+    };
+    const span = txt => `<span class="badge bg-secondary me-1">${txt}</span>`;
+    legend.innerHTML = Object.keys(seriesMap).map(k=>span(names[k]||k)).join("") +
+      `<div class="mt-2 text-secondary small">Точек: ${rows.length}, шаг: ${step}s, период: ${minutes}m</div>`;
+
+    // CSV export
+    document.getElementById("exportCsv").onclick = ()=>{
+      const csv = toCSV(rows);
+      const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${realm}_${kind}_${minutes}m_${step}s.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+
+    modal.show();
+  }).catch(e=>{
+    legend.innerHTML = `<span class="text-danger">${e.message||e}</span>`;
+    drawLines(canvas, {"": []});
+    modal.show();
+  });
 }
 
 /* ---------- SSE: live console with meta in query ---------- */
@@ -777,7 +977,26 @@ document.querySelectorAll("[data-maint-preset]").forEach(btn=>{
   btn.addEventListener("click", ()=>maintPreset(parseInt(btn.dataset.maintPreset,10)));
 });
 
-/* auto refresh controls */
+/* make ALL tiles with data-metric open modal */
+document.querySelectorAll('.tile[data-metric]').forEach(el=>{
+  el.addEventListener('click', ()=>{
+    const kind = el.getAttribute('data-metric');
+    // players tile opens list modal; others -> metrics modal
+    if(kind === 'players'){ openPlayersModal(); } else { openMetric(kind); }
+  });
+});
+
+/* react to range/step changes in modal */
+document.getElementById("m-range").addEventListener("change", ()=>{
+  const kind = document.querySelector('.tile[data-metric].active-for')?.getAttribute('data-metric');
+  if(kind) openMetric(kind);
+});
+document.getElementById("m-step").addEventListener("change", ()=>{
+  const kind = document.querySelector('.tile[data-metric].active-for')?.getAttribute('data-metric');
+  if(kind) openMetric(kind);
+});
+
+/* init localStorage for auto refresh */
 const autoEl = document.getElementById("autorefresh");
 const intEl = document.getElementById("refresh-interval");
 const intLbl = document.getElementById("refresh-interval-label");
