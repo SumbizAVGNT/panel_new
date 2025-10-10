@@ -157,59 +157,74 @@ def api_bridge_info():
 @admin_bp.route("/gameservers/api/stats")
 @login_required
 def api_stats():
+    """
+    Возвращает нормализованные статы. Если первый ответ не содержит players_list/worlds,
+    делаем второй быстрый запрос и дозаполняем недостающие поля.
+    """
     realm = (request.args.get("realm") or "").strip()
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
+
+    def extract_src(obj: Dict[str, Any]) -> Dict[str, Any]:
+        # кадр может быть: {"type":"server.stats","payload":{...}} или {"type":..., "data":{...}} или плоский dict
+        if not isinstance(obj, dict):
+            return {}
+        return (obj.get("payload") or obj.get("data") or obj) or {}
+
+    def merge_missing(dst: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
+        # players_list
+        if "players_list" not in dst and "players_list" in src:
+            dst["players_list"] = src.get("players_list") or []
+        # players (online/max)
+        if "players" not in dst and "players" in src:
+            dst["players"] = src.get("players")
+        if "players_online" in src:
+            dst.setdefault("players", {}).setdefault("online", src.get("players_online"))
+        if "players_max" in src:
+            dst.setdefault("players", {}).setdefault("max", src.get("players_max"))
+        # worlds (массив или объект)
+        if "worlds" not in dst and "worlds" in src:
+            dst["worlds"] = src.get("worlds")
+        # tps/mspt
+        if "tps" not in dst and any(k in src for k in ("tps", "tps_1m", "tps_5m", "tps_15m", "mspt")):
+            dst["tps"] = src.get("tps") or {
+                "1m": src.get("tps_1m"),
+                "5m": src.get("tps_5m"),
+                "15m": src.get("tps_15m"),
+                "mspt": src.get("mspt"),
+            }
+        if "mspt" not in dst and "mspt" in src:
+            dst["mspt"] = src.get("mspt")
+        return dst
+
     try:
-        raw = stats_query(realm)  # может вернуть server.stats c payload или плоский dict
-        if raw.get("type") == "bridge.error":
-            return jsonify({"ok": False, "error": raw.get("error") or "bridge error"}), 502
+        # 1-я попытка
+        raw1 = stats_query(realm)
+        if raw1.get("type") == "bridge.error":
+            return jsonify({"ok": False, "error": raw1.get("error") or "bridge error"}), 502
 
-        # Базовая нормализация
-        norm = normalize_server_stats(raw) or {}
-
-        # Если нормализатор сообщил об ошибке — вернём исходные данные,
-        # чтобы фронт хотя бы что-то показал.
+        norm = normalize_server_stats(raw1) or {}
         if isinstance(norm, dict) and norm.get("type") == "bridge.error":
-            return jsonify({"ok": True, "data": raw})
+            # вернём исходник, если нормализатор не справился
+            return jsonify({"ok": True, "data": raw1})
 
-        # ---- Дозаполнение отсутствующих полей из исходного кадра ----
-        src = (raw.get("payload") or raw.get("data") or raw) if isinstance(raw, dict) else {}
+        src1 = extract_src(raw1)
+        norm = merge_missing(norm, src1)
 
-        if isinstance(norm, dict) and isinstance(src, dict):
-            # players_list
-            if "players_list" not in norm and "players_list" in src:
-                norm["players_list"] = src.get("players_list") or []
-
-            # players summary (online/max)
-            if "players" not in norm and "players" in src:
-                norm["players"] = src.get("players")
-
-            # Если нормализатор не добавил online/max — возьмём старые поля
-            if "players_online" in src and ("players" not in norm or "online" not in (norm.get("players") or {})):
-                norm.setdefault("players", {}).update({"online": src.get("players_online")})
-            if "players_max" in src and ("players" not in norm or "max" not in (norm.get("players") or {})):
-                norm.setdefault("players", {}).update({"max": src.get("players_max")})
-
-            # worlds (массив или объект с именованными ключами — отдаём как есть)
-            if "worlds" not in norm and "worlds" in src:
-                norm["worlds"] = src.get("worlds")
-
-            # TPS/MSPT
-            if "tps" not in norm and any(k in src for k in ("tps", "tps_1m", "tps_5m", "tps_15m")):
-                norm["tps"] = src.get("tps") or {
-                    "1m": src.get("tps_1m"),
-                    "5m": src.get("tps_5m"),
-                    "15m": src.get("tps_15m"),
-                    "mspt": src.get("mspt"),
-                }
-            if "mspt" not in norm and "mspt" in src:
-                norm["mspt"] = src.get("mspt")
+        # Если нет игроков или миров — подождём 120мс и попробуем ещё раз
+        need_retry = not norm.get("players_list") or ("worlds" not in norm)
+        if need_retry:
+            time.sleep(0.12)  # короткая пауза, чтобы успел прилететь «полный» кадр
+            raw2 = stats_query(realm)
+            if raw2.get("type") != "bridge.error":
+                src2 = extract_src(raw2)
+                norm = merge_missing(norm, src2)
 
         return jsonify({"ok": True, "data": norm})
     except Exception as e:
         current_app.logger.exception("stats_query failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
+
 
 
 @admin_bp.route("/gameservers/api/console", methods=["POST"])
