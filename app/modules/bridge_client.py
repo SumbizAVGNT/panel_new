@@ -526,30 +526,59 @@ def _ws_call(payload: Dict[str, Any], expect: Tuple[str, ...]) -> Dict[str, Any]
         return {"type": "bridge.error", "error": str(e)}
 
 
+# ---- Admin Origin helper ----
+
+def _admin_origin_payload(*, realm: str, action: str, extra: Optional[Dict[str, Any]] = None,
+                          client: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Конструирует кадр совместимый с бриджом admin.origin:
+      {
+        "type": "admin.origin",
+        "realm": "<realm>",
+        "payload": {
+            "realm": "<realm>",
+            "action": "<action>",
+            "client": {...},    # опционально
+            "extra": {...}      # произвольные параметры для действия
+        }
+      }
+    """
+    payload: Dict[str, Any] = {
+        "realm": realm,
+        "action": action,
+    }
+    if client:
+        payload["client"] = client
+    if extra:
+        payload["extra"] = extra
+    return {
+        "type": "admin.origin",
+        "realm": realm,
+        "payload": payload,
+    }
+
+
+def admin_origin_send(realm: str, action: str, *, extra: Optional[Dict[str, Any]] = None,
+                      client: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Универсальная отправка admin.origin. Возвращаем первый ответ кадром (обычно bridge.ack).
+    """
+    frame = _admin_origin_payload(realm=realm, action=action, extra=extra, client=client)
+    try:
+        return _run(_send_and_wait(frame, expect_types=None, realm=realm))
+    except Exception as e:
+        _log.exception("admin_origin_send failed: realm=%s action=%s", realm, action)
+        return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "action": action}}
+
+
 def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str], None]) -> Dict[str, Any]:
     """
-    Отправить изменения whitelist в плагин Maintenance.
+    Отправить изменения whitelist через admin.origin -> action='maintenance.whitelist'.
 
     op: "add" | "remove" | "list"
     players: str (ник/uuid) или Iterable[str] или None (для "list")
-
-    Возвращает агрегированный словарь:
-      {
-        "type": "maintenance.whitelist",
-        "ok": True/False,
-        "data": {
-          "realm": <realm>,
-          "action": <add/remove/list>,
-          "users": [...],
-          "applied": <int>,
-          "size": <int>
-        },
-        "errors": [ {"user": "...", "error": "..."} ]
-      }
     """
-    action = (op or "").strip().lower()
-    if action not in ("add", "remove", "list"):
-        raise ValueError("op must be add|remove|list")
+    action = _normalize_op(op)
 
     # нормализация входа
     if isinstance(players, (list, tuple, set)):
@@ -559,71 +588,36 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
     else:
         users = []
 
-    # list-запрос (без user)
-    if action == "list":
-        payload = {
-            "type": "maintenance.whitelist",
-            "realm": realm,
-            "payload": {"realm": realm, "action": "list"}
-        }
-        resp = _ws_call(payload, expect=("maintenance.whitelist", "bridge.ack", "bridge.error"))
-        ok = isinstance(resp, dict) and resp.get("type") in ("maintenance.whitelist", "bridge.ack")
-        return {
-            "type": "maintenance.whitelist",
-            "ok": bool(ok),
-            "data": {"realm": realm, "action": "list", "users": [], "applied": 0, "size": 0},
-            "raw": resp if isinstance(resp, dict) else {"type": "unknown"}
-        }
+    # admin.origin ожидает extra = {"op": "...", "players": [...]}
+    extra: Dict[str, Any] = {"op": action}
+    if action != "list":
+        extra["players"] = users
 
-    # add/remove — по одному кадру на пользователя
-    results: List[Dict[str, Any]] = []
-    errors: List[Dict[str, Any]] = []
-    applied = 0
+    # client — минимальный, чтобы не светить лишнее
+    client = {
+        "lang": os.getenv("SP_LANG", "ru"),
+        "tz": os.getenv("TZ", "UTC"),
+        "ua": "panel/bridge_client",
+        "page": os.getenv("SP_PAGE", f"/admin/gameservers/{realm}"),
+        "vis": "visible",
+    }
 
-    for u in users:
-        payload = {
-            "type": "maintenance.whitelist",
-            "realm": realm,
-            "payload": {
-                "realm": realm,
-                "action": action,   # плагин читает именно "action" и "user"
-                "user": u
-            }
-        }
-        resp = _ws_call(payload, expect=("maintenance.whitelist", "bridge.ack", "bridge.error"))
+    resp = admin_origin_send(realm, "maintenance.whitelist", extra=extra, client=client)
 
-        if isinstance(resp, dict) and resp.get("type") == "bridge.error":
-            errors.append({"user": u, "error": resp.get("error") or "bridge error"})
-            results.append({"user": u, "ok": False, "source": "error", "raw": resp})
-            continue
-
-        if isinstance(resp, dict) and resp.get("type") in ("maintenance.whitelist", "bridge.ack"):
-            applied += 1
-            results.append({
-                "user": u,
-                "ok": True,
-                "source": resp.get("type"),
-                "data": resp.get("data") or resp.get("payload") or {}
-            })
-        else:
-            # fire-and-forget/неизвестный формат — считаем успешным применением
-            applied += 1
-            results.append({"user": u, "ok": True, "source": "raw", "raw": resp})
-
-    agg: Dict[str, Any] = {
+    ok = isinstance(resp, dict) and resp.get("type") in ("maintenance.whitelist", "bridge.ack")
+    result: Dict[str, Any] = {
         "type": "maintenance.whitelist",
-        "ok": applied == len(users) and not errors,
+        "ok": bool(ok),
         "data": {
             "realm": realm,
             "action": action,
             "users": users,
-            "applied": applied,
+            "applied": len(users) if action != "list" else 0,
             "size": len(users),
-        }
+        },
+        "raw": resp if isinstance(resp, dict) else {"type": "unknown"},
     }
-    if errors:
-        agg["errors"] = errors
-    return agg
+    return result
 
 
 def maintenance_whitelist_add(realm: str, user: str) -> Dict[str, Any]:

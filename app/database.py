@@ -1,6 +1,9 @@
+# database.py
 from __future__ import annotations
 
 import os
+import json
+from datetime import datetime
 from typing import Optional, Iterable, Any, Sequence
 
 # env
@@ -18,16 +21,28 @@ from pymysql import err as mysql_err
 from pymysql.err import IntegrityError
 
 __all__ = [
+    # коннекторы
     "get_db_connection",
     "get_authme_connection",
     "get_luckperms_connection",
     "get_points_connection",
     "get_easypayments_connection",
     "get_litebans_connection",
+    # общая схема/настройки
     "init_db",
     "get_setting",
     "set_setting",
     "get_all_settings",
+    # статистика
+    "init_stats_schema",
+    "save_server_stats",
+    "list_realms",
+    "get_stats_recent",
+    "get_stats_range",
+    "get_stats_payloads_range",
+    "get_stats_agg",
+    "purge_old_stats",
+    # эксепшены
     "IntegrityError",
 ]
 
@@ -119,7 +134,9 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
         val = os.environ.get(f"DB_{key}")
 
     if val is None and prefix == "LUCKPERMS_" and key in {"HOST", "PORT", "USER", "PASSWORD"}:
-        val = os.environ.get(f"AUTHME_{key}") or os.environ.get(f"DB_{key}")
+        val = os.environ.get(f"AUTHME_{key}") or os.environ.get(f"DB_{key}"
+
+        )
 
     if val is None and prefix in {"POINTS_", "EASYPAYMENTS_", "LITEBANS_"} and key in {"HOST", "PORT", "USER", "PASSWORD"}:
         val = os.environ.get(f"DB_{key}")
@@ -341,3 +358,212 @@ def set_setting(conn: MySQLConnection, key: str, value: str) -> None:
 def get_all_settings(conn: MySQLConnection) -> dict[str, str]:
     rows = conn.query_all("SELECT `key`,`value` FROM settings")
     return {row["key"]: row["value"] for row in rows}
+
+
+# ==========================
+# Stats schema & API
+# ==========================
+STATS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS realms (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(191) NOT NULL UNIQUE,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS stats_samples (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    realm_id INT NOT NULL,
+    collected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- агрегаты
+    players_online INT NULL,
+    players_max INT NULL,
+    tps_1m DECIMAL(5,2) NULL,
+    tps_5m DECIMAL(5,2) NULL,
+    tps_15m DECIMAL(5,2) NULL,
+    mspt DECIMAL(6,2) NULL,
+    heap_used BIGINT NULL,
+    heap_max BIGINT NULL,
+    cpu_sys DECIMAL(6,3) NULL,
+    cpu_proc DECIMAL(6,3) NULL,
+
+    -- исходный нормализованный объект — целиком
+    payload_json MEDIUMTEXT NULL,
+
+    INDEX idx_stats_realm_ts (realm_id, collected_at),
+    CONSTRAINT fk_stats_realm FOREIGN KEY (realm_id) REFERENCES realms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+"""
+
+def init_stats_schema(conn: MySQLConnection) -> None:
+    """Создать таблицы для статистики (idempotent)."""
+    conn.executescript(STATS_SCHEMA_SQL)
+
+def _realm_id(conn: MySQLConnection, name: str) -> int:
+    """Вернёт id realm, создаст при необходимости."""
+    name = (name or "").strip() or "default"
+    row = conn.query_one("SELECT id FROM realms WHERE name = ?", (name,))
+    if row:
+        return int(row["id"])
+    conn.execute(
+        "INSERT INTO realms(name) VALUES (?) "
+        "ON DUPLICATE KEY UPDATE name = VALUES(name)",
+        (name,),
+    )
+    conn.commit()
+    row = conn.query_one("SELECT id FROM realms WHERE name = ?", (name,))
+    return int(row["id"])
+
+def save_server_stats(conn: MySQLConnection, stats: dict, *, collected_at: datetime | None = None) -> int:
+    """
+    Сохранить результат normalize_server_stats(...).
+    Возвращает id вставленной строки.
+    """
+    realm = (stats.get("realm") or "").strip() or "default"
+    rid = _realm_id(conn, realm)
+
+    players = stats.get("players") or {}
+    tps = stats.get("tps") or {}
+    heap = stats.get("heap") or {}
+    osb = stats.get("os") or {}
+    cpu = osb.get("cpu_load") or {}
+
+    row = (
+        rid,
+        (collected_at or datetime.utcnow()).strftime("%Y-%m-%d %H:%M:%S"),
+        players.get("online"),
+        players.get("max"),
+        tps.get("1m"),
+        tps.get("5m"),
+        tps.get("15m"),
+        tps.get("mspt"),
+        heap.get("used"),
+        heap.get("max"),
+        cpu.get("system"),
+        cpu.get("process"),
+        json.dumps(stats, ensure_ascii=False),
+    )
+
+    conn.execute(
+        """
+        INSERT INTO stats_samples(
+            realm_id, collected_at,
+            players_online, players_max,
+            tps_1m, tps_5m, tps_15m, mspt,
+            heap_used, heap_max,
+            cpu_sys, cpu_proc,
+            payload_json
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        row,
+    )
+    conn.commit()
+    return conn.lastrowid
+
+def list_realms(conn: MySQLConnection) -> list[str]:
+    rows = conn.query_all("SELECT name FROM realms ORDER BY name ASC")
+    return [r["name"] for r in rows]
+
+def get_stats_recent(conn: MySQLConnection, realm: str, limit: int = 100) -> list[dict]:
+    """Последние N записей по realm (от новых к старым)."""
+    rid = _realm_id(conn, realm)
+    rows = conn.query_all(
+        """
+        SELECT id, collected_at, players_online, players_max,
+               tps_1m, tps_5m, tps_15m, mspt,
+               heap_used, heap_max, cpu_sys, cpu_proc
+        FROM stats_samples
+        WHERE realm_id = ?
+        ORDER BY collected_at DESC
+        LIMIT ?
+        """,
+        (rid, int(limit)),
+    )
+    return rows
+
+def get_stats_range(conn: MySQLConnection, realm: str, start: datetime | str, end: datetime | str) -> list[dict]:
+    """Все записи за интервал [start, end]."""
+    rid = _realm_id(conn, realm)
+    s = _as_dt(start).strftime("%Y-%m-%d %H:%M:%S")
+    e = _as_dt(end).strftime("%Y-%m-%d %H:%M:%S")
+    rows = conn.query_all(
+        """
+        SELECT id, collected_at, players_online, players_max,
+               tps_1m, tps_5m, tps_15m, mspt,
+               heap_used, heap_max, cpu_sys, cpu_proc
+        FROM stats_samples
+        WHERE realm_id = ? AND collected_at BETWEEN ? AND ?
+        ORDER BY collected_at ASC
+        """,
+        (rid, s, e),
+    )
+    return rows
+
+def get_stats_payloads_range(conn: MySQLConnection, realm: str, start: datetime | str, end: datetime | str) -> list[dict]:
+    """
+    То же, что get_stats_range, но с полным JSON (может быть тяжёлым).
+    Возвращает список словарей с payload_json уже распарсенным.
+    """
+    rid = _realm_id(conn, realm)
+    s = _as_dt(start).strftime("%Y-%m-%d %H:%M:%S")
+    e = _as_dt(end).strftime("%Y-%m-%d %H:%M:%S")
+    rows = conn.query_all(
+        """
+        SELECT id, collected_at, payload_json
+        FROM stats_samples
+        WHERE realm_id = ? AND collected_at BETWEEN ? AND ?
+        ORDER BY collected_at ASC
+        """,
+        (rid, s, e),
+    )
+    for r in rows:
+        try:
+            r["payload"] = json.loads(r.pop("payload_json") or "{}")
+        except Exception:
+            r["payload"] = {}
+    return rows
+
+def get_stats_agg(conn: MySQLConnection, realm: str, minutes: int = 60) -> dict:
+    """
+    Сводная агрегация за последние N минут (avg/min/max основных метрик).
+    """
+    rid = _realm_id(conn, realm)
+    rows = conn.query_all(
+        """
+        SELECT
+          AVG(players_online) AS avg_players, MIN(players_online) AS min_players, MAX(players_online) AS max_players,
+          AVG(tps_1m) AS avg_tps1, MIN(tps_1m) AS min_tps1, MAX(tps_1m) AS max_tps1,
+          AVG(mspt) AS avg_mspt, MIN(mspt) AS min_mspt, MAX(mspt) AS max_mspt,
+          AVG(cpu_sys) AS avg_cpu_sys, AVG(cpu_proc) AS avg_cpu_proc,
+          AVG(heap_used) AS avg_heap_used, MAX(heap_used) AS peak_heap_used
+        FROM stats_samples
+        WHERE realm_id = ? AND collected_at >= (NOW() - INTERVAL ? MINUTE)
+        """,
+        (rid, int(minutes)),
+    )
+    return rows[0] if rows else {}
+
+def purge_old_stats(conn: MySQLConnection, days: int = 30) -> int:
+    """Удалить записи старше N дней. Возвращает число удалённых строк (если доступно)."""
+    cur = conn.execute(
+        "DELETE FROM stats_samples WHERE collected_at < (NOW() - INTERVAL ? DAY)",
+        (int(days),),
+    )
+    conn.commit()
+    try:
+        return int(getattr(cur, "rowcount", 0) or 0)
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+
+# -------------
+# utils
+# -------------
+def _as_dt(x: Any) -> datetime:
+    if isinstance(x, datetime):
+        return x
+    # ожидаем ISO-строки «YYYY-MM-DD HH:MM:SS» либо «YYYY-MM-DDTHH:MM:SS»
+    s = str(x).replace("T", " ")
+    return datetime.fromisoformat(s)
