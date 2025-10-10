@@ -1,10 +1,11 @@
-# database.py
+# app/database.py
 from __future__ import annotations
 
 import os
 import json
+import time
 from datetime import datetime
-from typing import Optional, Iterable, Any, Sequence
+from typing import Optional, Iterable, Any, Sequence, Dict, List
 
 # env
 try:
@@ -33,7 +34,7 @@ __all__ = [
     "get_setting",
     "set_setting",
     "get_all_settings",
-    # статистика
+    # статистика (оригинальные имена)
     "init_stats_schema",
     "save_server_stats",
     "list_realms",
@@ -42,6 +43,11 @@ __all__ = [
     "get_stats_payloads_range",
     "get_stats_agg",
     "purge_old_stats",
+    # статистика (совместимые имена, которых ждут роуты)
+    "ensure_stats_schema",
+    "stats_save_snapshot",
+    "stats_get_latest",
+    "stats_get_series",
     # эксепшены
     "IntegrityError",
 ]
@@ -134,9 +140,8 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
         val = os.environ.get(f"DB_{key}")
 
     if val is None and prefix == "LUCKPERMS_" and key in {"HOST", "PORT", "USER", "PASSWORD"}:
-        val = os.environ.get(f"AUTHME_{key}") or os.environ.get(f"DB_{key}"
-
-        )
+        # фикс скобок + переносов
+        val = os.environ.get(f"AUTHME_{key}") or os.environ.get(f"DB_{key}")
 
     if val is None and prefix in {"POINTS_", "EASYPAYMENTS_", "LITEBANS_"} and key in {"HOST", "PORT", "USER", "PASSWORD"}:
         val = os.environ.get(f"DB_{key}")
@@ -436,7 +441,8 @@ def save_server_stats(conn: MySQLConnection, stats: dict, *, collected_at: datet
         tps.get("1m"),
         tps.get("5m"),
         tps.get("15m"),
-        tps.get("mspt"),
+        # tps.mspt в твоём норме может быть в tps.mspt или в корне как mspt
+        (tps.get("mspt") if isinstance(tps, dict) else None) or stats.get("mspt"),
         heap.get("used"),
         heap.get("max"),
         cpu.get("system"),
@@ -567,3 +573,164 @@ def _as_dt(x: Any) -> datetime:
     # ожидаем ISO-строки «YYYY-MM-DD HH:MM:SS» либо «YYYY-MM-DDTHH:MM:SS»
     s = str(x).replace("T", " ")
     return datetime.fromisoformat(s)
+
+
+# =========================================================
+# Совместимые функции, которые ожидает gameservers.py
+# =========================================================
+
+# 1) ensure_stats_schema -> init_stats_schema
+def ensure_stats_schema(conn: MySQLConnection) -> None:
+    init_stats_schema(conn)
+
+# 2) stats_save_snapshot -> save_server_stats
+def stats_save_snapshot(conn: MySQLConnection, realm: str, data: Dict[str, Any]) -> int:
+    """
+    gameservers.py передаёт нормализованный слепок вместе с realm.
+    Гарантируем, что поле realm есть в объекте.
+    """
+    payload = dict(data or {})
+    payload["realm"] = payload.get("realm") or realm
+    # ts для совместимости: если нет, фронтирует серверное «сейчас»
+    if "ts" not in payload:
+        try:
+            payload["ts"] = int(time.time())
+        except Exception:
+            pass
+    return save_server_stats(conn, payload)
+
+# 3) stats_get_latest: вернуть последний нормализованный объект для realm
+def stats_get_latest(conn: MySQLConnection, realm: str) -> Optional[Dict[str, Any]]:
+    rid = _realm_id(conn, realm)
+    row = conn.query_one(
+        """
+        SELECT id, UNIX_TIMESTAMP(collected_at) AS ts_unix, players_online, players_max,
+               tps_1m, tps_5m, tps_15m, mspt,
+               heap_used, heap_max, cpu_sys, cpu_proc, payload_json
+        FROM stats_samples
+        WHERE realm_id = ?
+        ORDER BY collected_at DESC, id DESC
+        LIMIT 1
+        """,
+        (rid,),
+    )
+    if not row:
+        return None
+
+    # если есть payload_json — предпочтём его
+    if row.get("payload_json"):
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+            if isinstance(payload, dict):
+                payload = dict(payload)
+                payload["realm"] = payload.get("realm") or realm
+                payload["ts"] = payload.get("ts") or int(row.get("ts_unix") or time.time())
+                return payload
+        except Exception:
+            pass
+
+    # fallback: собрать норму из плоских полей
+    return {
+        "realm": realm,
+        "ts": int(row.get("ts_unix") or time.time()),
+        "mspt": _num(row.get("mspt")),
+        "tps": {
+            "1m": _num(row.get("tps_1m")),
+            "5m": _num(row.get("tps_5m")),
+            "15m": _num(row.get("tps_15m")),
+            "mspt": _num(row.get("mspt")),
+        },
+        "players": {"online": _num(row.get("players_online")), "max": _num(row.get("players_max"))},
+        "heap": {"used": _num(row.get("heap_used")), "max": _num(row.get("heap_max"))},
+        "nonheap": {"used": None},
+        "os": {"cpu_load": {"system": _num(row.get("cpu_sys")), "process": _num(row.get("cpu_proc"))}},
+        "fs": {},
+    }
+
+def _num(v):
+    try:
+        if v is None: return None
+        if isinstance(v, (int, float)): return v
+        s = str(v).strip()
+        if s == "": return None
+        if "." in s: return float(s)
+        return int(s)
+    except Exception:
+        return None
+
+# 4) stats_get_series: временной ряд с даунсемплингом
+def stats_get_series(
+    conn: MySQLConnection,
+    realm: str,
+    *,
+    since_ts: Optional[int] = None,
+    limit: int = 720,
+    step_sec: Optional[int] = 60,
+    fields: Optional[Iterable[str]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Возвращает [{"ts": <unix>, <field>: value, ...}, ...]
+    Поля соответствуют колонкам stats_samples, но в snake_case как в БД:
+      mspt, tps_1m, tps_5m, tps_15m, players_online,
+      heap_used, heap_max, cpu_sys (==cpu_system_load), cpu_proc (==cpu_process_load)
+    Для совместимости с фронтом можно прокинуть cpu_system_load/cpu_process_load — добавим дубликаты в ответе.
+    """
+    allowed = {
+        "mspt","tps_1m","tps_5m","tps_15m","players_online",
+        "heap_used","heap_max","cpu_sys","cpu_proc"
+    }
+    if fields:
+        fset = [f for f in fields if f in allowed]
+        if not fset:
+            fset = ["tps_1m"]
+    else:
+        fset = ["tps_1m","tps_5m","tps_15m","players_online","mspt","cpu_sys","cpu_proc","heap_used","heap_max"]
+
+    step = max(1, int(step_sec or 60))
+    rid = _realm_id(conn, realm)
+
+    where = ["realm_id = ?"]
+    params: List[Any] = [rid]
+    if since_ts:
+        where.append("collected_at >= FROM_UNIXTIME(?)")
+        params.append(int(since_ts))
+
+    # агрегатор под поле
+    def agg_sql(col: str) -> str:
+        if col in ("heap_max",):
+            return f"MAX({col}) AS {col}"
+        if col in ("players_online",):
+            return f"MAX({col}) AS {col}"
+        # остальное среднее
+        return f"AVG({col}) AS {col}"
+
+    bucket = f"(FLOOR(UNIX_TIMESTAMP(collected_at)/{step})*{step})"
+    select_cols = [f"{bucket} AS ts"]
+    select_cols += [agg_sql(c) for c in fset]
+
+    sql = f"""
+        SELECT {", ".join(select_cols)}
+        FROM stats_samples
+        WHERE {" AND ".join(where)}
+        GROUP BY {bucket}
+        ORDER BY ts ASC
+        LIMIT ?
+    """
+    params.append(int(limit or 720))
+
+    rows = conn.query_all(sql, params) or []
+
+    # нормализуем типы + добавим cpu_* aliases в стиле фронта (system/process)
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        item: Dict[str, Any] = {"ts": int(r["ts"])}
+        for k in fset:
+            v = r.get(k)
+            item[k] = _num(v)
+        # дубли для фронта:
+        if "cpu_sys" in item:
+            item["cpu_system_load"] = item["cpu_sys"]
+        if "cpu_proc" in item:
+            item["cpu_process_load"] = item["cpu_proc"]
+        out.append(item)
+    return out
