@@ -90,7 +90,6 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
         <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
       </div>
       <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
-      <!-- Исправлено: правильный endpoint -->
       <a href="{{ url_for('admin.gameservers_index') }}" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left"></i> Назад</a>
     </div>
   </div>
@@ -264,6 +263,49 @@ const realm = document.querySelector("[data-realm]").dataset.realm;
 const LS_AUTO_KEY = `gs_auto_${realm}`;
 let tpsSeries = [], timer = null, lastStats = null;
 
+/* ========== client meta ========== */
+function clientMeta(){
+  const d = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  const tzOffsetMin = -d.getTimezoneOffset();
+  const vp = { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio || 1 };
+  const sc = { w: screen.width, h: screen.height };
+  return {
+    tz, tzOffsetMin,
+    lang: navigator.language || '',
+    ua: navigator.userAgent || '',
+    vp, sc,
+    page: location.pathname + location.search,
+    ref: document.referrer || '',
+    vis: document.visibilityState || 'visible',
+    ts: Date.now()
+  };
+}
+function metaQuery(){
+  const m = clientMeta();
+  const p = new URLSearchParams({
+    tz: m.tz || '',
+    of: String(m.tzOffsetMin),
+    lang: m.lang || '',
+    vp: `${m.vp.w}x${m.vp.h}@${m.vp.dpr}`,
+    sc: `${m.sc.w}x${m.sc.h}`,
+    vis: m.vis,
+  });
+  return p.toString();
+}
+async function postJSON(url, body){
+  const m = clientMeta();
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json",
+              "X-Client-TZ": m.tz || '',
+              "X-Client-Of": String(m.tzOffsetMin),
+              "X-Client-Lang": m.lang || ''},
+    body: JSON.stringify({ ...body, client: m })
+  });
+  return r.json();
+}
+
 /* toasts */
 function toast(msg, ok=true){
   const wrap = document.getElementById('toasts');
@@ -365,7 +407,8 @@ function render(p){
 /* polling stats */
 async function fetchStats(){
   try{
-    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`, {cache:"no-store"});
+    const q = metaQuery();
+    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}&${q}&_ts=${Date.now()}`, {cache:"no-store"});
     const j = await r.json();
     if(!j.ok){ setStatusBadge("offline"); return; }
     render(j.data||{});
@@ -415,7 +458,8 @@ function fmtLine(p){
 }
 function startLive(){
   if(es) return;
-  const url = `/admin/gameservers/api/console/stream?realm=${encodeURIComponent(realm)}`;
+  const q = metaQuery();
+  const url = `/admin/gameservers/api/console/stream?realm=${encodeURIComponent(realm)}&${q}`;
   es = new EventSource(url);
   es.onmessage = (ev)=>{ try{ appendLine(fmtLine(JSON.parse(ev.data||'{}')));}catch{} };
   es.addEventListener('err', (ev)=>{ appendLine(`[stream] ${ev.data}`); });
@@ -430,8 +474,7 @@ async function sendCmd(){
   const btn = document.getElementById("send"), st = document.getElementById("console-status");
   btn.disabled = true; st.textContent = "Отправка...";
   try{
-    const r = await fetch("/admin/gameservers/api/console", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({realm, cmd})});
-    const j = await r.json();
+    const j = await postJSON("/admin/gameservers/api/console", {realm, cmd});
     st.textContent = j.ok ? "OK" : (j.error||"error");
     toast(j.ok ? "Команда отправлена" : (j.error||"Ошибка"), j.ok);
     if(j.ok){ document.getElementById("cmd").value=""; }
@@ -442,8 +485,7 @@ async function sendCmd(){
 /* maintenance API */
 async function maintToggle(enabled){
   const msg = document.getElementById("maint-msg").value.trim();
-  const r = await fetch("/admin/gameservers/api/maintenance", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({realm, enabled, kickMessage: msg, message: msg})});
-  const j = await r.json();
+  const j = await postJSON("/admin/gameservers/api/maintenance", {realm, enabled, kickMessage: msg, message: msg});
   if (j.ok && enabled) setStatusBadge("maintenance");
   if (j.ok && !enabled) setStatusBadge("online");
   toast(j.ok ? (enabled?"Техработы включены":"Техработы отключены") : (j.error||"Ошибка"), j.ok);
@@ -451,8 +493,7 @@ async function maintToggle(enabled){
 async function wlChange(op){
   const player = document.getElementById("wl-player").value.trim();
   if(!player) return;
-  const r = await fetch("/admin/gameservers/api/maintenance/whitelist", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({realm, op, player})});
-  const j = await r.json();
+  const j = await postJSON("/admin/gameservers/api/maintenance/whitelist", {realm, op, player});
   toast(j.ok ? `Whitelist: ${op} ${player}` : (j.error||"Ошибка"), j.ok);
   if (j.ok && op === "add") document.getElementById("wl-player").value = "";
 }
