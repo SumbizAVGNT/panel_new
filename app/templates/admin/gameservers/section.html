@@ -3,7 +3,7 @@
 
 {% block content %}
 <style>
-/* ... (CSS оставил без изменений из твоей версии) ... */
+/* базовый стилизатор (как у тебя) + новые блоки */
 .container-xxl.gs-scope{
   background:
     radial-gradient(700px 360px at 50% -12%, rgba(148,163,184,.10), transparent 70%),
@@ -62,6 +62,10 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
 .player-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px}
 .player-row:hover{background:rgba(148,163,184,.06)}
 
+/* plugins grid */
+.plugins-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.plugin-pill{border:1px solid rgba(148,163,184,.28);border-radius:10px;padding:8px 10px;background:rgba(13,17,23,.55)}
+
 /* skeletons + toasts */
 .skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
 .skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg, transparent, rgba(255,255,255,.07), transparent);transform:translateX(-100%);animation:shimmer 1.2s infinite}
@@ -91,7 +95,7 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
         <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
       </div>
       <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
-      <a href="/admin/gameservers" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left"></i> Назад</a>
+      <a href="{{ url_for('admin.gameservers_index') }}" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left"></i> Назад</a>
     </div>
   </div>
 
@@ -99,11 +103,21 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
     <!-- sidebar -->
     <aside class="gs-side">
       <div class="card glass p-2">
-        {% set sections = [('overview','Overview'),('maintenance','Maintenance'),('players','Players'),('worlds','Worlds'),('console','Console')] %}
+        {% set sections = [
+          ('overview','Overview'),
+          ('maintenance','Maintenance'),
+          ('players','Players'),
+          ('worlds','Worlds'),
+          ('system','System'),
+          ('jvm','JVM & Memory'),
+          ('plugins','Plugins'),
+          ('raw','Raw JSON'),
+          ('console','Console')
+        ] %}
         {% for key, title in sections %}
           <a class="nav-link px-3 py-2" href="#{{ key }}"><span class="dot"></span>{{ title }}</a>
         {% endfor %}
-        <a class="nav-link px-3 py-2" href="/admin/accounts">
+        <a class="nav-link px-3 py-2" href="{{ url_for('admin.accounts') }}">
           <span class="dot"></span>Accounts
         </a>
       </div>
@@ -203,6 +217,103 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
               <tbody id="tbl-worlds"><tr><td colspan="6" class="text-secondary">нет данных</td></tr></tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <!-- system -->
+      <section id="system" class="card glass mb-3">
+        <div class="card-body">
+          <h5 class="mb-3">System</h5>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="tile">
+                <div class="tcap">OS</div>
+                <div class="small" id="sys-os">—</div>
+                <div class="small text-secondary">Cores: <span id="sys-cores">—</span></div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="tile">
+                <div class="tcap">CPU load</div>
+                <div class="small">System: <span id="cpu-sys">—</span></div>
+                <div class="small">Process: <span id="cpu-proc">—</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- jvm -->
+      <section id="jvm" class="card glass mb-3">
+        <div class="card-body">
+          <h5 class="mb-3">JVM & Memory</h5>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="tile">
+                <div class="tcap">Heap</div>
+                <div class="small">Used: <span id="heap-used">—</span></div>
+                <div class="small">Max: <span id="heap-max">—</span></div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="tile">
+                <div class="tcap">Non-Heap</div>
+                <div class="small">Used: <span id="nheap-used">—</span></div>
+                <div class="small">Max: <span id="nheap-max">—</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mt-1">
+            <div class="col-md-6">
+              <div class="tile">
+                <div class="tcap">Classes</div>
+                <div class="small">Loaded: <span id="cls-loaded">—</span></div>
+                <div class="small">Total loaded: <span id="cls-total">—</span></div>
+                <div class="small">Unloaded: <span id="cls-unloaded">—</span></div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="tile">
+                <div class="tcap">Threads</div>
+                <div class="small">Live: <span id="thr-live">—</span></div>
+                <div class="small">Peak: <span id="thr-peak">—</span></div>
+                <div class="small">Daemon: <span id="thr-daemon">—</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <h6 class="mb-2">Garbage Collectors</h6>
+            <div id="gc-list" class="small text-secondary">нет данных</div>
+          </div>
+
+          <div class="mt-3">
+            <h6 class="mb-2">Memory Pools</h6>
+            <div id="mem-pools" class="small text-secondary">нет данных</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- plugins -->
+      <section id="plugins" class="card glass mb-3">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <h5 class="m-0">Plugins</h5>
+            <input id="pl-search" class="form-control form-control-sm" placeholder="Search…"
+                   style="max-width:220px">
+          </div>
+          <div id="plugins-wrap" class="plugins-grid">
+            <div class="text-secondary">нет данных</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- raw json -->
+      <section id="raw" class="card glass mb-3">
+        <div class="card-body">
+          <h5 class="mb-2">Raw JSON</h5>
+          <pre id="raw-json" class="console" style="max-height:260px"></pre>
         </div>
       </section>
 
@@ -310,22 +421,30 @@ function unskeleton(){
   }
 }
 
-/* helpers to read normalized stats */
+/* helpers */
 function avgTps(tps){
   if(!tps) return null;
   const arr = [tps["1m"], tps["5m"], tps["15m"]].filter(v=>typeof v==="number");
   if(!arr.length) return null;
   return arr.reduce((a,b)=>a+b,0) / arr.length;
 }
+function humanBytes(n){
+  if(typeof n!=="number"||!isFinite(n)) return "—";
+  const u=["B","KB","MB","GB","TB"]; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;}
+  return n.toFixed(2)+" "+u[i];
+}
+function pct(a,b){ if(typeof a!=="number"||typeof b!=="number"||b<=0) return "—"; return ((a/b)*100).toFixed(1)+"%"; }
 
 /* render stats */
-function render(p){
+function render(data){
+  // поддерживаем и "server.stats", и "stats.report"
+  const p = data?.payload || data;
   lastStats = p;
 
-  const mspt = p?.tps?.mspt ?? p.mspt ?? null;
-  const tpsAvg = avgTps(p.tps);
+  const mspt  = p.mspt ?? p?.tps?.mspt ?? null;
   const tps1m = p?.tps?.["1m"];
-  const online = (p?.players?.online ?? null);
+  const tpsAvg = avgTps(p.tps);
+  const online = (p?.players_online ?? p?.players?.online ?? null);
 
   const status = (typeof online === "number" && online>0) || (typeof tps1m === "number" && tps1m>0) ? "online" : "offline";
   setStatusBadge(status);
@@ -334,19 +453,20 @@ function render(p){
   document.getElementById("t-tps").textContent  = (typeof tpsAvg==="number") ? tpsAvg.toFixed(2) : "—";
   document.getElementById("t-online").textContent = (typeof online==="number") ? online : "—";
 
-  const playersArr = p.players_list || []; // если когда-то добавишь список
+  const playersArr = p.players_list || [];
   document.getElementById("t-players").textContent = playersArr.map(x=>x.name).join(", ") || "—";
   unskeleton();
 
   if(typeof tps1m==="number"){ tpsSeries.push(tps1m); if(tpsSeries.length>60) tpsSeries.shift(); }
   drawSparkline(document.getElementById("tpsChart"), tpsSeries);
 
-  // Таблицы (если в будущем начнёшь отдавать подробные lists)
+  // players table
   const pt = document.getElementById("tbl-players");
   pt.innerHTML = playersArr.length ? playersArr.map(pl=>`
     <tr><td>${pl.name}</td><td class="small">${pl.uuid||""}</td><td>${pl.world||""}</td></tr>
   `).join("") : `<tr><td colspan="3" class="text-secondary">нет данных</td></tr>`;
 
+  // worlds table
   const wt = document.getElementById("tbl-worlds");
   const worlds = p.worlds||[];
   wt.innerHTML = worlds.length ? worlds.map(w=>`
@@ -359,6 +479,78 @@ function render(p){
       <td>${w.spawn?`${w.spawn.x},${w.spawn.y},${w.spawn.z}`:""}</td>
     </tr>
   `).join("") : `<tr><td colspan="6" class="text-secondary">нет данных</td></tr>`;
+
+  // system
+  document.getElementById("sys-os").textContent = `${p.os_name||"?"} ${p.os_arch?"("+p.os_arch+")":""}`;
+  document.getElementById("sys-cores").textContent = p.os_cores ?? "—";
+  document.getElementById("cpu-sys").textContent = (typeof p.cpu_system_load==="number") ? (p.cpu_system_load*100).toFixed(1)+"%" : "—";
+  document.getElementById("cpu-proc").textContent = (typeof p.cpu_process_load==="number") ? (p.cpu_process_load*100).toFixed(1)+"%" : "—";
+
+  // jvm/heap
+  const hu=p.heap_used, hm=p.heap_max, nhu=p.nonheap_used, nhm=p.nonheap_max;
+  document.getElementById("heap-used").textContent  = `${humanBytes(hu)}${hm?` · ${pct(hu,hm)}`:""}`;
+  document.getElementById("heap-max").textContent   = humanBytes(hm);
+  document.getElementById("nheap-used").textContent = `${humanBytes(nhu)}${nhm&&nhm>0?` · ${pct(nhu,nhm)}`:""}`;
+  document.getElementById("nheap-max").textContent  = nhm && nhm>0 ? humanBytes(nhm) : "—";
+
+  document.getElementById("cls-loaded").textContent   = p.classes_loaded ?? "—";
+  document.getElementById("cls-total").textContent    = p.classes_total_loaded ?? "—";
+  document.getElementById("cls-unloaded").textContent = p.classes_unloaded ?? "—";
+  document.getElementById("thr-live").textContent     = p.threads_live ?? "—";
+  document.getElementById("thr-peak").textContent     = p.threads_peak ?? "—";
+  document.getElementById("thr-daemon").textContent   = p.threads_daemon ?? "—";
+
+  // GC list
+  const gc = p.gc || {};
+  const gcHtml = Object.keys(gc).length
+    ? `<div class="row row-cols-1 row-cols-md-2 g-2">` + Object.entries(gc).map(([k,v])=>{
+        const c=v?.count??0, tm=v?.time_ms??0;
+        return `<div class="col"><div class="plugin-pill d-flex justify-content-between">
+                  <span>${k}</span><span class="text-secondary small">${c} × · ${tm} ms</span>
+                </div></div>`;
+      }).join("") + `</div>`
+    : "нет данных";
+  document.getElementById("gc-list").innerHTML = gcHtml;
+
+  // Memory pools
+  const pools = p.mem_pools || {};
+  const mpHtml = Object.keys(pools).length
+    ? `<div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>Pool</th><th>Used</th><th>Max</th><th>Committed</th></tr></thead>
+        <tbody>
+        ${Object.entries(pools).map(([name,st])=>`
+          <tr>
+            <td>${name}</td>
+            <td>${humanBytes(st?.used)}</td>
+            <td>${st?.max && st.max>0 ? humanBytes(st.max) : "—"}</td>
+            <td>${humanBytes(st?.committed)}</td>
+          </tr>
+        `).join("")}
+        </tbody>
+      </table></div>`
+    : "нет данных";
+  document.getElementById("mem-pools").innerHTML = mpHtml;
+
+  // Plugins
+  const plugins = p.plugins || {};
+  const entries = Object.entries(plugins).map(([name,ver])=>({name, ver:String(ver)}))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  const wrap = document.getElementById("plugins-wrap");
+  wrap.innerHTML = entries.length
+    ? entries.map(pl=>`<div class="plugin-pill d-flex justify-content-between"><span>${pl.name}</span><span class="text-secondary">${pl.ver}</span></div>`).join("")
+    : `<div class="text-secondary">нет данных</div>`;
+  const input = document.getElementById("pl-search");
+  input.oninput = () => {
+    const q = input.value.trim().toLowerCase();
+    Array.from(wrap.children).forEach(node=>{
+      if(!node.classList.contains('plugin-pill')) return;
+      const txt = node.textContent.toLowerCase();
+      node.style.display = txt.includes(q) ? "" : "none";
+    });
+  };
+
+  // Raw JSON
+  document.getElementById("raw-json").textContent = JSON.stringify(p, null, 2);
 }
 
 /* polling stats */
@@ -371,7 +563,7 @@ async function fetchStats(){
   }catch(e){ setStatusBadge("offline"); }
 }
 
-/* players modal (render list with heads) */
+/* players modal */
 function openPlayersModal(){
   const list = document.getElementById("players-list");
   list.innerHTML = "";
@@ -418,7 +610,7 @@ function startLive(){
   es = new EventSource(url);
   es.onmessage = (ev)=>{ try{ appendLine(fmtLine(JSON.parse(ev.data||'{}')));}catch{} };
   es.addEventListener('err', (ev)=>{ appendLine(`[stream] ${ev.data}`); });
-  es.onerror = ()=>{}; // авто-reconnect от EventSource
+  es.onerror = ()=>{}; // авто-reconnect
 }
 function stopLive(){ try{es?.close();}catch{} es=null; }
 
@@ -493,6 +685,6 @@ autoEl.addEventListener("change", e=>{
 /* init */
 fetchStats();
 if(autoEl.checked) timer = setInterval(fetchStats, 3000);
-startLive(); // по умолчанию включён
+startLive();
 </script>
 {% endblock %}

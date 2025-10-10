@@ -30,7 +30,7 @@ from ...modules.bridge_client import (
     # JustPoints
     jp_balance_get, jp_balance_set, jp_balance_add, jp_balance_take,
 )
-from . import admin_bp  # существующий Blueprint всего админ-раздела
+from . import admin_bp  # Blueprint всего админ-раздела
 
 # ===================== HTML =====================
 
@@ -82,6 +82,7 @@ def api_stats():
             return jsonify({"ok": False, "error": raw.get("error") or "bridge error"}), 502
         norm = normalize_server_stats(raw)
         if norm.get("type") == "bridge.error":
+            # вернём как есть, если нормализация не смогла
             return jsonify({"ok": True, "data": raw})
         return jsonify({"ok": True, "data": norm})
     except Exception as e:
@@ -196,7 +197,7 @@ def _compose_head_png_from_crafatar(uuid_nodash: str) -> io.BytesIO:
         face.alpha_composite(hat)
     except Exception:
         pass
-    buf = io.BytesIO(); face.save(buf, format="PNG"); buf.seek(0); return buf
+    buf = io.BytesIO(); face.save(bio := io.BytesIO(), format="PNG"); bio.seek(0); return bio
 
 @admin_bp.route("/gameservers/api/player-head")
 @login_required
@@ -235,7 +236,8 @@ def api_player_head():
 def api_console_stream():
     """
     SSE-прокси: bridge (WS) -> браузер.
-    Пропускаем кадры console.stream / bridge.log только для указанного realm.
+    Пропускаем кадры console.stream / bridge.log / console.out только для указанного realm.
+    ВАЖНО: сразу отправляем первый админ-кадр, чтобы bridge классифицировал соединение как admin.
     """
     realm = (request.args.get("realm") or "").strip()
     if not realm:
@@ -259,6 +261,15 @@ def api_console_stream():
                     ping_timeout=20,
                     max_size=BRIDGE_MAX_SIZE,
                 ) as ws:
+                    # 🔧 Критично: метим себя как admin-соединение
+                    with asyncio.CancelledError():
+                        pass
+                    try:
+                        await ws.send(json.dumps({"type": "bridge.list"}))
+                    except Exception:
+                        # даже если не получилось — просто продолжим слушать
+                        pass
+
                     while True:
                         raw = await ws.recv()
                         try:
@@ -300,14 +311,14 @@ def api_console_stream():
     threading.Thread(target=worker, daemon=True).start()
 
     def gen():
-        # рекомендуемое значение ретрая для SSE (милисекунды)
+        # рекомендуемая задержка реконнекта SSE (мс)
         yield "retry: 2000\n\n"
         try:
             while True:
                 try:
                     item = q.get(timeout=20)
                 except Empty:
-                    # keep-alive комментарий, чтобы не рвались прокси
+                    # keep-alive, чтобы не рвались прокси
                     yield ": keepalive\n\n"
                     continue
                 if item is STOP:
