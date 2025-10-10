@@ -372,6 +372,7 @@ const LS_AUTO_KEY = `gs_auto_${realm}`;
 const LS_INT_KEY = `gs_auto_int_${realm}`;
 let tpsSeries = [], entSeries = [], timer = null, lastStats = null;
 let maintTimer = null, maintUntil = 0;
+let lastMetricKind = null; // <— запоминаем, какую плитку открыли
 
 /* ---------- client meta ---------- */
 function clientMeta(){
@@ -740,12 +741,17 @@ async function fetchSeries({minutes=180, step=60, fields=[]}){
 }
 
 function openMetric(kind){
+  lastMetricKind = kind; // <— запомнили, какой именно график открыт
+  document.querySelectorAll('.tile[data-metric]').forEach(t=>t.classList.remove('active-for'));
+  const tile = document.querySelector(`.tile[data-metric="${kind}"]`);
+  if (tile) tile.classList.add('active-for');
+
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('metricsModal'));
   const title = document.getElementById("metricsTitle");
   const canvas = document.getElementById("metricsChart");
   const legend = document.getElementById("metricsLegend");
 
-  let fields = [], titleText = "", y01=false, post = (v)=>v, legends=[];
+  let fields = [], titleText = "", y01=false;
   switch(kind){
     case "mspt":
       fields = ["mspt"]; titleText = "MSPT (tick duration, ms)"; break;
@@ -759,17 +765,20 @@ function openMetric(kind){
     case "cpu":
       fields = ["cpu_system_load","cpu_process_load"]; titleText = "CPU load (system / process)"; y01=true; break;
     case "heap":
-      fields = ["heap_used","heap_max","nonheap_used"]; titleText = "Память Heap / Non-heap (байты)"; break;
+      fields = ["heap_used","heap_max"]; titleText = "Память Heap (байты)"; break;
     case "disk":
-      fields = ["fs_root_free","fs_root_total"]; titleText = "Диск (root free / total, байты)"; break;
+      // Истории по диску в БД нет — покажем подсказку
+      title.textContent = "Диск (текущий снимок)";
+      legend.innerHTML = "<span class='text-secondary'>История диска не собирается — показаны текущие значения в плитке.</span>";
+      const ctx0 = canvas.getContext("2d"); ctx0.clearRect(0,0,canvas.width=canvas.clientWidth, canvas.height=280);
+      modal.show(); return;
     case "entities":
       // Покажем список из последнего снимка (не временной ряд)
       title.textContent = "Top entities (последний снимок)";
       legend.innerHTML = "";
-      drawLines(canvas, {"none":[]}); // clear
+      const ctx = canvas.getContext("2d"); ctx.clearRect(0,0,canvas.width=canvas.clientWidth, canvas.height=280);
       const data = lastStats?.entities_top || {};
       const items = Object.entries(data).map(([name,val])=>({name,value:val})).sort((a,b)=>b.value-a.value);
-      const ctx = canvas.getContext("2d"); ctx.clearRect(0,0,canvas.width=canvas.clientWidth, canvas.height=280);
       drawBars(canvas, items.slice(0,16));
       modal.show(); return;
     default:
@@ -806,8 +815,7 @@ function openMetric(kind){
       tps_1m: "TPS 1m", tps_5m:"TPS 5m", tps_15m:"TPS 15m",
       players_online:"Players online",
       cpu_system_load:"CPU system", cpu_process_load:"CPU process",
-      heap_used:"Heap used", heap_max:"Heap max", nonheap_used:"Non-heap used",
-      fs_root_free:"Root free", fs_root_total:"Root total"
+      heap_used:"Heap used", heap_max:"Heap max"
     };
     const span = txt => `<span class="badge bg-secondary me-1">${txt}</span>`;
     legend.innerHTML = Object.keys(seriesMap).map(k=>span(names[k]||k)).join("") +
@@ -988,12 +996,10 @@ document.querySelectorAll('.tile[data-metric]').forEach(el=>{
 
 /* react to range/step changes in modal */
 document.getElementById("m-range").addEventListener("change", ()=>{
-  const kind = document.querySelector('.tile[data-metric].active-for')?.getAttribute('data-metric');
-  if(kind) openMetric(kind);
+  if(lastMetricKind) openMetric(lastMetricKind);
 });
 document.getElementById("m-step").addEventListener("change", ()=>{
-  const kind = document.querySelector('.tile[data-metric].active-for')?.getAttribute('data-metric');
-  if(kind) openMetric(kind);
+  if(lastMetricKind) openMetric(lastMetricKind);
 });
 
 /* init localStorage for auto refresh */
