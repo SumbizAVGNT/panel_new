@@ -1,4 +1,4 @@
-# admin/gameservers.py
+# app/routes/admin/gameservers.py
 from __future__ import annotations
 
 import os
@@ -10,12 +10,18 @@ import logging
 import threading
 from functools import lru_cache
 from queue import Queue, Empty
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import requests
 import websockets
 from PIL import Image
 from flask import render_template, jsonify, request, send_file, current_app
+
+try:
+    # опционально: если используется flask-login, добавим имя пользователя в hello
+    from flask_login import current_user
+except Exception:  # pragma: no cover
+    current_user = None  # type: ignore
 
 from ...decorators import login_required
 from ...modules.bridge_client import (
@@ -63,7 +69,8 @@ def api_list():
 def api_bridge_info():
     try:
         data = bridge_info()
-        if data.get("type") != "bridge.info.result":
+        # для совместимости: допускаем bridge.list.result, если отдельно bridge.info.result нет
+        if data.get("type") not in ("bridge.info.result", "bridge.list.result"):
             return jsonify({"ok": False, "error": data.get("error") or "bridge unavailable"}), 502
         return jsonify({"ok": True, "data": data.get("payload", {})})
     except Exception as e:
@@ -150,8 +157,33 @@ MOJANG_PROFILE_URL = "https://sessionserver.mojang.com/session/minecraft/profile
 CRAFATAR_AVATAR    = "https://crafatar.com/avatars/{uuid}?size=32&overlay"
 CRAFATAR_SKIN      = "https://crafatar.com/skins/{uuid}"
 
+def _client_ip() -> str:
+    # учитываем прокси
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr or ""
+
+def _client_user_agent() -> str:
+    return request.headers.get("User-Agent", "")
+
+def _client_user_name() -> Optional[str]:
+    try:
+        if current_user and hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+            # стараемся достать читаемое имя
+            for attr in ("name", "username", "login", "email", "id"):
+                if hasattr(current_user, attr):
+                    val = getattr(current_user, attr)
+                    if val:
+                        return str(val)
+    except Exception:
+        pass
+    return None
+
 def _http_get(url: str):
-    headers = {"User-Agent": "MoonReinPanel/1.0 (+bridge)"}
+    headers = {
+        "User-Agent": f"MoonReinPanel/1.0 (+bridge; { _client_user_agent() or 'unknown-UA' })"
+    }
     return requests.get(url, headers=headers, timeout=REQ_TIMEOUT)
 
 @lru_cache(maxsize=512)
@@ -178,26 +210,33 @@ def _cached_skin_url_for_uuid(uuid_nodash: str) -> Optional[str]:
 def _compose_head_png_from_skin_url(url: str) -> io.BytesIO:
     r = _http_get(url); r.raise_for_status()
     img = Image.open(io.BytesIO(r.content)).convert("RGBA")
-    face = img.crop((8,8,16,16)).resize((32,32), Image.NEAREST)
+    face = img.crop((8, 8, 16, 16)).resize((32, 32), Image.NEAREST)
     try:
-        hat = img.crop((40,8,48,16)).resize((32,32), Image.NEAREST)
+        hat = img.crop((40, 8, 48, 16)).resize((32, 32), Image.NEAREST)
         face.alpha_composite(hat)
     except Exception:
         pass
-    buf = io.BytesIO(); face.save(buf, format="PNG"); buf.seek(0); return buf
+    bio = io.BytesIO()
+    face.save(bio, format="PNG")
+    bio.seek(0)
+    return bio
 
 def _compose_head_png_from_crafatar(uuid_nodash: str) -> io.BytesIO:
     r = _http_get(CRAFATAR_AVATAR.format(uuid=uuid_nodash))
-    if r.ok: return io.BytesIO(r.content)
+    if r.ok:
+        return io.BytesIO(r.content)
     r2 = _http_get(CRAFATAR_SKIN.format(uuid=uuid_nodash)); r2.raise_for_status()
     img = Image.open(io.BytesIO(r2.content)).convert("RGBA")
-    face = img.crop((8,8,16,16)).resize((32,32), Image.NEAREST)
+    face = img.crop((8, 8, 16, 16)).resize((32, 32), Image.NEAREST)
     try:
-        hat = img.crop((40,8,48,16)).resize((32,32), Image.NEAREST)
+        hat = img.crop((40, 8, 48, 16)).resize((32, 32), Image.NEAREST)
         face.alpha_composite(hat)
     except Exception:
         pass
-    buf = io.BytesIO(); face.save(bio := io.BytesIO(), format="PNG"); bio.seek(0); return bio
+    bio = io.BytesIO()
+    face.save(bio, format="PNG")
+    bio.seek(0)
+    return bio
 
 @admin_bp.route("/gameservers/api/player-head")
 @login_required
@@ -225,11 +264,22 @@ def api_player_head():
             return send_file(buf, mimetype="image/png", max_age=600)
     except Exception as e:
         log.warning("player-head Crafatar fail (uuid=%s): %s", uuid, e)
-    img = Image.new("RGBA", (32,32), (60,75,92,255))
+    img = Image.new("RGBA", (32, 32), (60, 75, 92, 255))
     bio = io.BytesIO(); img.save(bio, format="PNG"); bio.seek(0)
     return send_file(bio, mimetype="image/png", max_age=120)
 
 # ===================== SSE: console stream =====================
+
+def _admin_hello_payload(realm: str) -> Dict[str, Any]:
+    user_name = _client_user_name()
+    payload: Dict[str, Any] = {
+        "realm": realm,
+        "ip": _client_ip(),
+        "ua": _client_user_agent(),
+    }
+    if user_name:
+        payload["user"] = user_name
+    return payload
 
 @admin_bp.route("/gameservers/api/console/stream")
 @login_required
@@ -237,7 +287,7 @@ def api_console_stream():
     """
     SSE-прокси: bridge (WS) -> браузер.
     Пропускаем кадры console.stream / bridge.log / console.out только для указанного realm.
-    ВАЖНО: сразу отправляем первый админ-кадр, чтобы bridge классифицировал соединение как admin.
+    Новое: отправляем на бридж кадр admin.hello с метаданными клиента (ip/ua/пользователь).
     """
     realm = (request.args.get("realm") or "").strip()
     if not realm:
@@ -261,15 +311,25 @@ def api_console_stream():
                     ping_timeout=20,
                     max_size=BRIDGE_MAX_SIZE,
                 ) as ws:
-                    # 🔧 Критично: метим себя как admin-соединение
-                    with asyncio.CancelledError():
-                        pass
+                    # 1) Отправляем admin.hello — бридж сможет логировать и метить соединение как админское
+                    hello = {
+                        "type": "admin.hello",
+                        "realm": realm,
+                        "payload": _admin_hello_payload(realm),
+                    }
                     try:
-                        await ws.send(json.dumps({"type": "bridge.list"}))
+                        await ws.send(json.dumps(hello, ensure_ascii=False))
                     except Exception:
-                        # даже если не получилось — просто продолжим слушать
+                        # не смертельно, просто идём дальше
                         pass
 
+                    # 2) Дополнительно отправим bridge.list — совместимость со старым поведением
+                    try:
+                        await ws.send(json.dumps({"type": "bridge.list"}, ensure_ascii=False))
+                    except Exception:
+                        pass
+
+                    # 3) Слушаем и фильтруем кадры на наш realm
                     while True:
                         raw = await ws.recv()
                         try:
