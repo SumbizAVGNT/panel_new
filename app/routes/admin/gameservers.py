@@ -270,21 +270,21 @@ def api_maintenance_whitelist():
     realm = (j.get("realm") or "").strip()
     op = (j.get("op") or j.get("action") or "add").strip().lower()
 
-    # принимаем либо один ник/uuid, либо список
+    # Принимаем один ник/uuid или массив
     player = (j.get("player") or j.get("user") or "").strip()
-    players = j.get("players") or j.get("users") or None
+    players = j.get("players") or j.get("users")
+
     if isinstance(players, list):
-        # нормализуем список строк
         players = [str(x).strip() for x in players if str(x or "").strip()]
     elif player:
-        players = player  # одиночное значение
+        players = player  # одиночное значение (строка)
 
-    # валидация
+    # Валидация
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
     if op not in ("add", "remove", "list"):
         return jsonify({"ok": False, "error": "op must be add|remove|list"}), 400
-    if op in ("add", "remove") and (not players):
+    if op in ("add", "remove") and not players:
         return jsonify({"ok": False, "error": "player or players required"}), 400
 
     meta = _client_meta(j)
@@ -298,18 +298,30 @@ def api_maintenance_whitelist():
     })
 
     try:
-        # ВАЖНО: maintenance_whitelist теперь ждёт именно кадр "maintenance.whitelist"
         data = maintenance_whitelist(realm, op, players)
-        # ожидаем структуру вида {"type":"maintenance.whitelist","data":{...}} или {"payload":{...}}
+
+        # 1) Полноценный ответ от бриджа
         if isinstance(data, dict) and data.get("type") == "maintenance.whitelist":
             payload = data.get("data") or data.get("payload") or {}
             return jsonify({"ok": True, "data": payload})
 
-        # если бридж вернул ошибку-обёртку
+        # 2) Ошибка бриджа
         if isinstance(data, dict) and data.get("type") == "bridge.error":
             return jsonify({"ok": False, "error": data.get("error") or "bridge error"}), 502
 
-        # fallback: считаем успехом, но отдадим как есть
+        # 3) Пришёл только bridge.ack или что-то лаконичное
+        if isinstance(data, dict) and data.get("type") == "bridge.ack":
+            # Соберём минимальный payload сами — фронту будет что показать
+            normalized = {
+                "realm": realm,
+                "action": op,
+                # user для single, users для batch, size неизвестен — не ломаемся
+                "user": players if isinstance(players, str) else None,
+                "users": players if isinstance(players, list) else None,
+            }
+            return jsonify({"ok": True, "data": normalized})
+
+        # 4) Непредвиденный формат — считаем успехом и возвращаем как есть
         return jsonify({"ok": True, "data": data})
     except Exception as e:
         current_app.logger.exception("maintenance_whitelist failed: %s", e)
