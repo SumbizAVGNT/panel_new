@@ -562,6 +562,20 @@ def jp_balance_add(realm: str, user: str, delta: int) -> Dict[str, Any]:
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user}}
 
 
+def jp_balance_take(realm: str, user: str, amount: int) -> Dict[str, Any]:
+    """
+    Списать фиксированную сумму с баланса пользователя.
+    Если на бридже нет отдельного метода — он может быть алиасом к "add" с отрицательным значением.
+    """
+    msg = {"type": "jp.balance.take", "realm": realm,
+           "payload": {"realm": realm, "user": user, "amount": int(amount)}}
+    try:
+        return _run(_send_and_wait(msg, expect_types=None, realm=realm))
+    except Exception as e:
+        _log.exception("jp_balance_take failed: realm=%s user=%s", realm, user)
+        return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user, "amount": int(amount)}}
+
+
 def jp_transfer(realm: str, src_user: str, dst_user: str, amount: int, *, reason: str = "") -> Dict[str, Any]:
     msg = {"type": "jp.transfer", "realm": realm,
            "payload": {"realm": realm, "from": src_user, "to": dst_user, "amount": int(amount), "reason": reason}}
