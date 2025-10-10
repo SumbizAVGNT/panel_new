@@ -124,7 +124,6 @@ async def _connect():
     Устанавливает одноразовое подключение к бриджу.
     По умолчанию совпадает с настройками сервера (ping, max_size).
     """
-    headers = {"Authorization": "Bearer <hidden>"}
     _log.info("ws.connect: url=%s, timeout=%s, max_size=%s", BRIDGE_URL, BRIDGE_TIMEOUT, BRIDGE_MAX_SIZE)
     try:
         ws = await asyncio.wait_for(
@@ -232,109 +231,77 @@ async def _send_only(message: Dict[str, Any]) -> None:
 def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
     """
     Принимает кадр server.stats или stats.report.
-    Возвращает стабилизированный словарь для UI со «спаянными» полями
-    из data/payload и удобными ключами:
-      - players.online/max/list/count
-      - tps.{1m,5m,15m,mspt}
-      - heap/nonheap
-      - jvm/os
-      - plugins (dict name->version)
-      - worlds (по мирам)
-      - entities.{top_types,total_types}
-      - fs (filesystem summary, если есть)
+    Возвращает стабилизированный словарь для UI.
+    Важно: аккуратно вытаскиваем список игроков, если он есть (чтобы не «мигал»).
     """
-    t = obj.get("type")
-    if t not in ("server.stats", "stats.report"):
-        _log.warning("normalize_stats: unexpected frame type=%s", t)
+    if obj.get("type") not in ("server.stats", "stats.report"):
+        _log.warning("normalize_stats: unexpected frame type=%s", obj.get("type"))
         return {"type": "bridge.error", "error": "not_stats_frame", "payload": {}}
 
-    # Разные источники кладут данные в data или payload
+    # Одни плагины кладут данные в data, другие — в payload
     d = obj.get("data") or obj.get("payload") or {}
     realm = d.get("realm") or obj.get("realm")
 
-    # TPS может приходить и в плоских ключах, и вложенно.
-    tps_block = d.get("tps") or {}
-    tps = {
-        "1m": d.get("tps_1m", tps_block.get("1m")),
-        "5m": d.get("tps_5m", tps_block.get("5m")),
-        "15m": d.get("tps_15m", tps_block.get("15m")),
-        "mspt": d.get("mspt", tps_block.get("mspt")),
-    }
+    # players_list может лежать как в data, так и в payload
+    players_list = d.get("players_list") or d.get("players") or []
+    # нормализуем players_list: если это dict с ключами online/max — берём players_list из d напрямую
+    if isinstance(players_list, dict):
+        players_list = d.get("players_list") or []
 
-    # Игроки: считаем обе возможные формы и даём фронту единый интерфейс
-    players_dict = d.get("players") or {}
-    players_online = d.get("players_online", players_dict.get("online"))
-    players_max = d.get("players_max", players_dict.get("max"))
-    players_list = (
-        d.get("players_list")
-        or players_dict.get("list")
-        or []
-    )
-    players_count = d.get("players_count", players_dict.get("count"))
-
-    # JVM/OS/Memory
-    heap = {"used": d.get("heap_used"), "max": d.get("heap_max")}
-    nonheap = {"used": d.get("nonheap_used"), "max": d.get("nonheap_max")}
-    jvm = {
-        "uptime_ms": d.get("jvm_uptime_ms"),
-        "classes": {
-            "loaded": d.get("classes_loaded"),
-            "total_loaded": d.get("classes_total_loaded"),
-            "unloaded": d.get("classes_unloaded"),
-        },
-        "threads": {
-            "live": d.get("threads_live"),
-            "peak": d.get("threads_peak"),
-            "daemon": d.get("threads_daemon"),
-        },
-        "gc": d.get("gc") or {},
-        "mem_pools": d.get("mem_pools") or {},
-    }
-    os_block = {
-        "name": d.get("os_name"),
-        "arch": d.get("os_arch"),
-        "cores": d.get("os_cores"),
-        "cpu_load": {
-            "system": d.get("cpu_system_load"),
-            "process": d.get("cpu_process_load"),
-        },
-    }
-
-    # Плагины
-    plugins = d.get("plugins") or {}
-
-    # Миры / сущности / ФС — если приходят, прокидываем как есть
+    # worlds (если есть во «втором» кадре)
     worlds = d.get("worlds") or {}
-    entities = {
-        "top_types": d.get("entities_top_types") or {},
-        "total_types": d.get("entities_total_types"),
-    }
-    fs = d.get("fs") or {}
-
-    # MOTD и прочее
-    motd = d.get("motd")
 
     return {
-        "type": t,
+        "type": obj["type"],
         "realm": realm,
-        "motd": motd,
         "players": {
-            "online": players_online,
-            "max": players_max,
-            "list": players_list,     # [{name, uuid, world, ping, lp_primary, ...}]
-            "count": players_count,   # если плагин присылает отдельным полем
+            "online": d.get("players_online") or (d.get("players") or {}).get("online"),
+            "max": d.get("players_max") or (d.get("players") or {}).get("max"),
+            "count": d.get("players_count"),
+            "list": players_list,  # <-- ключ для фронта
         },
-        "tps": tps,
-        "heap": heap,
-        "nonheap": nonheap,
-        "jvm": jvm,
-        "os": os_block,
-        "plugins": plugins,
-        "worlds": worlds,
-        "entities": entities,
-        "fs": fs,
+        "motd": d.get("motd"),
+        "tps": {
+            "1m": d.get("tps_1m") or (d.get("tps") or {}).get("1m"),
+            "5m": d.get("tps_5m") or (d.get("tps") or {}).get("5m"),
+            "15m": d.get("tps_15m") or (d.get("tps") or {}).get("15m"),
+            "mspt": d.get("mspt") or (d.get("tps") or {}).get("mspt"),
+        },
+        "heap": {
+            "used": d.get("heap_used"),
+            "max": d.get("heap_max"),
+        },
+        "nonheap": {
+            "used": d.get("nonheap_used"),
+            "max": d.get("nonheap_max"),
+        },
+        "jvm": {
+            "uptime_ms": d.get("jvm_uptime_ms"),
+            "classes": {
+                "loaded": d.get("classes_loaded"),
+                "total_loaded": d.get("classes_total_loaded"),
+                "unloaded": d.get("classes_unloaded"),
+            },
+            "threads": {
+                "live": d.get("threads_live"),
+                "peak": d.get("threads_peak"),
+                "daemon": d.get("threads_daemon"),
+            },
+            "gc": d.get("gc") or {},
+            "mem_pools": d.get("mem_pools") or {},
+        },
+        "os": {
+            "name": d.get("os_name"),
+            "arch": d.get("os_arch"),
+            "cores": d.get("os_cores"),
+            "cpu_load": {
+                "system": d.get("cpu_system_load"),
+                "process": d.get("cpu_process_load"),
+            },
+        },
+        "plugins": d.get("plugins") or {},  # dict: {name: version}
+        "worlds": worlds,  # чтобы можно было рисовать чанки/энтити, если надо
     }
-
 
 
 # ====================== ПУБЛИЧНЫЙ API ======================

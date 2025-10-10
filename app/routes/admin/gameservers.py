@@ -8,10 +8,11 @@ import base64
 import asyncio
 import logging
 import threading
+import time  # <-- фикс: нужен для короткой паузы перед повторным запросом
 from functools import lru_cache
 from queue import Queue, Empty
 from typing import Optional, Dict, Any
-import time
+
 import requests
 import websockets
 from PIL import Image
@@ -97,9 +98,9 @@ def _client_meta(j: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Собираем метаданные клиента из body + заголовков (+ query для SSE)."""
     meta = _client_from_headers()
     if request.method == "GET" and request.args:
-        meta.update({k:v for k,v in _client_from_query().items() if v not in (None, "", [])})
+        meta.update({k: v for k, v in _client_from_query().items() if v not in (None, "", [])})
     if request.method == "POST":
-        meta.update({k:v for k,v in _client_from_body(j).items() if v not in (None, "", [])})
+        meta.update({k: v for k, v in _client_from_body(j).items() if v not in (None, "", [])})
     return meta
 
 def _log_client(action: str, realm: str, meta: Dict[str, Any], extra: Optional[Dict[str, Any]] = None):
@@ -157,75 +158,34 @@ def api_bridge_info():
 @admin_bp.route("/gameservers/api/stats")
 @login_required
 def api_stats():
-    """
-    Возвращает нормализованные статы. Если первый ответ не содержит players_list/worlds,
-    делаем второй быстрый запрос и дозаполняем недостающие поля.
-    """
     realm = (request.args.get("realm") or "").strip()
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
-
-    def extract_src(obj: Dict[str, Any]) -> Dict[str, Any]:
-        # кадр может быть: {"type":"server.stats","payload":{...}} или {"type":..., "data":{...}} или плоский dict
-        if not isinstance(obj, dict):
-            return {}
-        return (obj.get("payload") or obj.get("data") or obj) or {}
-
-    def merge_missing(dst: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
-        # players_list
-        if "players_list" not in dst and "players_list" in src:
-            dst["players_list"] = src.get("players_list") or []
-        # players (online/max)
-        if "players" not in dst and "players" in src:
-            dst["players"] = src.get("players")
-        if "players_online" in src:
-            dst.setdefault("players", {}).setdefault("online", src.get("players_online"))
-        if "players_max" in src:
-            dst.setdefault("players", {}).setdefault("max", src.get("players_max"))
-        # worlds (массив или объект)
-        if "worlds" not in dst and "worlds" in src:
-            dst["worlds"] = src.get("worlds")
-        # tps/mspt
-        if "tps" not in dst and any(k in src for k in ("tps", "tps_1m", "tps_5m", "tps_15m", "mspt")):
-            dst["tps"] = src.get("tps") or {
-                "1m": src.get("tps_1m"),
-                "5m": src.get("tps_5m"),
-                "15m": src.get("tps_15m"),
-                "mspt": src.get("mspt"),
-            }
-        if "mspt" not in dst and "mspt" in src:
-            dst["mspt"] = src.get("mspt")
-        return dst
-
     try:
-        # 1-я попытка
+        # 1) первый ответ (часто приходит "короткий")
         raw1 = stats_query(realm)
         if raw1.get("type") == "bridge.error":
             return jsonify({"ok": False, "error": raw1.get("error") or "bridge error"}), 502
 
-        norm = normalize_server_stats(raw1) or {}
-        if isinstance(norm, dict) and norm.get("type") == "bridge.error":
-            # вернём исходник, если нормализатор не справился
-            return jsonify({"ok": True, "data": raw1})
+        norm1 = normalize_server_stats(raw1)
 
-        src1 = extract_src(raw1)
-        norm = merge_missing(norm, src1)
-
-        # Если нет игроков или миров — подождём 120мс и попробуем ещё раз
-        need_retry = not norm.get("players_list") or ("worlds" not in norm)
-        if need_retry:
+        # 2) если нет players_list — быстро попробуем ещё раз (плагин часто шлёт «полный» кадр следом)
+        need_second = not ((norm1.get("players") or {}).get("list"))
+        if need_second:
             time.sleep(0.12)  # короткая пауза, чтобы успел прилететь «полный» кадр
             raw2 = stats_query(realm)
-            if raw2.get("type") != "bridge.error":
-                src2 = extract_src(raw2)
-                norm = merge_missing(norm, src2)
+            if raw2.get("type") not in ("bridge.error", None):
+                norm2 = normalize_server_stats(raw2)
+                # если во втором кадре уже есть игроки — вернём его
+                if (norm2.get("players") or {}).get("list"):
+                    return jsonify({"ok": True, "data": norm2})
 
-        return jsonify({"ok": True, "data": norm})
+        # иначе — вернём первый нормализованный ответ
+        return jsonify({"ok": True, "data": norm1})
+
     except Exception as e:
         current_app.logger.exception("stats_query failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
-
-
 
 @admin_bp.route("/gameservers/api/console", methods=["POST"])
 @login_required
