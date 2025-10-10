@@ -89,6 +89,15 @@ def _extract_token(ws, path: str) -> str:
         token = (q.get("token") or [""])[0]
     return token or ""
 
+def _extract_role(ws, path: str) -> str | None:
+    h = ws.request_headers
+    role = h.get("X-Role") or h.get("x-role") or ""
+    if not role:
+        q = _extract_qs(path)
+        role = (q.get("role") or [""])[0]
+    role = (role or "").strip().lower()
+    return role or None
+
 def _extract_realm(ws, path: str, first_msg: dict | None, default_realm: str) -> str:
     h = ws.request_headers
     realm = h.get("X-Realm") or h.get("x-realm") or ""
@@ -152,20 +161,20 @@ async def route_to_realm(realm: str | None, msg: dict):
 # ------------------ admin side mapping ------------------
 
 _ADMIN_FIRST_TYPES = {
-    # существующие
     "bridge.list", "console.exec", "cmd.exec", "cmd.execLines",
     "stats.query", "server.stats", "maintenance.set", "broadcast", "player.is_online",
-    # новые: ops/cmdwl
     "ops.set", "cmdwl.set", "cmdwl.commands",
-    # luckperms
     "lp.web.open", "lp.web.apply",
     "lp.user.perm.add", "lp.user.perm.remove",
     "lp.user.group.add", "lp.user.group.remove",
     "lp.group.perm.add", "lp.group.perm.remove",
     "lp.user.info", "lp.group.info",
-    # justpoints
     "jp.balance.get", "jp.balance.set", "jp.balance.add", "jp.balance.take",
 }
+
+def _is_plugin_first_type(t: str) -> bool:
+    # минимальный набор, который присылает именно плагин
+    return t in {"hello", "console.out", "bridge.log", "stats.report"}
 
 def _map_admin_request(obj: dict) -> dict:
     """
@@ -222,11 +231,11 @@ def _map_admin_request(obj: dict) -> dict:
             "name": p.get("name") or obj.get("name"),
         }
 
-    # --- OPS/CMDWL прямые события, плагин их уже понимает ---
+    # --- OPS/CMDWL ---
     if t in ("ops.set", "cmdwl.set", "cmdwl.commands"):
         return {"type": t, "realm": realm, "payload": p}
 
-    # --- LuckPerms: сразу транзит (плагин реализует обработку этих типов) ---
+    # --- LuckPerms транзитом ---
     if t in {
         "lp.web.open", "lp.web.apply",
         "lp.user.perm.add", "lp.user.perm.remove",
@@ -236,7 +245,7 @@ def _map_admin_request(obj: dict) -> dict:
     }:
         return {"type": t, "realm": realm, "payload": p}
 
-    # --- JustPoints: сразу транзит ---
+    # --- JustPoints транзитом ---
     if t in {"jp.balance.get", "jp.balance.set", "jp.balance.add", "jp.balance.take"}:
         return {"type": t, "realm": realm, "payload": p}
 
@@ -256,13 +265,22 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
         await ws.close(code=4401, reason="unauthorized")
         return
 
-    role = "plugin"  # по умолчанию — плагин
-    realm = None
     print(f"[bridge] connect from {ws.remote_address}")
+
+    # По умолчанию считаем клиента АДМИНОМ,
+    # пока он не подтвердит, что он плагин.
+    role = "admin"
+    realm = None
+    registered_as_plugin = False
+
+    # заранее подсказанная роль по заголовку/квери
+    hinted_role = _extract_role(ws, path)
+    if hinted_role == "plugin":
+        role = "plugin"
 
     first_msg = None
     try:
-        # пробуем прочитать первый фрейм (до 5с), чтобы угадать роль/realm
+        # пробуем прочитать первый фрейм (до 5с)
         try:
             raw = await asyncio.wait_for(ws.recv(), timeout=5)
             try:
@@ -273,18 +291,17 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
         except Exception:
             first_msg = None
 
-        # Определяем роль (учитываем новые админ-типы)
-        if isinstance(first_msg, dict) and first_msg.get("type") in _ADMIN_FIRST_TYPES:
-            role = "admin"
-        else:
-            role = "plugin"
-
         # realm
         realm = _extract_realm(ws, path, first_msg, default_realm)
 
-        # регистрация
+        # если явно плагин по заголовку или типу первого кадра — помечаем как плагин
+        if hinted_role == "plugin" or (isinstance(first_msg, dict) and _is_plugin_first_type(first_msg.get("type") or "")):
+            role = "plugin"
+
+        # ---- регистрация (ТОЛЬКО если это точно плагин) ----
         if role == "plugin":
             PLUGINS.setdefault(realm, set()).add(ws)
+            registered_as_plugin = True
             print(f"[bridge] plugin registered realm='{realm}'")
             await _send_json(ws, {
                 "type": "hello.ok",
@@ -295,18 +312,17 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
                 "type": "bridge.info",
                 "payload": {"message": f"Plugin online realm='{realm}'"}
             })
-            # если плагин первым прислал кадр (например, hello) — отдадим ACK/ok ниже в основном цикле
+            # если плагин первым прислал кадр — ретранслируем админам
             if isinstance(first_msg, dict) and first_msg:
                 _log_recv(first_msg.get("type") or "?", realm, first_msg, verbose)
                 await broadcast_admin({**first_msg, "realm": realm})
         else:
             ADMINS.add(ws)
             print("[bridge] admin connected")
-            # если первое сообщение админское — обработаем
             if isinstance(first_msg, dict) and first_msg:
                 await process_admin(ws, first_msg, verbose=verbose)
 
-        # основной цикл
+        # ---- основной цикл ----
         async for raw in ws:
             if isinstance(raw, (bytes, bytearray)):
                 await broadcast_admin({"type": "bridge.binary", "realm": realm, "len": len(raw)})
@@ -323,7 +339,7 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
 
             if role == "plugin":
                 t = obj.get("type") or "?"
-                # базовые сервисные ответы
+                # базовые ответы
                 if t == "ping":
                     await _send_json(ws, {"type": "pong", "realm": realm})
                     continue
@@ -336,7 +352,7 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
                     continue
 
                 _log_recv(t, realm, obj, verbose)
-                # транслируем админам ВСЁ, добавив realm
+                # транслируем админам всё, добавив realm
                 await broadcast_admin({**obj, "realm": realm})
             else:
                 await process_admin(ws, obj, verbose=verbose)
@@ -344,14 +360,15 @@ async def handler(ws, path, token_required: str, default_realm: str, *, verbose:
     except (ConnectionClosedOK, ConnectionClosedError):
         pass
     finally:
-        if role == "plugin" and realm:
-            PLUGINS.get(realm, set()).discard(ws)
-            print(f"[bridge] plugin disconnected realm='{realm}'")
-            await broadcast_admin({
-                "type": "bridge.info",
-                "payload": {"message": f"Plugin offline realm='{realm}'"}
-            })
-        elif role == "admin":
+        if registered_as_plugin and realm:
+            if ws in PLUGINS.get(realm, set()):
+                PLUGINS[realm].discard(ws)
+                print(f"[bridge] plugin disconnected realm='{realm}'")
+                await broadcast_admin({
+                    "type": "bridge.info",
+                    "payload": {"message": f"Plugin offline realm='{realm}'"}
+                })
+        elif ws in ADMINS:
             ADMINS.discard(ws)
             print("[bridge] admin disconnected")
 
@@ -362,12 +379,12 @@ async def process_admin(ws, obj: dict, *, verbose: bool):
     p = norm.get("payload") or {}
     realm = norm.get("realm") or p.get("realm")
 
-    # быстрые ACK’и админам
+    # быстрый ACK админам
     if t not in {"bridge.list"}:
         with contextlib.suppress(Exception):
             await _send_json(ws, {"type": "bridge.ack", "payload": {"seenType": t}})
 
-    # прямые типы, которые должен обработать плагин:
+    # прямые типы для плагина
     direct_to_plugin = {
         "console.exec", "console.execLines",
         "server.stats", "broadcast", "player.is_online",
@@ -633,6 +650,7 @@ async def main():
     ap.add_argument("--verbose", action="store_true",
                     default=os.getenv("BRIDGE_VERBOSE", "0") not in ("0", "", "false", "False"),
                     help="print full payloads for all frames")
+    ap.add_argument("--max-size", type=int, default=int(os.getenv("SP_MAX_SIZE", str(1024 * 1024))))
     args = ap.parse_args()
 
     async def ws_handler(ws, path):
@@ -643,8 +661,10 @@ async def main():
     print(f"[bridge] starting ws server on ws://{args.host}:{args.port}/ws "
           f"(token len={len(args.token)}, default realm='{args.realm}')")
 
-    async with websockets.serve(ws_handler, args.host, args.port,
-                                ping_interval=20, ping_timeout=20, max_size=131072):
+    async with websockets.serve(
+        ws_handler, args.host, args.port,
+        ping_interval=20, ping_timeout=20, max_size=args.max_size
+    ):
         if args.repl:
             await repl(f"ws://127.0.0.1:{args.port}/ws", args.token, args.realm, verbose=args.verbose)
         else:
