@@ -437,12 +437,9 @@ def maintenance_whitelist(
     user_or_users: Union[str, Iterable[str], None],
 ) -> Dict[str, Any]:
     """
-    Управление локальным whitelist в режиме техработ.
-    Поддерживает как одиночное значение (строка), так и массив пользователей (Iterable[str]).
-    Дублируем ключи для совместимости с плагином:
-      - операция:   action + op
-      - одиночный:  user + player
-      - пакетный:   users + players
+    Управление whitelist в режиме техработ.
+    Ждём именно кадр `maintenance.whitelist` (а не первый ACK), чтобы вернуть
+    подтверждение в UI (включая актуальный size и user).
     """
     action = _normalize_op(op)
 
@@ -453,11 +450,11 @@ def maintenance_whitelist(
         payload["action"] = "list"
         payload["op"] = "list"
     else:
+        # поддержка и одиночного, и массива
         if _is_seq_of_users(user_or_users):
             users = [str(u).strip() for u in user_or_users if str(u or "").strip()]
             payload["users"] = users
-            payload["players"] = list(users)  # дублируем
-            # для совместимости положим ещё и первый элемент как одиночный
+            payload["players"] = list(users)  # дублируем для совместимости
             if users:
                 payload["user"] = users[0]
                 payload["player"] = users[0]
@@ -469,7 +466,8 @@ def maintenance_whitelist(
     obj = {"type": "maintenance.whitelist", "realm": realm, "payload": payload}
 
     try:
-        return _run(_send_and_wait(obj, expect_types=None, realm=realm))
+        # ВАЖНО: ждём именно maintenance.whitelist, пропуская bridge.ack
+        return _run(_send_and_wait(obj, expect_types=("maintenance.whitelist",), realm=realm))
     except Exception as e:
         _log.exception("maintenance_whitelist failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, **payload}}
