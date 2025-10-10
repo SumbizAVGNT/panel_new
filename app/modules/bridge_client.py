@@ -1,4 +1,4 @@
-# modules/bridge_client.py
+# app/modules/bridge_client.py
 from __future__ import annotations
 
 import os
@@ -232,7 +232,6 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
     """
     Принимает кадр server.stats или stats.report.
     Возвращает стабилизированный словарь для UI.
-    Важно: аккуратно вытаскиваем список игроков, если он есть (чтобы не «мигал»).
     """
     if obj.get("type") not in ("server.stats", "stats.report"):
         _log.warning("normalize_stats: unexpected frame type=%s", obj.get("type"))
@@ -242,31 +241,54 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
     d = obj.get("data") or obj.get("payload") or {}
     realm = d.get("realm") or obj.get("realm")
 
-    # players_list может лежать как в data, так и в payload
-    players_list = d.get("players_list") or d.get("players") or []
-    # нормализуем players_list: если это dict с ключами online/max — берём players_list из d напрямую
-    if isinstance(players_list, dict):
-        players_list = d.get("players_list") or []
+    # tps/mspt
+    tps = d.get("tps") or {}
+    out_tps = {
+        "1m": tps.get("1m", d.get("tps_1m")),
+        "5m": tps.get("5m", d.get("tps_5m")),
+        "15m": tps.get("15m", d.get("tps_15m")),
+        "mspt": tps.get("mspt", d.get("mspt")),
+    }
 
-    # worlds (если есть во «втором» кадре)
-    worlds = d.get("worlds") or {}
+    # players
+    players_box = d.get("players") or {}
+    out_players = {
+        "online": players_box.get("online", d.get("players_online")),
+        "max": players_box.get("max", d.get("players_max")),
+    }
 
-    return {
+    # players list (если есть)
+    players_list = d.get("players_list") or players_box.get("list") or d.get("playersList") or []
+
+    # worlds: либо массив, либо map -> массив
+    worlds = []
+    if isinstance(d.get("worlds"), list):
+        worlds = d["worlds"]
+    elif isinstance(d.get("worlds"), dict):
+        for name, w in (d.get("worlds") or {}).items():
+            wi = dict(w or {})
+            wi["name"] = name
+            worlds.append(wi)
+    elif isinstance(d.get("worlds_map"), dict):
+        for name, w in d["worlds_map"].items():
+            wi = dict(w or {})
+            wi["name"] = name
+            worlds.append(wi)
+
+    # дополнительные сводки, которые бывают в heavy-снимках
+    fs = d.get("fs") or {}
+    entities_top_types = d.get("entities_top_types") or {}
+    entities_total_types = d.get("entities_total_types")
+
+    # heap/nonheap/jvm/os
+    out = {
         "type": obj["type"],
         "realm": realm,
-        "players": {
-            "online": d.get("players_online") or (d.get("players") or {}).get("online"),
-            "max": d.get("players_max") or (d.get("players") or {}).get("max"),
-            "count": d.get("players_count"),
-            "list": players_list,  # <-- ключ для фронта
-        },
+        "players": out_players,
+        "players_list": players_list,
         "motd": d.get("motd"),
-        "tps": {
-            "1m": d.get("tps_1m") or (d.get("tps") or {}).get("1m"),
-            "5m": d.get("tps_5m") or (d.get("tps") or {}).get("5m"),
-            "15m": d.get("tps_15m") or (d.get("tps") or {}).get("15m"),
-            "mspt": d.get("mspt") or (d.get("tps") or {}).get("mspt"),
-        },
+        "tps": out_tps,
+        "mspt": out_tps.get("mspt"),
         "heap": {
             "used": d.get("heap_used"),
             "max": d.get("heap_max"),
@@ -299,9 +321,14 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
                 "process": d.get("cpu_process_load"),
             },
         },
-        "plugins": d.get("plugins") or {},  # dict: {name: version}
-        "worlds": worlds,  # чтобы можно было рисовать чанки/энтити, если надо
+        # ВНИМАНИЕ: plugins специально не возвращаем (просили убрать)
+        "worlds": worlds,
+        "fs": fs,
+        "entities_top_types": entities_top_types,
+        "entities_total_types": entities_total_types,
     }
+
+    return out
 
 
 # ====================== ПУБЛИЧНЫЙ API ======================

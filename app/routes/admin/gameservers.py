@@ -1,4 +1,4 @@
-# admin/gameservers.py
+# app/routes/admin/gameservers.py
 from __future__ import annotations
 
 import os
@@ -8,7 +8,7 @@ import base64
 import asyncio
 import logging
 import threading
-import time  # <-- фикс: нужен для короткой паузы перед повторным запросом
+import time
 from functools import lru_cache
 from queue import Queue, Empty
 from typing import Optional, Dict, Any
@@ -98,9 +98,9 @@ def _client_meta(j: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Собираем метаданные клиента из body + заголовков (+ query для SSE)."""
     meta = _client_from_headers()
     if request.method == "GET" and request.args:
-        meta.update({k: v for k, v in _client_from_query().items() if v not in (None, "", [])})
+        meta.update({k:v for k,v in _client_from_query().items() if v not in (None, "", [])})
     if request.method == "POST":
-        meta.update({k: v for k, v in _client_from_body(j).items() if v not in (None, "", [])})
+        meta.update({k:v for k,v in _client_from_body(j).items() if v not in (None, "", [])})
     return meta
 
 def _log_client(action: str, realm: str, meta: Dict[str, Any], extra: Optional[Dict[str, Any]] = None):
@@ -155,6 +155,52 @@ def api_bridge_info():
         current_app.logger.exception("bridge_info failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
 
+# --- server-side cache, чтобы не «мигал» список игроков между тяжёлыми/лёгкими кадрами
+_LAST_STATS: Dict[str, Dict[str, Any]] = {}  # realm -> {"ts": float, "data": dict}
+_CACHE_TTL = 30.0  # сек для «подмешивания» players_list/worlds из последнего heavy
+
+def _merge_with_cache(realm: str, norm: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Если текущий нормализованный ответ пустой по players_list/worlds — попробуем дополнить из кэша
+    (актуального по времени). Это устраняет «мигание» списка игроков.
+    """
+    now = time.time()
+    cached = _LAST_STATS.get(realm) or {}
+
+    def fresh(c) -> bool:
+        return bool(c) and (now - c.get("ts", 0) <= _CACHE_TTL)
+
+    out = dict(norm)
+
+    # players_list fallback
+    pl = (out.get("players_list") or [])
+    online = ((out.get("players") or {}).get("online"))
+    if (not pl) and isinstance(online, int) and online > 0 and fresh(cached):
+        c_pl = (cached.get("data") or {}).get("players_list") or []
+        if c_pl:
+            out["players_list"] = c_pl
+
+    # worlds fallback
+    worlds = out.get("worlds") or []
+    if (not worlds) and fresh(cached):
+        c_worlds = (cached.get("data") or {}).get("worlds") or []
+        if c_worlds:
+            out["worlds"] = c_worlds
+
+    # обновим кэш, если текущий ответ содержательнее
+    has_heavy = bool(out.get("players_list")) or bool(out.get("worlds"))
+    if has_heavy:
+        _LAST_STATS[realm] = {"ts": now, "data": out}
+    else:
+        # если тяжёлого нет — не затираем хороший кэш, но обновим метрику players/heap и т.п.
+        if fresh(cached):
+            merged = dict(cached.get("data") or {})
+            merged.update({k: v for k, v in out.items() if v not in (None, [], {})})
+            _LAST_STATS[realm] = {"ts": cached.get("ts", now), "data": merged}
+            out = merged
+
+    return out
+
 @admin_bp.route("/gameservers/api/stats")
 @login_required
 def api_stats():
@@ -162,27 +208,16 @@ def api_stats():
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
     try:
-        # 1) первый ответ (часто приходит "короткий")
-        raw1 = stats_query(realm)
-        if raw1.get("type") == "bridge.error":
-            return jsonify({"ok": False, "error": raw1.get("error") or "bridge error"}), 502
+        raw = stats_query(realm)
+        if raw.get("type") == "bridge.error":
+            return jsonify({"ok": False, "error": raw.get("error") or "bridge error"}), 502
 
-        norm1 = normalize_server_stats(raw1)
+        norm = normalize_server_stats(raw)
 
-        # 2) если нет players_list — быстро попробуем ещё раз (плагин часто шлёт «полный» кадр следом)
-        need_second = not ((norm1.get("players") or {}).get("list"))
-        if need_second:
-            time.sleep(0.12)  # короткая пауза, чтобы успел прилететь «полный» кадр
-            raw2 = stats_query(realm)
-            if raw2.get("type") not in ("bridge.error", None):
-                norm2 = normalize_server_stats(raw2)
-                # если во втором кадре уже есть игроки — вернём его
-                if (norm2.get("players") or {}).get("list"):
-                    return jsonify({"ok": True, "data": norm2})
+        # Подмешаем players_list/worlds из кэша при необходимости
+        norm = _merge_with_cache(realm, norm)
 
-        # иначе — вернём первый нормализованный ответ
-        return jsonify({"ok": True, "data": norm1})
-
+        return jsonify({"ok": True, "data": norm})
     except Exception as e:
         current_app.logger.exception("stats_query failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502

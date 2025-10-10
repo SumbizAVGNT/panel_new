@@ -32,24 +32,27 @@
 .tcap{font-size:.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
 .kpi .value{font-size:1.25rem}
 .badge-cap{padding:.35rem .6rem;border-radius:999px}
+.sub{font-size:.8rem;color:#94a3b8}
 
-/* maintenance card */
-.maint-card .head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+/* bars & gauges */
+.meter{height:8px;border-radius:6px;background:rgba(148,163,184,.18);overflow:hidden}
+.meter>span{display:block;height:100%;background:linear-gradient(90deg,#60a5fa,#34d399)}
+
+/* maintenance */
+.maint{display:grid;grid-template-columns:1fr;gap:12px}
+.maint .head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .stat-dot{display:inline-flex;align-items:center;gap:6px;font-size:.86rem}
 .stat-dot .d{width:8px;height:8px;border-radius:999px;background:#475569}
 .stat-dot.m .d{background:#f59e0b}
 .stat-dot.o .d{background:#22c55e}
-.ctrlbar{display:flex;flex-wrap:wrap;gap:10px}
-.ctrl{display:flex;align-items:center;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);border-radius:12px;overflow:hidden}
-.ctrl .label{display:flex;align-items:center;gap:6px;padding:0 10px;color:#cbd5e1;border-right:1px solid rgba(148,163,184,.18)}
-.ctrl input{border:0;background:transparent;color:#e5e7eb;outline:0;width:280px;min-width:160px}
-.ctrl .btn{border:0}
-.ctrl .btn-start{background:#f59e0b;color:#111827}
-.ctrl .btn-stop{background:transparent;border-left:1px solid rgba(148,163,184,.18);color:#e5e7eb}
-.ctrl .btn:hover{filter:brightness(1.05)}
-.ctrl .btn:active{transform:translateY(1px)}
-.ctrl .btn, .ctrl .label, .ctrl input{height:36px}
-.ctrl.wl input{width:200px}
+.mrow{display:flex;flex-wrap:wrap;gap:10px}
+.switch-big{display:flex;align-items:center;gap:10px;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:8px 10px}
+.switch-big input{transform:scale(1.25)}
+.maint .msg{flex:1;min-width:220px}
+.maint .msg input{width:100%;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.55);color:#e5e7eb;border-radius:10px;padding:8px 10px;outline:0}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pills .btn{border:1px dashed rgba(148,163,184,.35)}
+.caption{font-size:.8rem;color:#94a3b8}
 
 /* console */
 .console-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
@@ -69,6 +72,14 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
 .toastx{background:rgba(13,17,23,.96);border:1px solid rgba(148,163,184,.28);color:#e2e8f0;padding:10px 12px;border-radius:12px}
 .toastx.ok{border-color:rgba(34,197,94,.6)}
 .toastx.err{border-color:rgba(239,68,68,.6)}
+/* grid helpers */
+.g-tiles{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+@media(max-width:1200px){.g-tiles{grid-template-columns:repeat(8,1fr)}}
+@media(max-width:768px){.g-tiles{grid-template-columns:repeat(4,1fr)}}
+.span-3{grid-column:span 3}
+.span-4{grid-column:span 4}
+.span-6{grid-column:span 6}
+.span-8{grid-column:span 8}
 </style>
 
 <div class="container-xxl gs-scope py-4" data-realm="{{ realm }}">
@@ -89,6 +100,11 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
         <input class="form-check-input" type="checkbox" id="autorefresh">
         <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
       </div>
+      <div class="d-flex align-items-center gap-2">
+        <label class="small text-secondary">интервал</label>
+        <input id="refresh-interval" type="range" min="2" max="15" step="1" value="3">
+        <span id="refresh-interval-label" class="small text-secondary">3s</span>
+      </div>
       <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
       <a href="{{ url_for('admin.gameservers_index') }}" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left"></i> Назад</a>
     </div>
@@ -98,7 +114,13 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
     <!-- sidebar -->
     <aside class="gs-side">
       <div class="card glass p-2">
-        {% set sections = [('overview','Overview'),('maintenance','Maintenance'),('players','Players'),('worlds','Worlds'),('console','Console')] %}
+        {% set sections = [
+          ('overview','Overview'),
+          ('maintenance','Maintenance'),
+          ('players','Players'),
+          ('worlds','Worlds'),
+          ('console','Console')
+        ] %}
         {% for key, title in sections %}
           <a class="nav-link px-3 py-2" href="#{{ key }}"><span class="dot"></span>{{ title }}</a>
         {% endfor %}
@@ -114,47 +136,76 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
       <!-- overview -->
       <section id="overview" class="card glass mb-3">
         <div class="card-body">
-          <div class="row g-3">
-            <div class="col-6 col-md-3">
-              <div class="tile">
-                <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-speedometer2"></i> MSPT</div>
-                <div class="kpi d-flex align-items-baseline gap-2">
-                  <div id="t-mspt" class="value skel" style="height:20px;width:64px"></div>
-                  <div class="text-secondary small">ms</div>
-                </div>
+          <!-- KPI tiles -->
+          <div class="g-tiles">
+            <div class="tile span-3">
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-speedometer2"></i> MSPT</div>
+              <div class="kpi d-flex align-items-baseline gap-2">
+                <div id="t-mspt" class="value skel" style="height:20px;width:64px"></div>
+                <div class="text-secondary small">ms</div>
               </div>
+              <div class="caption">Среднее время тика</div>
             </div>
-            <div class="col-6 col-md-3">
-              <div class="tile">
-                <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-graph-up-arrow"></i> TPS (avg)</div>
-                <div id="t-tps" class="value skel" style="height:20px;width:64px"></div>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <button id="players-tile" class="tile w-100 text-start" type="button" data-click>
-                <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-people"></i> Players</div>
-                <div id="t-players" class="value skel text-light" style="height:20px;width:80%"></div>
-                <div class="small text-secondary">open list ⟶</div>
-              </button>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="tile">
-                <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-person-check"></i> Online</div>
-                <div id="t-online" class="value skel" style="height:20px;width:64px"></div>
-              </div>
-            </div>
-          </div>
 
-          <div class="mt-3">
-            <canvas id="tpsChart" height="92"></canvas>
-            <div class="form-text">Мини-график последних значений TPS (1m).</div>
+            <div class="tile span-3">
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-graph-up-arrow"></i> TPS (avg)</div>
+              <div id="t-tps" class="value skel" style="height:20px;width:64px"></div>
+              <div class="caption">Среднее 1m/5m/15m</div>
+            </div>
+
+            <button id="players-tile" class="tile span-3 text-start" type="button" data-click>
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-people"></i> Players</div>
+              <div id="t-players" class="value skel text-light" style="height:20px;width:80%"></div>
+              <div class="small text-secondary">open list ⟶</div>
+            </button>
+
+            <div class="tile span-3">
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-person-check"></i> Online</div>
+              <div id="t-online" class="value skel" style="height:20px;width:64px"></div>
+              <div class="caption">Онлайн игроков</div>
+            </div>
+
+            <div class="tile span-4">
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-cpu"></i> CPU</div>
+              <div class="d-flex justify-content-between sub"><span>system</span><span id="cpu-system-lbl">—</span></div>
+              <div class="meter mb-2"><span id="cpu-system" style="width:0%"></span></div>
+              <div class="d-flex justify-content-between sub"><span>process</span><span id="cpu-proc-lbl">—</span></div>
+              <div class="meter"><span id="cpu-proc" style="width:0%"></span></div>
+            </div>
+
+            <div class="tile span-4">
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-memory"></i> Heap</div>
+              <div class="d-flex justify-content-between sub"><span id="heap-used-lbl">—</span><span id="heap-max-lbl">—</span></div>
+              <div class="meter"><span id="heap-bar" style="width:0%"></span></div>
+              <div class="sub mt-1">Non-heap: <span id="nonheap-lbl">—</span></div>
+            </div>
+
+            <div class="tile span-4">
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-hdd"></i> Disk</div>
+              <div class="sub">Root free: <span id="fs-free">—</span></div>
+              <div class="sub">Root total: <span id="fs-total">—</span></div>
+              <div class="tcap mt-2 d-flex align-items-center gap-1"><i class="bi bi-clock-history"></i> Uptime</div>
+              <div class="sub"><span id="uptime">—</span></div>
+            </div>
+
+            <div class="tile span-6">
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-activity"></i> TPS (1m) Sparkline</div>
+              <canvas id="tpsChart" height="92"></canvas>
+              <div class="form-text">Последние значения TPS (1m)</div>
+            </div>
+
+            <div class="tile span-6">
+              <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-diagram-3"></i> Top Entities</div>
+              <canvas id="entChart" height="120"></canvas>
+              <div class="sub">Топ типов сущностей за снимок</div>
+            </div>
           </div>
         </div>
       </section>
 
       <!-- maintenance -->
-      <section id="maintenance" class="card glass mb-3 maint-card">
-        <div class="card-body">
+      <section id="maintenance" class="card glass mb-3">
+        <div class="card-body maint">
           <div class="head">
             <h5 class="m-0 d-flex align-items-center gap-2">
               <i class="bi bi-cone-striped text-warning"></i> Maintenance
@@ -162,19 +213,31 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
             <div id="maint-state" class="stat-dot o"><span class="d"></span><span>state: online</span></div>
           </div>
 
-          <div class="ctrlbar">
-            <div class="ctrl">
-              <div class="label"><i class="bi bi-tools"></i> Technical work</div>
+          <div class="mrow">
+            <div class="switch-big">
+              <input class="form-check-input" type="checkbox" id="maint-toggle">
+              <label for="maint-toggle" class="form-check-label">Технические работы</label>
+            </div>
+            <div class="msg" title="Сообщение кика (необязательно)">
               <input id="maint-msg" placeholder="Kick message (optional)">
-              <button id="maint-on"  class="btn btn-start"><i class="bi bi-play-fill me-1"></i>Start</button>
-              <button id="maint-off" class="btn btn-stop"><i class="bi bi-stop-fill me-1"></i>Stop</button>
             </div>
-            <div class="ctrl wl">
-              <div class="label"><i class="bi bi-shield-check"></i> Whitelist</div>
-              <input id="wl-player" placeholder="Player">
-              <button id="wl-add"    class="btn btn-stop"><i class="bi bi-plus-lg me-1"></i>Add</button>
-              <button id="wl-remove" class="btn btn-stop" style="color:#fca5a5"><i class="bi bi-dash-lg me-1"></i>Remove</button>
+            <div class="pills">
+              <button class="btn btn-sm btn-outline-warning" data-maint-preset="15">15m</button>
+              <button class="btn btn-sm btn-outline-warning" data-maint-preset="30">30m</button>
+              <button class="btn btn-sm btn-outline-warning" data-maint-preset="60">1h</button>
+              <button class="btn btn-sm btn-outline-warning" data-maint-preset="120">2h</button>
+              <span class="caption">Авто-выключение через: <span id="maint-countdown">—</span></span>
             </div>
+          </div>
+
+          <div class="mrow">
+            <div class="input-group" style="max-width:480px">
+              <span class="input-group-text"><i class="bi bi-shield-check"></i> Whitelist</span>
+              <input id="wl-player" class="form-control" placeholder="Player">
+              <button id="wl-add" class="btn btn-outline-light"><i class="bi bi-plus-lg"></i></button>
+              <button id="wl-remove" class="btn btn-outline-danger"><i class="bi bi-dash-lg"></i></button>
+            </div>
+            <div class="caption">Whitelist работает только в режиме техработ</div>
           </div>
         </div>
       </section>
@@ -269,7 +332,9 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
 <script>
 const realm = document.querySelector("[data-realm]").dataset.realm;
 const LS_AUTO_KEY = `gs_auto_${realm}`;
-let tpsSeries = [], timer = null, lastStats = null;
+const LS_INT_KEY = `gs_auto_int_${realm}`;
+let tpsSeries = [], entSeries = [], timer = null, lastStats = null;
+let maintTimer = null, maintUntil = 0;
 
 /* ---------- client meta ---------- */
 function clientMeta(){
@@ -280,12 +345,9 @@ function clientMeta(){
   const vp = `${window.innerWidth}x${window.innerHeight}@${dpr}`;
   const sc = (screen && `${screen.width}x${screen.height}`) || "";
   const vis = (document.visibilityState || "");
-  return {
-    tz, tzOffsetMin, lang, vp, sc, vis,
-    ua: navigator.userAgent || "",
-    ref: document.referrer || "",
-    page: location.pathname + location.search,
-    ts: Date.now()
+  return { tz, tzOffsetMin, lang, vp, sc, vis,
+    ua: navigator.userAgent || "", ref: document.referrer || "",
+    page: location.pathname + location.search, ts: Date.now()
   };
 }
 function clientHeaders(c){
@@ -336,6 +398,29 @@ function drawSparkline(canvas, values){
   values.forEach((v,i)=>{ const x=xi(i), y=yi(v); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
   ctx.stroke();
 }
+
+/* tiny bar chart (entities) */
+function drawBars(canvas, items){
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width = canvas.clientWidth, h = canvas.height = canvas.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if(!items.length) return;
+  const pad = 18, gap = 6, n = items.length;
+  const maxVal = Math.max(...items.map(i=>i.value));
+  const bw = (w - pad*2 - gap*(n-1)) / n;
+  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto";
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  items.forEach((it,idx)=>{
+    const x = pad + idx*(bw+gap);
+    const hNorm = maxVal? Math.max(2, (h-36) * (it.value/maxVal)) : 2;
+    const y = h-18 - hNorm;
+    ctx.fillRect(x, y, bw, hNorm);
+    const label = (it.name||"").slice(0,10);
+    ctx.fillText(label, x + bw/2, h-16);
+  });
+}
+
+/* unskeleton */
 function unskeleton(){
   for(const id of ["t-mspt","t-tps","t-players","t-online"]){
     const el = document.getElementById(id);
@@ -349,6 +434,22 @@ function avgTps(tps){
   const arr = [tps["1m"], tps["5m"], tps["15m"]].filter(v=>typeof v==="number");
   if(!arr.length) return null;
   return arr.reduce((a,b)=>a+b,0) / arr.length;
+}
+function bytesFmt(v){
+  if(v==null||v<0) return "—";
+  const u = ["B","KB","MB","GB","TB"]; let i=0; let x=v;
+  while(x>=1024 && i<u.length-1){ x/=1024; i++; }
+  return `${x.toFixed(1)} ${u[i]}`;
+}
+function percentFmt(x){ if(x==null||x<0) return "—"; return `${Math.round(x*100)}%`; }
+function humanMs(ms){
+  if(!ms||ms<0) return "—";
+  let s = Math.floor(ms/1000);
+  const d = Math.floor(s/86400); s%=86400;
+  const h = Math.floor(s/3600); s%=3600;
+  const m = Math.floor(s/60); s%=60;
+  const parts=[]; if(d) parts.push(d+"d"); if(h) parts.push(h+"h"); if(m) parts.push(m+"m"); if(s) parts.push(s+"s");
+  return parts.join(" ")||"0s";
 }
 
 /* ---------- robust normalize ---------- */
@@ -393,7 +494,18 @@ function normalize(raw){
     });
   }
 
-  return { realm: p.realm || raw.realm || "{{ realm }}", tps, mspt: tps.mspt ?? p.mspt ?? null, players, players_list, worlds };
+  const heap = p.heap || {};
+  const nonheap = p.nonheap || {};
+  const os = p.os || {};
+  const jvm = p.jvm || {};
+  const fs = p.fs || {};
+  const entities_top = p.entities_top_types || {};
+
+  return {
+    realm: p.realm || raw.realm || "{{ realm }}",
+    tps, mspt: tps.mspt ?? p.mspt ?? null, players, players_list, worlds,
+    heap, nonheap, os, jvm, fs, entities_top
+  };
 }
 
 /* render stats */
@@ -401,31 +513,61 @@ function render(payload){
   const p = normalize(payload);
   lastStats = p;
 
-  const mspt = p.mspt ?? null;
-  const tpsAvg = avgTps(p.tps);
+  // status
   const tps1m = p?.tps?.["1m"];
   const online = (p?.players?.online ?? null);
-
   const status = (typeof online === "number" && online>0) || (typeof tps1m === "number" && tps1m>0) ? "online" : "offline";
   setStatusBadge(status);
 
+  // KPIs
+  const mspt = p.mspt ?? null;
+  const tpsAvg = avgTps(p.tps);
   document.getElementById("t-mspt").textContent = (typeof mspt==="number") ? mspt.toFixed(2) : "—";
   document.getElementById("t-tps").textContent  = (typeof tpsAvg==="number") ? tpsAvg.toFixed(2) : "—";
   document.getElementById("t-online").textContent = (typeof online==="number") ? online : "—";
 
+  // players tile
   const playersArr = p.players_list || [];
   document.getElementById("t-players").textContent = playersArr.map(x=>x.name).join(", ") || "—";
   unskeleton();
 
+  // charts
   if(typeof tps1m==="number"){ tpsSeries.push(tps1m); if(tpsSeries.length>60) tpsSeries.shift(); }
   drawSparkline(document.getElementById("tpsChart"), tpsSeries);
+
+  const entPairs = Object.entries(p.entities_top||{}).map(([name,value])=>({name,value}));
+  entPairs.sort((a,b)=>b.value-a.value);
+  drawBars(document.getElementById("entChart"), entPairs.slice(0,12));
+
+  // CPU
+  const sys = p.os?.cpu_load?.system ?? null;
+  const proc = p.os?.cpu_load?.process ?? null;
+  document.getElementById("cpu-system").style.width = (sys!=null? (sys*100).toFixed(0):0)+"%";
+  document.getElementById("cpu-system-lbl").textContent = percentFmt(sys);
+  document.getElementById("cpu-proc").style.width = (proc!=null? (proc*100).toFixed(0):0)+"%";
+  document.getElementById("cpu-proc-lbl").textContent = percentFmt(proc);
+
+  // Heap/Non-heap
+  const hu = p.heap?.used ?? null, hm = p.heap?.max ?? null;
+  const nhu = p.nonheap?.used ?? null;
+  const perc = (hu!=null && hm>0) ? Math.min(100, Math.round(hu/hm*100)) : 0;
+  document.getElementById("heap-used-lbl").textContent = `used ${bytesFmt(hu)}`;
+  document.getElementById("heap-max-lbl").textContent = `max ${bytesFmt(hm)}`;
+  document.getElementById("heap-bar").style.width = perc + "%";
+  document.getElementById("nonheap-lbl").textContent = bytesFmt(nhu);
+
+  // FS
+  document.getElementById("fs-free").textContent  = bytesFmt(p.fs?.root_free);
+  document.getElementById("fs-total").textContent = bytesFmt(p.fs?.root_total);
+
+  // Uptime
+  document.getElementById("uptime").textContent = humanMs(p.jvm?.uptime_ms);
 
   // Таблица игроков (с фильтром)
   const filter = (document.getElementById("players-filter").value || "").toLowerCase().trim();
   const filtered = !filter ? playersArr : playersArr.filter(x =>
     (x.name||"").toLowerCase().includes(filter) || (x.uuid||"").toLowerCase().includes(filter)
   );
-
   const pt = document.getElementById("tbl-players");
   pt.innerHTML = filtered.length ? filtered.map(pl=>`
     <tr>
@@ -555,14 +697,47 @@ async function sendCmd(){
   finally{ btn.disabled = false; }
 }
 
-/* maintenance API */
-async function maintToggle(enabled){
+/* -------------- Maintenance: toggle + presets + auto-off -------------- */
+async function setMaintenance(enabled){
   const msg = document.getElementById("maint-msg").value.trim();
   const j = await postJSON("/admin/gameservers/api/maintenance", {realm, enabled, kickMessage: msg, message: msg});
   if (j.ok && enabled) setStatusBadge("maintenance");
   if (j.ok && !enabled) setStatusBadge("online");
   toast(j.ok ? (enabled?"Техработы включены":"Техработы отключены") : (j.error||"Ошибка"), j.ok);
+  return j.ok;
 }
+function maintUpdateCountdown(){
+  if(!maintUntil){ document.getElementById("maint-countdown").textContent = "—"; return; }
+  const left = Math.max(0, maintUntil - Date.now());
+  document.getElementById("maint-countdown").textContent = humanMs(left);
+  if(left<=0){ maintUntil = 0; document.getElementById("maint-toggle").checked = false; }
+}
+async function maintToggleHandler(e){
+  const on = e.target.checked;
+  const ok = await setMaintenance(on);
+  if(!ok){ e.target.checked = !on; return; }
+  if(!on){ clearInterval(maintTimer); maintUntil = 0; maintUpdateCountdown(); }
+}
+async function maintPreset(minutes){
+  const ok = await setMaintenance(true);
+  if(!ok) return;
+  maintUntil = Date.now() + minutes*60*1000;
+  clearInterval(maintTimer);
+  maintTimer = setInterval(async ()=>{
+    const left = maintUntil - Date.now();
+    maintUpdateCountdown();
+    if(left<=0){
+      clearInterval(maintTimer);
+      maintUntil = 0;
+      // авто-выключение
+      await setMaintenance(false);
+      document.getElementById("maint-toggle").checked = false;
+    }
+  }, 1000);
+  maintUpdateCountdown();
+}
+
+/* whitelist */
 async function wlChange(op){
   const player = document.getElementById("wl-player").value.trim();
   if(!player) return;
@@ -590,25 +765,47 @@ document.getElementById("refresh").addEventListener("click", fetchStats);
 document.getElementById("players-tile")?.addEventListener("click", openPlayersModal);
 document.getElementById("players-filter").addEventListener("input", ()=>{ if(lastStats) render(lastStats); });
 
-document.getElementById("maint-on").addEventListener("click", ()=>maintToggle(true));
-document.getElementById("maint-off").addEventListener("click", ()=>maintToggle(false));
-document.getElementById("wl-add").addEventListener("click", ()=>wlChange("add"));
-document.getElementById("wl-remove").addEventListener("click", ()=>wlChange("remove"));
-
 document.getElementById("live-toggle").addEventListener("change", e=>{ e.target.checked ? startLive() : stopLive(); });
 document.getElementById("clear-log").addEventListener("click", ()=>{ document.getElementById('console-log').textContent=""; });
 
+document.getElementById("wl-add").addEventListener("click", ()=>wlChange("add"));
+document.getElementById("wl-remove").addEventListener("click", ()=>wlChange("remove"));
+
+/* maintenance ui binds */
+document.getElementById("maint-toggle").addEventListener("change", maintToggleHandler);
+document.querySelectorAll("[data-maint-preset]").forEach(btn=>{
+  btn.addEventListener("click", ()=>maintPreset(parseInt(btn.dataset.maintPreset,10)));
+});
+
+/* auto refresh controls */
 const autoEl = document.getElementById("autorefresh");
+const intEl = document.getElementById("refresh-interval");
+const intLbl = document.getElementById("refresh-interval-label");
+
 autoEl.checked = (localStorage.getItem(LS_AUTO_KEY) ?? "1") !== "0";
-autoEl.addEventListener("change", e=>{
+intEl.value = localStorage.getItem(LS_INT_KEY) || "3";
+intLbl.textContent = intEl.value + "s";
+
+function applyTimer(){
   clearInterval(timer);
+  if(autoEl.checked){
+    const sec = Math.max(2, parseInt(intEl.value,10)||3);
+    timer = setInterval(fetchStats, sec*1000);
+  }
+}
+autoEl.addEventListener("change", e=>{
   localStorage.setItem(LS_AUTO_KEY, e.target.checked ? "1" : "0");
-  if(e.target.checked) timer = setInterval(fetchStats, 3000);
+  applyTimer();
+});
+intEl.addEventListener("input", e=>{
+  intLbl.textContent = e.target.value + "s";
+  localStorage.setItem(LS_INT_KEY, e.target.value);
+  applyTimer();
 });
 
 /* init */
 fetchStats();
-if(autoEl.checked) timer = setInterval(fetchStats, 3000);
+applyTimer();
 startLive(); // по умолчанию включён
 </script>
 {% endblock %}
