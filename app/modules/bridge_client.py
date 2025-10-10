@@ -1,4 +1,4 @@
-# app/modules/bridge_client.py
+# modules/bridge_client.py
 from __future__ import annotations
 
 import os
@@ -8,7 +8,7 @@ import contextlib
 import threading
 import logging
 from logging import Logger
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Iterable, Union
 
 import websockets
 
@@ -124,6 +124,7 @@ async def _connect():
     Устанавливает одноразовое подключение к бриджу.
     По умолчанию совпадает с настройками сервера (ping, max_size).
     """
+    headers = {"Authorization": "Bearer <hidden>"}
     _log.info("ws.connect: url=%s, timeout=%s, max_size=%s", BRIDGE_URL, BRIDGE_TIMEOUT, BRIDGE_MAX_SIZE)
     try:
         ws = await asyncio.wait_for(
@@ -240,55 +241,22 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
     # Одни плагины кладут данные в data, другие — в payload
     d = obj.get("data") or obj.get("payload") or {}
     realm = d.get("realm") or obj.get("realm")
+    plugins = d.get("plugins") or {}
 
-    # tps/mspt
-    tps = d.get("tps") or {}
-    out_tps = {
-        "1m": tps.get("1m", d.get("tps_1m")),
-        "5m": tps.get("5m", d.get("tps_5m")),
-        "15m": tps.get("15m", d.get("tps_15m")),
-        "mspt": tps.get("mspt", d.get("mspt")),
-    }
-
-    # players
-    players_box = d.get("players") or {}
-    out_players = {
-        "online": players_box.get("online", d.get("players_online")),
-        "max": players_box.get("max", d.get("players_max")),
-    }
-
-    # players list (если есть)
-    players_list = d.get("players_list") or players_box.get("list") or d.get("playersList") or []
-
-    # worlds: либо массив, либо map -> массив
-    worlds = []
-    if isinstance(d.get("worlds"), list):
-        worlds = d["worlds"]
-    elif isinstance(d.get("worlds"), dict):
-        for name, w in (d.get("worlds") or {}).items():
-            wi = dict(w or {})
-            wi["name"] = name
-            worlds.append(wi)
-    elif isinstance(d.get("worlds_map"), dict):
-        for name, w in d["worlds_map"].items():
-            wi = dict(w or {})
-            wi["name"] = name
-            worlds.append(wi)
-
-    # дополнительные сводки, которые бывают в heavy-снимках
-    fs = d.get("fs") or {}
-    entities_top_types = d.get("entities_top_types") or {}
-    entities_total_types = d.get("entities_total_types")
-
-    # heap/nonheap/jvm/os
-    out = {
+    return {
         "type": obj["type"],
         "realm": realm,
-        "players": out_players,
-        "players_list": players_list,
+        "players": {
+            "online": d.get("players_online"),
+            "max": d.get("players_max"),
+        },
         "motd": d.get("motd"),
-        "tps": out_tps,
-        "mspt": out_tps.get("mspt"),
+        "tps": {
+            "1m": d.get("tps_1m"),
+            "5m": d.get("tps_5m"),
+            "15m": d.get("tps_15m"),
+            "mspt": d.get("mspt"),
+        },
         "heap": {
             "used": d.get("heap_used"),
             "max": d.get("heap_max"),
@@ -321,14 +289,8 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
                 "process": d.get("cpu_process_load"),
             },
         },
-        # ВНИМАНИЕ: plugins специально не возвращаем (просили убрать)
-        "worlds": worlds,
-        "fs": fs,
-        "entities_top_types": entities_top_types,
-        "entities_total_types": entities_total_types,
+        "plugins": plugins,  # dict: {name: version}
     }
-
-    return out
 
 
 # ====================== ПУБЛИЧНЫЙ API ======================
@@ -451,20 +413,82 @@ def maintenance_set(realm: str, enabled: bool, kick_message: str = "") -> bool:
     return bridge_send(obj)
 
 
-def maintenance_whitelist(realm: str, op: str, player: str) -> bool:
+def _normalize_op(op: str) -> str:
+    o = (op or "").strip().lower()
+    if o in ("add", "+"): return "add"
+    if o in ("remove", "del", "rm", "-"): return "remove"
+    if o in ("list", "show"): return "list"
+    # дефолт: list — безопасней всего
+    return "list"
+
+
+def _is_seq_of_users(x: Union[str, Iterable[str]]) -> bool:
+    if isinstance(x, str): return False
+    try:
+        iter(x)  # type: ignore[arg-type]
+        return True
+    except Exception:
+        return False
+
+
+def maintenance_whitelist(
+    realm: str,
+    op: str,
+    user_or_users: Union[str, Iterable[str], None],
+) -> Dict[str, Any]:
     """
     Управление локальным whitelist в режиме техработ.
-    Поддержаны оба формата ключей: (action,user) и (op,player).
+    Поддерживает как одиночное значение (строка), так и массив пользователей (Iterable[str]).
+    Дублируем ключи для совместимости с плагином:
+      - операция:   action + op
+      - одиночный:  user + player
+      - пакетный:   users + players
     """
-    op_l = (op or "").lower()
-    if op_l not in ("add", "remove"):
-        raise ValueError("op must be 'add' or 'remove'")
-    obj = {
-        "type": "maintenance.whitelist",
-        "realm": realm,
-        "payload": {"realm": realm, "op": op_l, "player": player, "action": op_l, "user": player},
-    }
-    return bridge_send(obj)
+    action = _normalize_op(op)
+
+    payload: Dict[str, Any] = {"realm": realm, "action": action, "op": action}
+
+    if user_or_users is None:
+        # ничего не передали — это эквивалент list
+        payload["action"] = "list"
+        payload["op"] = "list"
+    else:
+        if _is_seq_of_users(user_or_users):
+            users = [str(u).strip() for u in user_or_users if str(u or "").strip()]
+            payload["users"] = users
+            payload["players"] = list(users)  # дублируем
+            # для совместимости положим ещё и первый элемент как одиночный
+            if users:
+                payload["user"] = users[0]
+                payload["player"] = users[0]
+        else:
+            user = str(user_or_users or "").strip()
+            payload["user"] = user
+            payload["player"] = user
+
+    obj = {"type": "maintenance.whitelist", "realm": realm, "payload": payload}
+
+    try:
+        return _run(_send_and_wait(obj, expect_types=None, realm=realm))
+    except Exception as e:
+        _log.exception("maintenance_whitelist failed: realm=%s", realm)
+        return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, **payload}}
+
+
+def maintenance_whitelist_add(realm: str, user: str) -> Dict[str, Any]:
+    return maintenance_whitelist(realm, "add", user)
+
+
+def maintenance_whitelist_remove(realm: str, user: str) -> Dict[str, Any]:
+    return maintenance_whitelist(realm, "remove", user)
+
+
+def maintenance_whitelist_add_many(realm: str, users: Iterable[str]) -> Dict[str, Any]:
+    return maintenance_whitelist(realm, "add", users)
+
+
+def maintenance_whitelist_remove_many(realm: str, users: Iterable[str]) -> Dict[str, Any]:
+    return maintenance_whitelist(realm, "remove", users)
 
 
 # ---- LuckPerms wrappers ----
