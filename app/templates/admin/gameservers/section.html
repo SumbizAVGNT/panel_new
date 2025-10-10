@@ -263,47 +263,30 @@ const realm = document.querySelector("[data-realm]").dataset.realm;
 const LS_AUTO_KEY = `gs_auto_${realm}`;
 let tpsSeries = [], timer = null, lastStats = null;
 
-/* ========== client meta ========== */
+/* ---------- client meta ---------- */
 function clientMeta(){
-  const d = new Date();
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-  const tzOffsetMin = -d.getTimezoneOffset();
-  const vp = { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio || 1 };
-  const sc = { w: screen.width, h: screen.height };
+  const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || "");
+  const tzOffsetMin = -new Date().getTimezoneOffset(); // east-positive
+  const lang = (navigator.language || "");
+  const dpr = (window.devicePixelRatio || 1);
+  const vp = `${window.innerWidth}x${window.innerHeight}@${dpr}`;
+  const sc = (screen && `${screen.width}x${screen.height}`) || "";
+  const vis = (document.visibilityState || "");
   return {
-    tz, tzOffsetMin,
-    lang: navigator.language || '',
-    ua: navigator.userAgent || '',
-    vp, sc,
+    tz, tzOffsetMin, lang, vp, sc, vis,
+    ua: navigator.userAgent || "",
+    ref: document.referrer || "",
     page: location.pathname + location.search,
-    ref: document.referrer || '',
-    vis: document.visibilityState || 'visible',
     ts: Date.now()
   };
 }
-function metaQuery(){
-  const m = clientMeta();
-  const p = new URLSearchParams({
-    tz: m.tz || '',
-    of: String(m.tzOffsetMin),
-    lang: m.lang || '',
-    vp: `${m.vp.w}x${m.vp.h}@${m.vp.dpr}`,
-    sc: `${m.sc.w}x${m.sc.h}`,
-    vis: m.vis,
-  });
-  return p.toString();
-}
-async function postJSON(url, body){
-  const m = clientMeta();
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {"Content-Type": "application/json",
-              "X-Client-TZ": m.tz || '',
-              "X-Client-Of": String(m.tzOffsetMin),
-              "X-Client-Lang": m.lang || ''},
-    body: JSON.stringify({ ...body, client: m })
-  });
-  return r.json();
+function clientHeaders(c){
+  return {
+    "Content-Type":"application/json",
+    "X-Client-TZ": c.tz || "",
+    "X-Client-Of": String(c.tzOffsetMin ?? ""),
+    "X-Client-Lang": c.lang || ""
+  };
 }
 
 /* toasts */
@@ -407,8 +390,7 @@ function render(p){
 /* polling stats */
 async function fetchStats(){
   try{
-    const q = metaQuery();
-    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}&${q}&_ts=${Date.now()}`, {cache:"no-store"});
+    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`, {cache:"no-store"});
     const j = await r.json();
     if(!j.ok){ setStatusBadge("offline"); return; }
     render(j.data||{});
@@ -440,8 +422,21 @@ function openPlayersModal(){
   bootstrap.Modal.getOrCreateInstance(document.getElementById('playersModal')).show();
 }
 
-/* console: live via SSE */
+/* ---------- SSE: live console with meta in query ---------- */
 let es=null;
+function sseQuery(){
+  const c = clientMeta();
+  const sp = new URLSearchParams({
+    realm,
+    tz: c.tz || "",
+    of: String(c.tzOffsetMin ?? ""),
+    lang: c.lang || "",
+    vp: c.vp || "",
+    sc: c.sc || "",
+    vis: c.vis || ""
+  });
+  return sp.toString();
+}
 function appendLine(line){
   const pre = document.getElementById('console-log');
   pre.textContent += (pre.textContent?'\n':'') + line;
@@ -458,14 +453,24 @@ function fmtLine(p){
 }
 function startLive(){
   if(es) return;
-  const q = metaQuery();
-  const url = `/admin/gameservers/api/console/stream?realm=${encodeURIComponent(realm)}&${q}`;
+  const url = `/admin/gameservers/api/console/stream?` + sseQuery();
   es = new EventSource(url);
   es.onmessage = (ev)=>{ try{ appendLine(fmtLine(JSON.parse(ev.data||'{}')));}catch{} };
   es.addEventListener('err', (ev)=>{ appendLine(`[stream] ${ev.data}`); });
   es.onerror = ()=>{}; // авто-reconnect от EventSource
 }
 function stopLive(){ try{es?.close();}catch{} es=null; }
+
+/* ---------- POST helpers that attach client meta ---------- */
+async function postJSON(url, obj){
+  const c = clientMeta();
+  const r = await fetch(url, {
+    method:"POST",
+    headers: clientHeaders(c),
+    body: JSON.stringify({...obj, client: c})
+  });
+  return r.json();
+}
 
 /* console: send command */
 async function sendCmd(){
