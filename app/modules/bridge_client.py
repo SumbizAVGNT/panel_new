@@ -528,9 +528,11 @@ def lp_group_info(realm: str, group: str) -> Dict[str, Any]:
 
 
 # ---- JetPay / Coins (JP) wrappers ----
+
 def jp_balance_get(realm: str, user: str) -> Dict[str, Any]:
     """
     Получить баланс пользователя.
+    Тип ответа не фиксируем — возвращаем первый кадр (ACK/результат).
     """
     msg = {"type": "jp.balance.get", "realm": realm, "payload": {"realm": realm, "user": user}}
     try:
@@ -547,7 +549,7 @@ def jp_balance_set(realm: str, user: str, amount: int) -> Dict[str, Any]:
         return _run(_send_and_wait(msg, expect_types=None, realm=realm))
     except Exception as e:
         _log.exception("jp_balance_set failed: realm=%s user=%s", realm, user)
-        return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user, "amount": int(amount)}}
+        return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user}}
 
 
 def jp_balance_add(realm: str, user: str, delta: int) -> Dict[str, Any]:
@@ -557,7 +559,7 @@ def jp_balance_add(realm: str, user: str, delta: int) -> Dict[str, Any]:
         return _run(_send_and_wait(msg, expect_types=None, realm=realm))
     except Exception as e:
         _log.exception("jp_balance_add failed: realm=%s user=%s", realm, user)
-        return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user, "delta": int(delta)}}
+        return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user}}
 
 
 def jp_transfer(realm: str, src_user: str, dst_user: str, amount: int, *, reason: str = "") -> Dict[str, Any]:
@@ -568,7 +570,7 @@ def jp_transfer(realm: str, src_user: str, dst_user: str, amount: int, *, reason
     except Exception as e:
         _log.exception("jp_transfer failed: realm=%s from=%s to=%s", realm, src_user, dst_user)
         return {"type": "bridge.error", "error": str(e),
-                "payload": {"realm": realm, "from": src_user, "to": dst_user, "amount": int(amount), "reason": reason}}
+                "payload": {"realm": realm, "from": src_user, "to": dst_user, "amount": int(amount)}}
 
 
 # ---- Универсальная отправка ----
