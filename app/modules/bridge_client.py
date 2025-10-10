@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Sequence
 import websockets
 
 # -------- конфиг --------
-BRIDGE_URL: str = os.getenv("SP_BRIDGE_URL", "ws://127.0.0.1:8765/ws")
+BRIDGE_URL: str = os.getenv("SP_BRIDGE_URL", "wss://websocket.teighto.net/ws")
 BRIDGE_TOKEN: str = os.getenv("SP_TOKEN", "SUPER_SECRET")
 BRIDGE_TIMEOUT: float = float(os.getenv("BRIDGE_TIMEOUT", "8.0"))   # сек
 BRIDGE_MAX_SIZE: int = int(os.getenv("SP_MAX_SIZE", "131072"))      # 128 KiB (как у сервера по умолчанию)
@@ -122,7 +122,7 @@ async def _send_and_wait(
                 r = (
                     obj.get("realm")
                     or (obj.get("payload") or {}).get("realm")
-                    or (obj.get("data") or {}).get("realm")    # <-- добавили поддержку data.realm
+                    or (obj.get("data") or {}).get("realm")
                 )
                 if r != realm:
                     continue
@@ -212,19 +212,21 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
 # ---- Health / meta ----
 
 def bridge_ping() -> Dict[str, Any]:
-    """Пинговый кадр для health-check (ожидаем bridge.pong)."""
+    """
+    Пинг через доступный метод сервера: bridge.list -> bridge.list.result.
+    (В bridge.py нет отдельной обработки 'bridge.ping'.)
+    """
     try:
-        return _run(_send_and_wait({"type": "bridge.ping"}, expect_types=("bridge.pong",)))
+        return _run(_send_and_wait({"type": "bridge.list"}, expect_types=("bridge.list.result",)))
     except Exception as e:
         return {"type": "bridge.error", "error": str(e), "payload": {}}
 
 
 def bridge_info() -> Dict[str, Any]:
-    """Краткая сводка по бриджу (realms/admins/time)."""
-    try:
-        return _run(_send_and_wait({"type": "bridge.info"}, expect_types=("bridge.info.result",)))
-    except Exception as e:
-        return {"type": "bridge.error", "error": str(e), "payload": {}}
+    """
+    Краткая сводка: используем тот же 'bridge.list'.
+    """
+    return bridge_ping()
 
 
 def bridge_list() -> Dict[str, Any]:
