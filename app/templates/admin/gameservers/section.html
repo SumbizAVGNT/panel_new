@@ -3,95 +3,42 @@
 
 {% block content %}
 <style>
-:root{
-  --bg: #0b1220;
-  --card: rgba(13,17,23,.55);
-  --border: rgba(148,163,184,.18);
-  --border-strong: rgba(148,163,184,.28);
-  --muted: #94a3b8;
-  --text: #e5e7eb;
-  --text-dim: #cbd5e1;
-  --ok: #22c55e;
-  --warn: #f59e0b;
-  --err: #ef4444;
-}
-.container-xxl.gs-scope{
-  background:
-    radial-gradient(700px 360px at 50% -12%, rgba(148,163,184,.10), transparent 70%),
-    linear-gradient(180deg, rgba(13,17,23,.55), rgba(13,17,23,.42));
-  border:1px solid var(--border);
-  border-radius:18px;
-}
-.gs-layout{display:grid;grid-template-columns:300px 1fr;gap:16px}
-@media (max-width:992px){.gs-layout{grid-template-columns:1fr}}
+/* ——— (тот же стиль, как в предыдущей версии; укоротил, но функционально без изменений) ——— */
+:root{--bg:#0b1220;--card:rgba(13,17,23,.55);--border:rgba(148,163,184,.18);--border-strong:rgba(148,163,184,.28);--muted:#94a3b8;--text:#e5e7eb;--text-dim:#cbd5e1;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444}
+.container-xxl.gs-scope{background:radial-gradient(700px 360px at 50% -12%, rgba(148,163,184,.10), transparent 70%),linear-gradient(180deg, rgba(13,17,23,.55), rgba(13,17,23,.42));border:1px solid var(--border);border-radius:18px}
+.gs-layout{display:grid;grid-template-columns:300px 1fr;gap:16px}@media (max-width:992px){.gs-layout{grid-template-columns:1fr}}
 .card.glass{background:var(--card);border:1px solid var(--border);backdrop-filter:blur(8px)}
 .table>:not(caption)>*>*{background:transparent;color:var(--text)}
-
-/* side */
 .gs-side{position:sticky;top:76px;align-self:start}
 .gs-side .nav-link{border:1px solid var(--border);border-radius:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;color:var(--text)}
 .gs-side .nav-link .dot{width:6px;height:6px;border-radius:999px;background:rgba(148,163,184,.5)}
 .gs-side .nav-link.active{background:#0f172a;box-shadow:inset 0 0 0 1px var(--border-strong)}
 .gs-side .nav-link.active .dot{background:var(--ok)}
-
-/* tiles */
 .tile{position:relative;isolation:isolate;display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:14px;border:1px solid var(--border);background:var(--card)}
-.tile[data-click]{cursor:pointer}
-.tile:before{content:"";position:absolute;inset:-1px;border-radius:14px;z-index:-1;background:
-  radial-gradient(260px 140px at 0% 0%, rgba(56,189,248,.20), transparent 70%),
-  radial-gradient(260px 140px at 100% 100%, rgba(34,197,94,.12), transparent 70%);opacity:.28;transition:.2s}
-.tile:hover:before{opacity:.5}
-.tcap{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.kpi .value{font-size:1.25rem}
-.badge-cap{padding:.35rem .6rem;border-radius:999px}
-
-/* maintenance card */
+.tile[data-click]{cursor:pointer}.tile:before{content:"";position:absolute;inset:-1px;border-radius:14px;z-index:-1;background:radial-gradient(260px 140px at 0% 0%, rgba(56,189,248,.20), transparent 70%),radial-gradient(260px 140px at 100% 100%, rgba(34,197,94,.12), transparent 70%);opacity:.28;transition:.2s}.tile:hover:before{opacity:.5}
+.tcap{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.kpi .value{font-size:1.25rem}.badge-cap{padding:.35rem .6rem;border-radius:999px}
 .maint-card .head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
 .stat-dot{display:inline-flex;align-items:center;gap:6px;font-size:.86rem;color:var(--text-dim)}
-.stat-dot .d{width:8px;height:8px;border-radius:999px;background:#475569}
-.stat-dot.m .d{background:var(--warn)}
-.stat-dot.o .d{background:var(--ok)}
-.ctrlbar{display:flex;flex-wrap:wrap;gap:10px}
-.ctrl{display:flex;align-items:center;background:rgba(15,23,42,.55);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.stat-dot .d{width:8px;height:8px;border-radius:999px;background:#475569}.stat-dot.m .d{background:var(--warn)}.stat-dot.o .d{background:var(--ok)}
+.ctrlbar{display:flex;flex-wrap:wrap;gap:10px}.ctrl{display:flex;align-items:center;background:rgba(15,23,42,.55);border:1px solid var(--border);border-radius:12px;overflow:hidden}
 .ctrl .label{display:flex;align-items:center;gap:6px;padding:0 10px;color:var(--text-dim);border-right:1px solid var(--border)}
-.ctrl input{border:0;background:transparent;color:var(--text);outline:0;width:280px;min-width:160px}
-.ctrl .btn{border:0}
-.ctrl .btn-start{background:var(--warn);color:#111827}
-.ctrl .btn-stop{background:transparent;border-left:1px solid var(--border);color:var(--text)}
-.ctrl .btn:hover{filter:brightness(1.05)}
-.ctrl .btn:active{transform:translateY(1px)}
-.ctrl .btn, .ctrl .label, .ctrl input{height:36px}
-.ctrl.wl input{width:200px}
-
-/* console */
-.console-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.switchx{display:flex;align-items:center;gap:6px;font-size:.9rem}
+.ctrl input{border:0;background:transparent;color:var(--text);outline:0;width:280px;min-width:160px}.ctrl .btn{border:0}
+.ctrl .btn-start{background:var(--warn);color:#111827}.ctrl .btn-stop{background:transparent;border-left:1px solid var(--border);color:var(--text)}
+.ctrl .btn:hover{filter:brightness(1.05)}.ctrl .btn:active{transform:translateY(1px)}
+.ctrl .btn,.ctrl .label,.ctrl input{height:36px}.ctrl.wl input{width:200px}
+.console-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:8px}.switchx{display:flex;align-items:center;gap:6px;font-size:.9rem}
 pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-radius:10px;padding:10px;border:1px solid var(--border);white-space:pre-wrap;color:#d1d5db}
-
-/* players */
 .player-head{width:32px;height:32px;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.5);image-rendering:pixelated}
-.player-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px}
-.player-row:hover{background:rgba(148,163,184,.06)}
-
-/* skeletons + toasts */
+.player-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px}.player-row:hover{background:rgba(148,163,184,.06)}
 .skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
 .skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg, transparent, rgba(255,255,255,.07), transparent);transform:translateX(-100%);animation:shimmer 1.2s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
 #toasts{position:fixed;right:16px;bottom:16px;z-index:1080;display:flex;flex-direction:column;gap:8px}
 .toastx{background:rgba(13,17,23,.96);border:1px solid var(--border-strong);color:#e2e8f0;padding:10px 12px;border-radius:12px}
-.toastx.ok{border-color:rgba(34,197,94,.6)}
-.toastx.err{border-color:rgba(239,68,68,.6)}
-
-/* badges */
-.badge-online{background:var(--ok)}
-.badge-maint{background:var(--warn)}
-.badge-off{background:var(--err)}
-.badge-unknown{background:#64748b}
-
-/* small helpers */
+.toastx.ok{border-color:rgba(34,197,94,.6)}.toastx.err{border-color:rgba(239,68,68,.6)}
+.badge-online{background:var(--ok)}.badge-maint{background:var(--warn)}.badge-off{background:var(--err)}.badge-unknown{background:#64748b}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
-.form-text{color:var(--muted)}
-.code-chip{padding:.2rem .4rem;border:1px solid var(--border);border-radius:6px;background:rgba(15,23,42,.55);font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+.form-text{color:var(--muted)}.code-chip{padding:.2rem .4rem;border:1px solid var(--border);border-radius:6px;background:rgba(15,23,42,.55);font-family:ui-monospace,Menlo,Consolas,monospace}
 </style>
 
 <div class="container-xxl gs-scope py-4" data-realm="{{ realm }}">
@@ -222,8 +169,8 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-              <thead><tr><th>Ник</th><th>UUID</th><th>Мир</th></tr></thead>
-              <tbody id="tbl-players"><tr><td colspan="3" class="text-secondary">нет данных</td></tr></tbody>
+              <thead><tr><th>Ник</th><th>UUID</th><th>Мир</th><th>Пинг</th><th>Группа</th></tr></thead>
+              <tbody id="tbl-players"><tr><td colspan="5" class="text-secondary">нет данных</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -235,8 +182,14 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
           <h5 id="w-title" class="mb-3">Миры</h5>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-              <thead><tr><th>Мир</th><th>Тип</th><th>TPS</th><th>Игроки</th><th>Чанки</th><th>Spawn</th></tr></thead>
-              <tbody id="tbl-worlds"><tr><td colspan="6" class="text-secondary">нет данных</td></tr></tbody>
+              <thead>
+                <tr>
+                  <th>Мир</th><th>Тип</th><th>TPS</th>
+                  <th>Игроки</th><th>Чанки</th><th>Сущности</th>
+                  <th>View</th><th>Sim</th><th>Spawn</th>
+                </tr>
+              </thead>
+              <tbody id="tbl-worlds"><tr><td colspan="9" class="text-secondary">нет данных</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -300,10 +253,10 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
 const realm = document.querySelector("[data-realm]").dataset.realm;
 const LS_AUTO_KEY = `gs_auto_${realm}`;
 let tpsSeries = [], timer = null, lastStats = null;
-let es=null, esStateEl=null, fetchAbort=null, fetchDue=0;
+let es=null, esStateEl=null, fetchAbort=null;
 let cmdHistory=[], cmdIdx=-1;
 
-/* ---------- client meta ---------- */
+/* ---------- meta + headers ---------- */
 function clientMeta(){
   const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || "");
   const tzOffsetMin = -new Date().getTimezoneOffset();
@@ -312,24 +265,11 @@ function clientMeta(){
   const vp = `${window.innerWidth}x${window.innerHeight}@${dpr}`;
   const sc = (screen && `${screen.width}x${screen.height}`) || "";
   const vis = (document.visibilityState || "");
-  return {
-    tz, tzOffsetMin, lang, vp, sc, vis,
-    ua: navigator.userAgent || "",
-    ref: document.referrer || "",
-    page: location.pathname + location.search,
-    ts: Date.now()
-  };
+  return {tz, tzOffsetMin, lang, vp, sc, vis, ua:navigator.userAgent||"", ref:document.referrer||"", page:location.pathname+location.search, ts:Date.now()};
 }
-function clientHeaders(c){
-  return {
-    "Content-Type":"application/json",
-    "X-Client-TZ": c.tz || "",
-    "X-Client-Of": String(c.tzOffsetMin ?? ""),
-    "X-Client-Lang": c.lang || ""
-  };
-}
+function clientHeaders(c){ return {"Content-Type":"application/json","X-Client-TZ":c.tz||"","X-Client-Of":String(c.tzOffsetMin??""),"X-Client-Lang":c.lang||""}; }
 
-/* toasts */
+/* ---------- UI helpers ---------- */
 function toast(msg, ok=true){
   const wrap = document.getElementById('toasts');
   const el = document.createElement('div');
@@ -338,8 +278,6 @@ function toast(msg, ok=true){
   wrap.appendChild(el);
   setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2200);
 }
-
-/* status + latency */
 function setStatusBadge(state){
   const el = document.getElementById("status-badge");
   el.classList.remove("badge-online","badge-maint","badge-off","badge-unknown");
@@ -354,13 +292,9 @@ function setStatusBadge(state){
   ms.classList.add(state==="maintenance" ? "m" : "o");
   ms.querySelector("span:last-child").textContent = `state: ${state}`;
 }
-function setLatency(ms){
-  const el = document.getElementById("latency");
-  if(!el) return;
-  el.textContent = `ping: ${ms===null?'—':ms+' ms'}`;
-}
+function setLatency(ms){ document.getElementById("latency").textContent = `ping: ${ms===null?'—':ms+' ms'}`; }
 
-/* sparkline */
+/* ---------- chart ---------- */
 function drawSparkline(canvas, values){
   const ctx = canvas.getContext("2d");
   const w = canvas.width = canvas.clientWidth, h = canvas.height = canvas.clientHeight;
@@ -383,19 +317,64 @@ function unskeleton(){
   }
 }
 
-/* helpers to read normalized stats */
+/* ---------- NORMALIZATION of bridge payloads ---------- */
+function normalize(raw){
+  // 1) если кадр обёрнут в {type:'server.stats', data:{...}}
+  const p = raw && raw.data && typeof raw.data === 'object' ? raw.data : raw;
+
+  // 2) Сведём TPS/MSPT к единому виду
+  const tps = p.tps && typeof p.tps === 'object'
+    ? { "1m":p.tps["1m"] ?? p.tps_1m, "5m":p.tps["5m"] ?? p.tps_5m, "15m":p.tps["15m"] ?? p.tps_15m, "mspt": p.tps.mspt ?? p.mspt }
+    : { "1m":p.tps_1m, "5m":p.tps_5m, "15m":p.tps_15m, "mspt": p.mspt };
+
+  // 3) Игроки
+  const players = p.players && typeof p.players === 'object'
+    ? { max:p.players.max ?? p.players_max, online:p.players.online ?? p.players_online }
+    : { max:p.players_max, online:p.players_online };
+
+  const players_list = Array.isArray(p.players_list) ? p.players_list : [];
+
+  // 4) Миры: словарь -> массив
+  let worlds = [];
+  if (Array.isArray(p.worlds)) {
+    worlds = p.worlds;
+  } else if (p.worlds && typeof p.worlds === 'object') {
+    worlds = Object.keys(p.worlds).map(name => {
+      const w = p.worlds[name] || {};
+      return {
+        name,
+        type: w.type || "",
+        tps: w.tps || [],
+        players: w.players ?? w.players_count ?? "",
+        loadedChunks: w.chunks_loaded ?? w.loadedChunks ?? "",
+        entities: w.entities ?? "",
+        view_distance: w.view_distance ?? "",
+        simulation_distance: w.simulation_distance ?? "",
+        spawn: w.spawn || null
+      };
+    });
+  }
+
+  return {
+    realm: p.realm || raw.realm || "{{ realm }}",
+    tps, mspt: tps.mspt ?? p.mspt ?? null,
+    players, players_list, worlds
+  };
+}
+
+/* ---------- derived helpers ---------- */
 function avgTps(tps){
   if(!tps) return null;
   const arr = [tps["1m"], tps["5m"], tps["15m"]].filter(v=>typeof v==="number");
-  if(!arr.length) return null;
-  return arr.reduce((a,b)=>a+b,0) / arr.length;
+  return arr.length ? arr.reduce((a,b)=>a+b,0) / arr.length : null;
 }
 
-/* render stats */
-function render(p){
+/* ---------- RENDER ---------- */
+function renderRaw(raw){
+  const p = normalize(raw);
   lastStats = p;
 
-  const mspt = p?.tps?.mspt ?? p.mspt ?? null;
+  const mspt = p.mspt ?? null;
   const tpsAvg = avgTps(p.tps);
   const tps1m = p?.tps?.["1m"];
   const online = (p?.players?.online ?? null);
@@ -414,24 +393,28 @@ function render(p){
   if(typeof tps1m==="number"){ tpsSeries.push(tps1m); if(tpsSeries.length>60) tpsSeries.shift(); }
   drawSparkline(document.getElementById("tpsChart"), tpsSeries);
 
-  // Таблица игроков
+  // Игроки
   applyPlayersTable(playersArr);
 
-  // Таблица миров
+  // Миры
   const wt = document.getElementById("tbl-worlds");
   const worlds = p.worlds||[];
   wt.innerHTML = worlds.length ? worlds.map(w=>`
     <tr>
       <td>${w.name}</td>
       <td>${w.type||""}</td>
-      <td>${(w.tps||[]).join(", ")}</td>
-      <td>${w.players??""}</td>
-      <td>${w.loadedChunks??""}</td>
-      <td>${w.spawn?`${w.spawn.x},${w.spawn.y},${w.spawn.z}`:""}</td>
+      <td>${Array.isArray(w.tps)? w.tps.join(", ") : ""}</td>
+      <td>${w.players ?? ""}</td>
+      <td>${w.loadedChunks ?? ""}</td>
+      <td>${w.entities ?? ""}</td>
+      <td>${w.view_distance ?? ""}</td>
+      <td>${w.simulation_distance ?? ""}</td>
+      <td>${w.spawn?`${w.spawn.x??""},${w.spawn.y??""},${w.spawn.z??""}`:""}</td>
     </tr>
-  `).join("") : `<tr><td colspan="6" class="text-secondary">нет данных</td></tr>`;
+  `).join("") : `<tr><td colspan="9" class="text-secondary">нет данных</td></tr>`;
 }
 
+/* фильтр игроков */
 function applyPlayersTable(playersArr){
   const q = document.getElementById("players-filter").value.trim().toLowerCase();
   const filtered = !q ? playersArr : playersArr.filter(p =>
@@ -439,43 +422,31 @@ function applyPlayersTable(playersArr){
   );
   const pt = document.getElementById("tbl-players");
   pt.innerHTML = filtered.length ? filtered.map(pl=>`
-    <tr><td>${pl.name}</td><td class="small">${pl.uuid||""}</td><td>${pl.world||""}</td></tr>
-  `).join("") : `<tr><td colspan="3" class="text-secondary">нет данных</td></tr>`;
+    <tr>
+      <td>${pl.name}</td>
+      <td class="small">${pl.uuid||""}</td>
+      <td>${pl.world||""}</td>
+      <td>${pl.ping ?? ""}</td>
+      <td>${pl.lp_primary ?? ""}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" class="text-secondary">нет данных</td></tr>`;
 }
 
-/* polling stats (race-safe, backoff) */
-let backoffMs = 0;
+/* ---------- polling (race-safe) ---------- */
 async function fetchStats(){
-  // отменяем предыдущий запрос, чтобы не было гонок
   try{ fetchAbort?.abort(); }catch{}
   fetchAbort = new AbortController();
-  const started = performance.now();
+  const t0 = performance.now();
   try{
-    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`, {
-      cache:"no-store", signal: fetchAbort.signal
-    });
+    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`, {cache:"no-store", signal:fetchAbort.signal});
     const j = await r.json();
-    if(!j.ok){ setStatusBadge("offline"); backoff(true); return; }
-    render(j.data||{});
-    const ping = Math.max(0, Math.round(performance.now()-started));
-    setLatency(ping);
-    backoff(false);
-  }catch(e){
-    if(e.name !== 'AbortError'){
-      setStatusBadge("offline");
-      backoff(true);
-    }
-  }
-}
-function backoff(isErr){
-  if(isErr){
-    backoffMs = Math.min(15000, (backoffMs||1000)*1.6);
-  }else{
-    backoffMs = 0;
-  }
+    if(!j.ok){ setStatusBadge("offline"); return; }
+    renderRaw(j.data||{});
+    setLatency(Math.max(0, Math.round(performance.now()-t0)));
+  }catch(e){ if(e.name!=='AbortError'){ setStatusBadge("offline"); } }
 }
 
-/* players modal */
+/* ---------- players modal ---------- */
 function openPlayersModal(){
   const list = document.getElementById("players-list");
   list.innerHTML = "";
@@ -492,7 +463,7 @@ function openPlayersModal(){
         <img class="player-head" width="32" height="32" src="${headSrc}" alt="">
         <div class="flex-grow-1">
           <div class="text-light">${p.name}</div>
-          <div class="small text-secondary">${uuid}${p.world? " · "+p.world : ""}</div>
+          <div class="small text-secondary">${uuid}${p.world? " · "+p.world : ""}${typeof p.ping==="number" ? " · "+p.ping+"ms":""}${p.lp_primary? " · "+p.lp_primary:""}</div>
         </div>`;
       list.appendChild(row);
     }
@@ -500,26 +471,16 @@ function openPlayersModal(){
   bootstrap.Modal.getOrCreateInstance(document.getElementById('playersModal')).show();
 }
 
-/* ---------- SSE: live console with meta in query ---------- */
+/* ---------- SSE console (query meta) ---------- */
 function sseQuery(){
   const c = clientMeta();
-  const sp = new URLSearchParams({
-    realm,
-    tz: c.tz || "",
-    of: String(c.tzOffsetMin ?? ""),
-    lang: c.lang || "",
-    vp: c.vp || "",
-    sc: c.sc || "",
-    vis: c.vis || ""
-  });
+  const sp = new URLSearchParams({ realm, tz:c.tz||"", of:String(c.tzOffsetMin??""), lang:c.lang||"", vp:c.vp||"", sc:c.sc||"", vis:c.vis||"" });
   return sp.toString();
 }
 function appendLine(line){
   const pre = document.getElementById('console-log');
   pre.textContent += (pre.textContent?'\n':'') + line;
-  if(document.getElementById('auto-scroll').checked){
-    pre.scrollTop = pre.scrollHeight;
-  }
+  if(document.getElementById('auto-scroll').checked){ pre.scrollTop = pre.scrollHeight; }
 }
 function fmtLine(p){
   const t  = new Date().toLocaleTimeString();
@@ -530,29 +491,25 @@ function fmtLine(p){
 }
 function startLive(){
   if(es) return;
-  esStateEl = document.querySelector('[data-sse="state"]');
+  const st = document.querySelector('[data-sse="state"]');
   const url = `/admin/gameservers/api/console/stream?` + sseQuery();
   es = new EventSource(url);
-  esStateEl.textContent = 'connecting…';
-  es.onopen = ()=>{ esStateEl.textContent = 'connected'; };
+  st.textContent = 'connecting…';
+  es.onopen = ()=>{ st.textContent = 'connected'; };
   es.onmessage = (ev)=>{ try{ appendLine(fmtLine(JSON.parse(ev.data||'{}')));}catch{} };
   es.addEventListener('err', (ev)=>{ appendLine(`[stream] ${ev.data}`); });
-  es.onerror = ()=>{ esStateEl.textContent = 'disconnected'; }; // авто-reconnect от EventSource
+  es.onerror = ()=>{ st.textContent = 'disconnected'; };
 }
-function stopLive(){ try{es?.close();}catch{} es=null; esStateEl && (esStateEl.textContent='stopped'); }
+function stopLive(){ try{es?.close();}catch{} es=null; document.querySelector('[data-sse="state"]').textContent='stopped'; }
 
-/* ---------- POST helpers that attach client meta ---------- */
+/* ---------- POST helper (with meta) ---------- */
 async function postJSON(url, obj){
   const c = clientMeta();
-  const r = await fetch(url, {
-    method:"POST",
-    headers: clientHeaders(c),
-    body: JSON.stringify({...obj, client: c})
-  });
+  const r = await fetch(url, { method:"POST", headers:clientHeaders(c), body: JSON.stringify({...obj, client:c}) });
   return r.json();
 }
 
-/* console: history + send */
+/* ---------- console send + history ---------- */
 function pushHistory(cmd){
   if(!cmd) return;
   const key = `gs_history_${realm}`;
@@ -562,9 +519,7 @@ function pushHistory(cmd){
     localStorage.setItem(key, JSON.stringify(arr.slice(0,50)));
   }catch{}
 }
-function loadHistory(){
-  try{ return JSON.parse(localStorage.getItem(`gs_history_${realm}`) || "[]"); }catch{ return []; }
-}
+function loadHistory(){ try{ return JSON.parse(localStorage.getItem(`gs_history_${realm}`) || "[]"); }catch{ return []; } }
 async function sendCmd(){
   const input = document.getElementById("cmd");
   const cmd = input.value.trim();
@@ -581,43 +536,12 @@ async function sendCmd(){
 }
 function navigateHistory(dir){
   if(!cmdHistory.length) return;
-  if(dir<0){ // up
-    cmdIdx = Math.min(cmdHistory.length-1, cmdIdx+1);
-  }else{
-    cmdIdx = Math.max(-1, cmdIdx-1);
-  }
+  if(dir<0){ cmdIdx = Math.min(cmdHistory.length-1, cmdIdx+1); }
+  else{ cmdIdx = Math.max(-1, cmdIdx-1); }
   document.getElementById("cmd").value = cmdIdx>=0 ? cmdHistory[cmdIdx] : "";
 }
 
-/* maintenance API */
-async function maintToggle(enabled){
-  const msg = document.getElementById("maint-msg").value.trim();
-  const j = await postJSON("/admin/gameservers/api/maintenance", {realm, enabled, kickMessage: msg, message: msg});
-  if (j.ok && enabled) setStatusBadge("maintenance");
-  if (j.ok && !enabled) setStatusBadge("online");
-  toast(j.ok ? (enabled?"Техработы включены":"Техработы отключены") : (j.error||"Ошибка"), j.ok);
-}
-async function wlChange(op){
-  const player = document.getElementById("wl-player").value.trim();
-  if(!player) return;
-  const j = await postJSON("/admin/gameservers/api/maintenance/whitelist", {realm, op, player});
-  toast(j.ok ? `Whitelist: ${op} ${player}` : (j.error||"Ошибка"), j.ok);
-  if (j.ok && op === "add") document.getElementById("wl-player").value = "";
-}
-
-/* sidebar actives */
-const links = Array.from(document.querySelectorAll('.gs-side .nav-link[href^="#"]'));
-const ids = links.map(a => a.getAttribute('href')).filter(Boolean).map(h => h.replace('#',''));
-const obs = new IntersectionObserver((entries)=>{
-  entries.forEach(e=>{
-    const id = e.target.id;
-    const link = links.find(a => a.getAttribute('href') === '#' + id);
-    if(link){ e.isIntersecting ? link.classList.add('active') : link.classList.remove('active'); }
-  });
-},{rootMargin:'-40% 0px -50% 0px', threshold:0.01});
-ids.forEach(id => { const el = document.getElementById(id); if(el) obs.observe(el); });
-
-/* binds + persistence */
+/* ---------- binds ---------- */
 document.getElementById("send").addEventListener("click", sendCmd);
 document.getElementById("cmd").addEventListener("keydown", e=>{
   if((e.ctrlKey||e.metaKey) && e.key==="Enter") return sendCmd();
@@ -640,26 +564,36 @@ document.getElementById("wl-remove").addEventListener("click", ()=>wlChange("rem
 
 document.getElementById("live-toggle").addEventListener("change", e=>{ e.target.checked ? startLive() : stopLive(); });
 document.getElementById("clear-log").addEventListener("click", ()=>{ document.getElementById('console-log').textContent=""; });
-document.getElementById("copy-realm").addEventListener("click", async ()=>{
-  try{ await navigator.clipboard.writeText(realm); toast("Realm скопирован"); }catch{ toast("Не удалось скопировать", false); }
-});
+document.getElementById("copy-realm").addEventListener("click", async ()=>{ try{ await navigator.clipboard.writeText(realm); toast("Realm скопирован"); }catch{ toast("Не удалось скопировать", false); }});
 
 const autoEl = document.getElementById("autorefresh");
 autoEl.checked = (localStorage.getItem(LS_AUTO_KEY) ?? "1") !== "0";
 autoEl.addEventListener("change", e=>{
   clearInterval(timer);
   localStorage.setItem(LS_AUTO_KEY, e.target.checked ? "1" : "0");
-  if(e.target.checked) timer = setInterval(()=> {
-    if(backoffMs && Date.now() < fetchDue) return;
-    fetchDue = Date.now() + backoffMs;
-    fetchStats();
-  }, 3000);
+  if(e.target.checked) timer = setInterval(fetchStats, 3000);
 });
 
-/* init */
+/* ---------- maintenance API ---------- */
+async function maintToggle(enabled){
+  const msg = document.getElementById("maint-msg").value.trim();
+  const j = await postJSON("/admin/gameservers/api/maintenance", {realm, enabled, kickMessage: msg, message: msg});
+  if (j.ok && enabled) setStatusBadge("maintenance");
+  if (j.ok && !enabled) setStatusBadge("online");
+  toast(j.ok ? (enabled?"Техработы включены":"Техработы отключены") : (j.error||"Ошибка"), j.ok);
+}
+async function wlChange(op){
+  const player = document.getElementById("wl-player").value.trim();
+  if(!player) return;
+  const j = await postJSON("/admin/gameservers/api/maintenance/whitelist", {realm, op, player});
+  toast(j.ok ? `Whitelist: ${op} ${player}` : (j.error||"Ошибка"), j.ok);
+  if (j.ok && op === "add") document.getElementById("wl-player").value = "";
+}
+
+/* ---------- init ---------- */
 cmdHistory = loadHistory();
 fetchStats();
 if(autoEl.checked) timer = setInterval(fetchStats, 3000);
-startLive(); // по умолчанию включён
+startLive();
 </script>
 {% endblock %}
