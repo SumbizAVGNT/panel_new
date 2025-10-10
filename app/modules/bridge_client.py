@@ -11,6 +11,7 @@ from logging import Logger
 from typing import Any, Dict, Optional, Sequence
 
 import websockets
+from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 # -------- конфиг --------
 BRIDGE_URL: str = os.getenv("SP_BRIDGE_URL", "ws://127.0.0.1:8765/ws")
@@ -24,16 +25,13 @@ def _setup_logger() -> Logger:
     level = getattr(logging, level_name, logging.INFO)
     log = logging.getLogger("bridge_client")
     if log.handlers:
-        # уже инициализирован (например, через gunicorn/flask)
         log.setLevel(level)
         return log
 
-    # Формат: либо JSON, либо краткий текстовый
     json_mode = (os.getenv("SP_LOG_JSON") or "").lower() in ("1", "true", "yes", "y", "on")
 
     handler = logging.StreamHandler()
     if json_mode:
-        # Простой JSON-формат без сторонних зависимостей
         class JsonFormatter(logging.Formatter):
             def format(self, record: logging.LogRecord) -> str:
                 obj = {
@@ -124,7 +122,6 @@ async def _connect():
     Устанавливает одноразовое подключение к бриджу.
     По умолчанию совпадает с настройками сервера (ping, max_size).
     """
-    headers = {"Authorization": "Bearer <hidden>"}
     _log.info("ws.connect: url=%s, timeout=%s, max_size=%s", BRIDGE_URL, BRIDGE_TIMEOUT, BRIDGE_MAX_SIZE)
     try:
         ws = await asyncio.wait_for(
@@ -145,13 +142,11 @@ async def _connect():
 
 
 async def _graceful_close(ws, code: int = 1000, reason: str = "ok") -> None:
-    try:
+    with contextlib.suppress(Exception):
         await ws.close(code=code, reason=reason)
         if hasattr(ws, "wait_closed"):
             await ws.wait_closed()
         _log.debug("ws.close: code=%s reason=%s", code, reason)
-    except Exception:
-        _log.exception("ws.close: failed")
 
 
 async def _recv_with_timeout(ws, timeout: float) -> Dict[str, Any]:
@@ -159,6 +154,12 @@ async def _recv_with_timeout(ws, timeout: float) -> Dict[str, Any]:
         raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
     except asyncio.TimeoutError:
         _log.warning("ws.recv: timeout after %.2fs", timeout)
+        raise
+    except (ConnectionClosedOK, ConnectionClosedError):
+        _log.info("ws.recv: connection closed by peer")
+        raise
+    except asyncio.CancelledError:
+        _log.info("ws.recv: cancelled")
         raise
     if isinstance(raw, (bytes, bytearray)):
         _log.debug("ws.recv: binary frame len=%d", len(raw))
@@ -182,7 +183,6 @@ async def _send_and_wait(
     ws = await _connect()
     try:
         payload_for_log = dict(message)
-        # не логируем токены
         if "headers" in payload_for_log:
             payload_for_log["headers"] = "<hidden>"
         _log.info("ws.send: %s", _safe_trunc(payload_for_log))
@@ -193,7 +193,6 @@ async def _send_and_wait(
             _log.info("ws.wait: first-frame type=%s", obj.get("type"))
             return obj
 
-        # ждём пока не прилетит один из ожидаемых типов
         while True:
             obj = await _recv_with_timeout(ws, timeout)
             t = obj.get("type")
@@ -221,7 +220,8 @@ async def _send_only(message: Dict[str, Any]) -> None:
     try:
         _log.info("ws.send-only: %s", _safe_trunc(message))
         await ws.send(json.dumps(message, ensure_ascii=False))
-        with contextlib.suppress(asyncio.TimeoutError):
+        # короткая уступка планировщику, при отмене — спокойно выходим
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
             await asyncio.wait_for(asyncio.sleep(0.02), timeout=0.05)
     finally:
         await _graceful_close(ws)
@@ -238,7 +238,6 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
         _log.warning("normalize_stats: unexpected frame type=%s", obj.get("type"))
         return {"type": "bridge.error", "error": "not_stats_frame", "payload": {}}
 
-    # Одни плагины кладут данные в data, другие — в payload
     d = obj.get("data") or obj.get("payload") or {}
     realm = d.get("realm") or obj.get("realm")
     plugins = d.get("plugins") or {}
@@ -289,7 +288,7 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
                 "process": d.get("cpu_process_load"),
             },
         },
-        "plugins": plugins,  # dict: {name: version}
+        "plugins": plugins,
     }
 
 
@@ -300,7 +299,6 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
 def bridge_ping() -> Dict[str, Any]:
     """
     Пинг через доступный метод сервера: bridge.list -> bridge.list.result.
-    (В bridge.py нет отдельной обработки 'bridge.ping'.)
     """
     try:
         return _run(_send_and_wait({"type": "bridge.list"}, expect_types=("bridge.list.result",)))
