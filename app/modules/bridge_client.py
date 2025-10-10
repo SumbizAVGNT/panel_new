@@ -9,7 +9,7 @@ import threading
 import logging
 from logging import Logger
 from typing import Any, Dict, Optional, Sequence, Iterable, Union
-
+from typing import Iterable, Union, List, Dict, Any, Tuple, TYPE_CHECKING
 import websockets
 
 # -------- конфиг --------
@@ -431,59 +431,132 @@ def _is_seq_of_users(x: Union[str, Iterable[str]]) -> bool:
         return False
 
 
-def maintenance_whitelist(
-    realm: str,
-    op: str,
-    user_or_users: Union[str, Iterable[str], None],
-) -> Dict[str, Any]:
+if TYPE_CHECKING:
+    # только для линтера/IDE; во время исполнения не импортируется
+    from .bridge_client import ws_send_and_wait as _ws_send_and_wait_typed
+
+def _ws_call(payload: Dict[str, Any], expect: Tuple[str, ...]) -> Dict[str, Any]:
     """
-    Управление whitelist в режиме техработ.
-    Ждём именно кадр `maintenance.whitelist` (а не первый ACK), чтобы вернуть
-    подтверждение в UI (включая актуальный size и user).
+    Унифицированный вызов ws_send_and_wait без круговых импортов и красноты в линтере.
     """
-    action = _normalize_op(op)
-
-    payload: Dict[str, Any] = {"realm": realm, "action": action, "op": action}
-
-    if user_or_users is None:
-        # ничего не передали — это эквивалент list
-        payload["action"] = "list"
-        payload["op"] = "list"
-    else:
-        # поддержка и одиночного, и массива
-        if _is_seq_of_users(user_or_users):
-            users = [str(u).strip() for u in user_or_users if str(u or "").strip()]
-            payload["users"] = users
-            payload["players"] = list(users)  # дублируем для совместимости
-            if users:
-                payload["user"] = users[0]
-                payload["player"] = users[0]
-        else:
-            user = str(user_or_users or "").strip()
-            payload["user"] = user
-            payload["player"] = user
-
-    obj = {"type": "maintenance.whitelist", "realm": realm, "payload": payload}
-
     try:
-        # ВАЖНО: ждём именно maintenance.whitelist, пропуская bridge.ack
-        return _run(_send_and_wait(obj, expect_types=("maintenance.whitelist",), realm=realm))
-    except Exception as e:
-        _log.exception("maintenance_whitelist failed: realm=%s", realm)
-        return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, **payload}}
+        # если функция в том же модуле — используем напрямую
+        return ws_send_and_wait(payload, expect=expect)  # type: ignore[name-defined]
+    except NameError:
+        # если функция в другом модуле — мягко импортируем локально
+        from .bridge_client import ws_send_and_wait as _real  # корректируй путь при необходимости
+        return _real(payload, expect=expect)
+
+
+def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str], None]) -> Dict[str, Any]:
+    """
+    Отправить изменения whitelist в плагин Maintenance.
+
+    op: "add" | "remove" | "list"
+    players: str (ник/uuid) или Iterable[str] или None (для "list")
+
+    Возвращает агрегированный словарь:
+      {
+        "type": "maintenance.whitelist",
+        "ok": True/False,
+        "data": {
+          "realm": <realm>,
+          "action": <add/remove/list>,
+          "users": [...],         # для add/remove
+          "applied": <int>,       # сколько успешно применено (по ack/event)
+          "size": <int>           # == len(users)
+        },
+        "errors": [ {"user": "...", "error": "..."} ]  # если были ошибки/bridge.error
+      }
+    """
+    action = (op or "").strip().lower()
+    if action not in ("add", "remove", "list"):
+        raise ValueError("op must be add|remove|list")
+
+    # нормализуем вход
+    if isinstance(players, (list, tuple, set)):
+        users: List[str] = [str(x).strip() for x in players if str(x or "").strip()]
+    elif isinstance(players, str):
+        users = [players.strip()] if players.strip() else []
+    else:
+        users = []
+
+    # list-запрос (без user)
+    if action == "list":
+        payload = {
+            "type": "maintenance.whitelist",
+            "realm": realm,
+            "payload": {"realm": realm, "action": "list"}
+        }
+        resp = _ws_call(payload, expect=("maintenance.whitelist", "bridge.ack", "bridge.error"))
+        ok = isinstance(resp, dict) and resp.get("type") in ("maintenance.whitelist", "bridge.ack")
+        return {
+            "type": "maintenance.whitelist",
+            "ok": bool(ok),
+            "data": {"realm": realm, "action": "list", "users": [], "applied": 0, "size": 0},
+            "raw": resp if isinstance(resp, dict) else {"type": "unknown"}
+        }
+
+    # add/remove: по одному кадру на пользователя
+    results: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    applied = 0
+
+    for u in users:
+        payload = {
+            "type": "maintenance.whitelist",
+            "realm": realm,
+            "payload": {
+                "realm": realm,
+                "action": action,   # важно: плагин читает именно "action" и "user"
+                "user": u
+            }
+        }
+        resp = _ws_call(payload, expect=("maintenance.whitelist", "bridge.ack", "bridge.error"))
+
+        # обработка ответов
+        if isinstance(resp, dict) and resp.get("type") == "bridge.error":
+            errors.append({"user": u, "error": resp.get("error") or "bridge error"})
+            results.append({"user": u, "ok": False, "source": "error", "raw": resp})
+            continue
+
+        if isinstance(resp, dict) and resp.get("type") in ("maintenance.whitelist", "bridge.ack"):
+            applied += 1
+            results.append({
+                "user": u,
+                "ok": True,
+                "source": resp.get("type"),
+                "data": resp.get("data") or resp.get("payload") or {}
+            })
+        else:
+            # непредвиденный формат — считаем успехом «по умолчанию», но пометим raw
+            applied += 1
+            results.append({"user": u, "ok": True, "source": "raw", "raw": resp})
+
+    agg: Dict[str, Any] = {
+        "type": "maintenance.whitelist",
+        "ok": applied == len(users) and not errors,   # все применены и нет ошибок
+        "data": {
+            "realm": realm,
+            "action": action,
+            "users": users,
+            "applied": applied,
+            "size": len(users),
+        }
+    }
+    if errors:
+        agg["errors"] = errors
+    return agg
 
 
 def maintenance_whitelist_add(realm: str, user: str) -> Dict[str, Any]:
     return maintenance_whitelist(realm, "add", user)
 
-
 def maintenance_whitelist_remove(realm: str, user: str) -> Dict[str, Any]:
     return maintenance_whitelist(realm, "remove", user)
 
-
 def maintenance_whitelist_add_many(realm: str, users: Iterable[str]) -> Dict[str, Any]:
     return maintenance_whitelist(realm, "add", users)
-
 
 def maintenance_whitelist_remove_many(realm: str, users: Iterable[str]) -> Dict[str, Any]:
     return maintenance_whitelist(realm, "remove", users)
