@@ -3,65 +3,88 @@
 
 {% block content %}
 <style>
-/* ——— (тот же стиль, как в предыдущей версии; укоротил, но функционально без изменений) ——— */
-:root{--bg:#0b1220;--card:rgba(13,17,23,.55);--border:rgba(148,163,184,.18);--border-strong:rgba(148,163,184,.28);--muted:#94a3b8;--text:#e5e7eb;--text-dim:#cbd5e1;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444}
-.container-xxl.gs-scope{background:radial-gradient(700px 360px at 50% -12%, rgba(148,163,184,.10), transparent 70%),linear-gradient(180deg, rgba(13,17,23,.55), rgba(13,17,23,.42));border:1px solid var(--border);border-radius:18px}
-.gs-layout{display:grid;grid-template-columns:300px 1fr;gap:16px}@media (max-width:992px){.gs-layout{grid-template-columns:1fr}}
-.card.glass{background:var(--card);border:1px solid var(--border);backdrop-filter:blur(8px)}
-.table>:not(caption)>*>*{background:transparent;color:var(--text)}
+.container-xxl.gs-scope{
+  background:
+    radial-gradient(700px 360px at 50% -12%, rgba(148,163,184,.10), transparent 70%),
+    linear-gradient(180deg, rgba(13,17,23,.55), rgba(13,17,23,.42));
+  border:1px solid rgba(148,163,184,.14);
+  border-radius:18px;
+}
+.gs-layout{display:grid;grid-template-columns:300px 1fr;gap:16px}
+@media (max-width:992px){.gs-layout{grid-template-columns:1fr}}
+.card.glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px)}
+.table>:not(caption)>*>*{background:transparent}
+
+/* side */
 .gs-side{position:sticky;top:76px;align-self:start}
-.gs-side .nav-link{border:1px solid var(--border);border-radius:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;color:var(--text)}
+.gs-side .nav-link{border:1px solid rgba(148,163,184,.18);border-radius:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .gs-side .nav-link .dot{width:6px;height:6px;border-radius:999px;background:rgba(148,163,184,.5)}
-.gs-side .nav-link.active{background:#0f172a;box-shadow:inset 0 0 0 1px var(--border-strong)}
-.gs-side .nav-link.active .dot{background:var(--ok)}
-.tile{position:relative;isolation:isolate;display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:14px;border:1px solid var(--border);background:var(--card)}
-.tile[data-click]{cursor:pointer}.tile:before{content:"";position:absolute;inset:-1px;border-radius:14px;z-index:-1;background:radial-gradient(260px 140px at 0% 0%, rgba(56,189,248,.20), transparent 70%),radial-gradient(260px 140px at 100% 100%, rgba(34,197,94,.12), transparent 70%);opacity:.28;transition:.2s}.tile:hover:before{opacity:.5}
-.tcap{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.kpi .value{font-size:1.25rem}.badge-cap{padding:.35rem .6rem;border-radius:999px}
+.gs-side .nav-link.active{background:#0f172a;box-shadow:inset 0 0 0 1px rgba(148,163,184,.28)}
+.gs-side .nav-link.active .dot{background:#22c55e}
+
+/* tiles */
+.tile{position:relative;isolation:isolate;display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(13,17,23,.55)}
+.tile[data-click]{cursor:pointer}
+.tile:before{content:"";position:absolute;inset:-1px;border-radius:14px;z-index:-1;background:
+  radial-gradient(260px 140px at 0% 0%, rgba(56,189,248,.20), transparent 70%),
+  radial-gradient(260px 140px at 100% 100%, rgba(34,197,94,.12), transparent 70%);opacity:.28;transition:.2s}
+.tile:hover:before{opacity:.5}
+.tcap{font-size:.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+.kpi .value{font-size:1.25rem}
+.badge-cap{padding:.35rem .6rem;border-radius:999px}
+
+/* maintenance card */
 .maint-card .head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
-.stat-dot{display:inline-flex;align-items:center;gap:6px;font-size:.86rem;color:var(--text-dim)}
-.stat-dot .d{width:8px;height:8px;border-radius:999px;background:#475569}.stat-dot.m .d{background:var(--warn)}.stat-dot.o .d{background:var(--ok)}
-.ctrlbar{display:flex;flex-wrap:wrap;gap:10px}.ctrl{display:flex;align-items:center;background:rgba(15,23,42,.55);border:1px solid var(--border);border-radius:12px;overflow:hidden}
-.ctrl .label{display:flex;align-items:center;gap:6px;padding:0 10px;color:var(--text-dim);border-right:1px solid var(--border)}
-.ctrl input{border:0;background:transparent;color:var(--text);outline:0;width:280px;min-width:160px}.ctrl .btn{border:0}
-.ctrl .btn-start{background:var(--warn);color:#111827}.ctrl .btn-stop{background:transparent;border-left:1px solid var(--border);color:var(--text)}
-.ctrl .btn:hover{filter:brightness(1.05)}.ctrl .btn:active{transform:translateY(1px)}
-.ctrl .btn,.ctrl .label,.ctrl input{height:36px}.ctrl.wl input{width:200px}
-.console-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:8px}.switchx{display:flex;align-items:center;gap:6px;font-size:.9rem}
-pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-radius:10px;padding:10px;border:1px solid var(--border);white-space:pre-wrap;color:#d1d5db}
+.stat-dot{display:inline-flex;align-items:center;gap:6px;font-size:.86rem}
+.stat-dot .d{width:8px;height:8px;border-radius:999px;background:#475569}
+.stat-dot.m .d{background:#f59e0b}
+.stat-dot.o .d{background:#22c55e}
+.ctrlbar{display:flex;flex-wrap:wrap;gap:10px}
+.ctrl{display:flex;align-items:center;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);border-radius:12px;overflow:hidden}
+.ctrl .label{display:flex;align-items:center;gap:6px;padding:0 10px;color:#cbd5e1;border-right:1px solid rgba(148,163,184,.18)}
+.ctrl input{border:0;background:transparent;color:#e5e7eb;outline:0;width:280px;min-width:160px}
+.ctrl .btn{border:0}
+.ctrl .btn-start{background:#f59e0b;color:#111827}
+.ctrl .btn-stop{background:transparent;border-left:1px solid rgba(148,163,184,.18);color:#e5e7eb}
+.ctrl .btn:hover{filter:brightness(1.05)}
+.ctrl .btn:active{transform:translateY(1px)}
+.ctrl .btn, .ctrl .label, .ctrl input{height:36px}
+.ctrl.wl input{width:200px}
+
+/* console */
+.console-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.switchx{display:flex;align-items:center;gap:6px;font-size:.9rem}
+pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-radius:10px;padding:10px;border:1px solid rgba(148,163,184,.18);white-space:pre-wrap}
+
+/* players */
 .player-head{width:32px;height:32px;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.5);image-rendering:pixelated}
-.player-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px}.player-row:hover{background:rgba(148,163,184,.06)}
+.player-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px}
+.player-row:hover{background:rgba(148,163,184,.06)}
+
+/* skeletons + toasts */
 .skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
 .skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg, transparent, rgba(255,255,255,.07), transparent);transform:translateX(-100%);animation:shimmer 1.2s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
 #toasts{position:fixed;right:16px;bottom:16px;z-index:1080;display:flex;flex-direction:column;gap:8px}
-.toastx{background:rgba(13,17,23,.96);border:1px solid var(--border-strong);color:#e2e8f0;padding:10px 12px;border-radius:12px}
-.toastx.ok{border-color:rgba(34,197,94,.6)}.toastx.err{border-color:rgba(239,68,68,.6)}
-.badge-online{background:var(--ok)}.badge-maint{background:var(--warn)}.badge-off{background:var(--err)}.badge-unknown{background:#64748b}
-.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
-.form-text{color:var(--muted)}.code-chip{padding:.2rem .4rem;border:1px solid var(--border);border-radius:6px;background:rgba(15,23,42,.55);font-family:ui-monospace,Menlo,Consolas,monospace}
+.toastx{background:rgba(13,17,23,.96);border:1px solid rgba(148,163,184,.28);color:#e2e8f0;padding:10px 12px;border-radius:12px}
+.toastx.ok{border-color:rgba(34,197,94,.6)}
+.toastx.err{border-color:rgba(239,68,68,.6)}
 </style>
 
 <div class="container-xxl gs-scope py-4" data-realm="{{ realm }}">
   <!-- header -->
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div class="d-flex align-items-center gap-3">
-      <div class="rounded-circle" style="width:42px;height:42px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:rgba(15,23,42,.6)">
-        <i class="bi bi-hdd-network text-info" aria-hidden="true"></i>
+      <div class="rounded-circle" style="width:42px;height:42px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6)">
+        <i class="bi bi-hdd-network text-info"></i>
       </div>
       <div>
         <h2 class="m-0">{{ realm|capitalize }}</h2>
-        <div class="text-secondary small">
-          Minecraft (Paper) · realm:
-          <button id="copy-realm" class="code-chip btn btn-sm btn-ghost p-1" title="Copy realm" aria-label="Copy realm">
-            <code class="text-light">{{ realm }}</code>
-            <i class="bi bi-clipboard ms-1"></i>
-          </button>
-        </div>
+        <div class="text-secondary small">Minecraft (Paper) · realm: <code class="text-light">{{ realm }}</code></div>
       </div>
     </div>
     <div class="d-flex align-items-center gap-2">
-      <span id="status-badge" class="badge badge-cap badge-unknown"><i class="bi bi-activity me-1"></i>unknown</span>
-      <small id="latency" class="text-secondary ms-1">ping: —</small>
+      <span id="status-badge" class="badge badge-cap bg-secondary"><i class="bi bi-activity me-1"></i>unknown</span>
       <div class="form-check form-switch ms-2">
         <input class="form-check-input" type="checkbox" id="autorefresh">
         <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
@@ -73,7 +96,7 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
 
   <div class="gs-layout">
     <!-- sidebar -->
-    <aside class="gs-side" aria-label="Навигация по разделам">
+    <aside class="gs-side">
       <div class="card glass p-2">
         {% set sections = [('overview','Overview'),('maintenance','Maintenance'),('players','Players'),('worlds','Worlds'),('console','Console')] %}
         {% for key, title in sections %}
@@ -89,13 +112,9 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
     <main class="gs-main">
 
       <!-- overview -->
-      <section id="overview" class="card glass mb-3" aria-labelledby="ov-title">
+      <section id="overview" class="card glass mb-3">
         <div class="card-body">
-          <div class="d-flex align-items-center justify-content-between">
-            <h5 id="ov-title" class="m-0">Overview</h5>
-            <small id="conn-state" class="text-secondary">SSE: <span data-sse="state">connecting…</span></small>
-          </div>
-          <div class="row g-3 mt-1">
+          <div class="row g-3">
             <div class="col-6 col-md-3">
               <div class="tile">
                 <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-speedometer2"></i> MSPT</div>
@@ -127,32 +146,32 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
           </div>
 
           <div class="mt-3">
-            <canvas id="tpsChart" height="92" role="img" aria-label="Последние значения TPS"></canvas>
-            <div class="form-text">Мини-график последних значений TPS (1m). Авто-масштаб.</div>
+            <canvas id="tpsChart" height="92"></canvas>
+            <div class="form-text">Мини-график последних значений TPS (1m).</div>
           </div>
         </div>
       </section>
 
       <!-- maintenance -->
-      <section id="maintenance" class="card glass mb-3 maint-card" aria-labelledby="m-title">
+      <section id="maintenance" class="card glass mb-3 maint-card">
         <div class="card-body">
           <div class="head">
-            <h5 id="m-title" class="m-0 d-flex align-items-center gap-2">
+            <h5 class="m-0 d-flex align-items-center gap-2">
               <i class="bi bi-cone-striped text-warning"></i> Maintenance
             </h5>
             <div id="maint-state" class="stat-dot o"><span class="d"></span><span>state: online</span></div>
           </div>
 
           <div class="ctrlbar">
-            <div class="ctrl" role="group" aria-label="Maintenance toggle">
+            <div class="ctrl">
               <div class="label"><i class="bi bi-tools"></i> Technical work</div>
-              <input id="maint-msg" placeholder="Kick message (optional)" aria-label="Kick message">
+              <input id="maint-msg" placeholder="Kick message (optional)">
               <button id="maint-on"  class="btn btn-start"><i class="bi bi-play-fill me-1"></i>Start</button>
               <button id="maint-off" class="btn btn-stop"><i class="bi bi-stop-fill me-1"></i>Stop</button>
             </div>
-            <div class="ctrl wl" role="group" aria-label="Whitelist">
+            <div class="ctrl wl">
               <div class="label"><i class="bi bi-shield-check"></i> Whitelist</div>
-              <input id="wl-player" placeholder="Player" aria-label="Player name">
+              <input id="wl-player" placeholder="Player">
               <button id="wl-add"    class="btn btn-stop"><i class="bi bi-plus-lg me-1"></i>Add</button>
               <button id="wl-remove" class="btn btn-stop" style="color:#fca5a5"><i class="bi bi-dash-lg me-1"></i>Remove</button>
             </div>
@@ -161,15 +180,15 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
       </section>
 
       <!-- players -->
-      <section id="players" class="card glass mb-3" aria-labelledby="p-title">
+      <section id="players" class="card glass mb-3">
         <div class="card-body">
-          <div class="d-flex align-items-center justify-content-between mb-2">
-            <h5 id="p-title" class="m-0">Игроки</h5>
-            <input id="players-filter" class="form-control form-control-sm" style="max-width:220px" placeholder="Поиск по нику/UUID" aria-label="Поиск игроков">
+          <div class="d-flex align-items-center justify-content-between">
+            <h5 class="mb-3">Игроки</h5>
+            <input class="form-control form-control-sm" style="max-width:260px" id="players-filter" placeholder="Поиск по нику/UUID">
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-              <thead><tr><th>Ник</th><th>UUID</th><th>Мир</th><th>Пинг</th><th>Группа</th></tr></thead>
+              <thead><tr><th>Ник</th><th>UUID</th><th>Мир</th><th class="text-end">Пинг</th><th>Группа</th></tr></thead>
               <tbody id="tbl-players"><tr><td colspan="5" class="text-secondary">нет данных</td></tr></tbody>
             </table>
           </div>
@@ -177,15 +196,14 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
       </section>
 
       <!-- worlds -->
-      <section id="worlds" class="card glass mb-3" aria-labelledby="w-title">
+      <section id="worlds" class="card glass mb-3">
         <div class="card-body">
-          <h5 id="w-title" class="mb-3">Миры</h5>
+          <h5 class="mb-3">Миры</h5>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
               <thead>
                 <tr>
-                  <th>Мир</th><th>Тип</th><th>TPS</th>
-                  <th>Игроки</th><th>Чанки</th><th>Сущности</th>
+                  <th>Мир</th><th>Тип</th><th>TPS</th><th>Игроки</th><th>Чанки</th><th>Сущности</th>
                   <th>View</th><th>Sim</th><th>Spawn</th>
                 </tr>
               </thead>
@@ -196,9 +214,9 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
       </section>
 
       <!-- console -->
-      <section id="console" class="card glass" aria-labelledby="c-title">
+      <section id="console" class="card glass">
         <div class="card-body">
-          <h5 id="c-title" class="mb-3">Консоль</h5>
+          <h5 class="mb-3">Консоль</h5>
 
           <div class="console-toolbar">
             <div class="switchx">
@@ -210,13 +228,12 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
               <label for="auto-scroll" class="form-check-label">Autoscroll</label>
             </div>
             <button id="clear-log" class="btn btn-sm btn-outline-light"><i class="bi bi-eraser"></i> Clear</button>
-            <small class="text-secondary ms-auto">Шорткаты: <span class="code-chip">/</span> фокус · <span class="code-chip">↑/↓</span> история · <span class="code-chip">Ctrl/⌘+Enter</span> отправить</small>
           </div>
 
-          <pre class="console" id="console-log" aria-live="polite">// connecting…</pre>
+          <pre class="console" id="console-log">// connecting…</pre>
 
           <div class="input-group mt-2">
-            <input id="cmd" class="form-control" placeholder="say Hello from MoonRein" aria-label="Команда для консоли">
+            <input id="cmd" class="form-control" placeholder="say Hello from MoonRein">
             <button id="send" class="btn btn-primary"><i class="bi bi-send"></i> Отправить</button>
           </div>
           <div id="console-status" class="small text-muted mt-1"></div>
@@ -253,23 +270,34 @@ pre.console{max-height:360px;overflow:auto;background:rgba(15,23,42,.44);border-
 const realm = document.querySelector("[data-realm]").dataset.realm;
 const LS_AUTO_KEY = `gs_auto_${realm}`;
 let tpsSeries = [], timer = null, lastStats = null;
-let es=null, esStateEl=null, fetchAbort=null;
-let cmdHistory=[], cmdIdx=-1;
 
-/* ---------- meta + headers ---------- */
+/* ---------- client meta ---------- */
 function clientMeta(){
   const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || "");
-  const tzOffsetMin = -new Date().getTimezoneOffset();
+  const tzOffsetMin = -new Date().getTimezoneOffset(); // east-positive
   const lang = (navigator.language || "");
   const dpr = (window.devicePixelRatio || 1);
   const vp = `${window.innerWidth}x${window.innerHeight}@${dpr}`;
   const sc = (screen && `${screen.width}x${screen.height}`) || "";
   const vis = (document.visibilityState || "");
-  return {tz, tzOffsetMin, lang, vp, sc, vis, ua:navigator.userAgent||"", ref:document.referrer||"", page:location.pathname+location.search, ts:Date.now()};
+  return {
+    tz, tzOffsetMin, lang, vp, sc, vis,
+    ua: navigator.userAgent || "",
+    ref: document.referrer || "",
+    page: location.pathname + location.search,
+    ts: Date.now()
+  };
 }
-function clientHeaders(c){ return {"Content-Type":"application/json","X-Client-TZ":c.tz||"","X-Client-Of":String(c.tzOffsetMin??""),"X-Client-Lang":c.lang||""}; }
+function clientHeaders(c){
+  return {
+    "Content-Type":"application/json",
+    "X-Client-TZ": c.tz || "",
+    "X-Client-Of": String(c.tzOffsetMin ?? ""),
+    "X-Client-Lang": c.lang || ""
+  };
+}
 
-/* ---------- UI helpers ---------- */
+/* toasts */
 function toast(msg, ok=true){
   const wrap = document.getElementById('toasts');
   const el = document.createElement('div');
@@ -278,13 +306,15 @@ function toast(msg, ok=true){
   wrap.appendChild(el);
   setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2200);
 }
+
+/* status */
 function setStatusBadge(state){
   const el = document.getElementById("status-badge");
-  el.classList.remove("badge-online","badge-maint","badge-off","badge-unknown");
-  if(state==="online") el.classList.add("badge-online");
-  else if(state==="maintenance") el.classList.add("badge-maint");
-  else if(state==="offline") el.classList.add("badge-off");
-  else el.classList.add("badge-unknown");
+  el.classList.remove("bg-success","bg-warning","bg-danger","bg-secondary");
+  if(state==="online") el.classList.add("bg-success");
+  else if(state==="maintenance") el.classList.add("bg-warning");
+  else if(state==="offline") el.classList.add("bg-danger");
+  else el.classList.add("bg-secondary");
   el.innerHTML = `<i class="bi bi-activity me-1"></i>${state || "unknown"}`;
 
   const ms = document.getElementById("maint-state");
@@ -292,9 +322,8 @@ function setStatusBadge(state){
   ms.classList.add(state==="maintenance" ? "m" : "o");
   ms.querySelector("span:last-child").textContent = `state: ${state}`;
 }
-function setLatency(ms){ document.getElementById("latency").textContent = `ping: ${ms===null?'—':ms+' ms'}`; }
 
-/* ---------- chart ---------- */
+/* sparkline */
 function drawSparkline(canvas, values){
   const ctx = canvas.getContext("2d");
   const w = canvas.width = canvas.clientWidth, h = canvas.height = canvas.clientHeight;
@@ -307,9 +336,6 @@ function drawSparkline(canvas, values){
   values.forEach((v,i)=>{ const x=xi(i), y=yi(v); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
   ctx.stroke();
 }
-new ResizeObserver(()=> drawSparkline(document.getElementById("tpsChart"), tpsSeries))
-  .observe(document.getElementById("tpsChart"));
-
 function unskeleton(){
   for(const id of ["t-mspt","t-tps","t-players","t-online"]){
     const el = document.getElementById(id);
@@ -317,24 +343,36 @@ function unskeleton(){
   }
 }
 
-/* ---------- NORMALIZATION of bridge payloads ---------- */
-function normalize(raw){
-  // 1) если кадр обёрнут в {type:'server.stats', data:{...}}
-  const p = raw && raw.data && typeof raw.data === 'object' ? raw.data : raw;
+/* helpers */
+function avgTps(tps){
+  if(!tps) return null;
+  const arr = [tps["1m"], tps["5m"], tps["15m"]].filter(v=>typeof v==="number");
+  if(!arr.length) return null;
+  return arr.reduce((a,b)=>a+b,0) / arr.length;
+}
 
-  // 2) Сведём TPS/MSPT к единому виду
+/* ---------- robust normalize ---------- */
+function normalize(raw){
+  const p = raw && typeof raw === 'object'
+    ? (raw.data && typeof raw.data === 'object' ? raw.data
+      : raw.payload && typeof raw.payload === 'object' ? raw.payload
+      : raw)
+    : {};
+
   const tps = p.tps && typeof p.tps === 'object'
     ? { "1m":p.tps["1m"] ?? p.tps_1m, "5m":p.tps["5m"] ?? p.tps_5m, "15m":p.tps["15m"] ?? p.tps_15m, "mspt": p.tps.mspt ?? p.mspt }
     : { "1m":p.tps_1m, "5m":p.tps_5m, "15m":p.tps_15m, "mspt": p.mspt };
 
-  // 3) Игроки
   const players = p.players && typeof p.players === 'object'
     ? { max:p.players.max ?? p.players_max, online:p.players.online ?? p.players_online }
     : { max:p.players_max, online:p.players_online };
 
-  const players_list = Array.isArray(p.players_list) ? p.players_list : [];
+  const players_list =
+    (Array.isArray(p.players_list) && p.players_list) ||
+    (p.players && Array.isArray(p.players.list) && p.players.list) ||
+    (Array.isArray(p.playersList) && p.playersList) ||
+    [];
 
-  // 4) Миры: словарь -> массив
   let worlds = [];
   if (Array.isArray(p.worlds)) {
     worlds = p.worlds;
@@ -355,23 +393,12 @@ function normalize(raw){
     });
   }
 
-  return {
-    realm: p.realm || raw.realm || "{{ realm }}",
-    tps, mspt: tps.mspt ?? p.mspt ?? null,
-    players, players_list, worlds
-  };
+  return { realm: p.realm || raw.realm || "{{ realm }}", tps, mspt: tps.mspt ?? p.mspt ?? null, players, players_list, worlds };
 }
 
-/* ---------- derived helpers ---------- */
-function avgTps(tps){
-  if(!tps) return null;
-  const arr = [tps["1m"], tps["5m"], tps["15m"]].filter(v=>typeof v==="number");
-  return arr.length ? arr.reduce((a,b)=>a+b,0) / arr.length : null;
-}
-
-/* ---------- RENDER ---------- */
-function renderRaw(raw){
-  const p = normalize(raw);
+/* render stats */
+function render(payload){
+  const p = normalize(payload);
   lastStats = p;
 
   const mspt = p.mspt ?? null;
@@ -393,60 +420,52 @@ function renderRaw(raw){
   if(typeof tps1m==="number"){ tpsSeries.push(tps1m); if(tpsSeries.length>60) tpsSeries.shift(); }
   drawSparkline(document.getElementById("tpsChart"), tpsSeries);
 
-  // Игроки
-  applyPlayersTable(playersArr);
-
-  // Миры
-  const wt = document.getElementById("tbl-worlds");
-  const worlds = p.worlds||[];
-  wt.innerHTML = worlds.length ? worlds.map(w=>`
-    <tr>
-      <td>${w.name}</td>
-      <td>${w.type||""}</td>
-      <td>${Array.isArray(w.tps)? w.tps.join(", ") : ""}</td>
-      <td>${w.players ?? ""}</td>
-      <td>${w.loadedChunks ?? ""}</td>
-      <td>${w.entities ?? ""}</td>
-      <td>${w.view_distance ?? ""}</td>
-      <td>${w.simulation_distance ?? ""}</td>
-      <td>${w.spawn?`${w.spawn.x??""},${w.spawn.y??""},${w.spawn.z??""}`:""}</td>
-    </tr>
-  `).join("") : `<tr><td colspan="9" class="text-secondary">нет данных</td></tr>`;
-}
-
-/* фильтр игроков */
-function applyPlayersTable(playersArr){
-  const q = document.getElementById("players-filter").value.trim().toLowerCase();
-  const filtered = !q ? playersArr : playersArr.filter(p =>
-    (p.name||"").toLowerCase().includes(q) || (p.uuid||"").toLowerCase().includes(q)
+  // Таблица игроков (с фильтром)
+  const filter = (document.getElementById("players-filter").value || "").toLowerCase().trim();
+  const filtered = !filter ? playersArr : playersArr.filter(x =>
+    (x.name||"").toLowerCase().includes(filter) || (x.uuid||"").toLowerCase().includes(filter)
   );
+
   const pt = document.getElementById("tbl-players");
   pt.innerHTML = filtered.length ? filtered.map(pl=>`
     <tr>
       <td>${pl.name}</td>
       <td class="small">${pl.uuid||""}</td>
       <td>${pl.world||""}</td>
-      <td>${pl.ping ?? ""}</td>
-      <td>${pl.lp_primary ?? ""}</td>
+      <td class="text-end">${(pl.ping??"")}</td>
+      <td>${pl.lp_primary||""}</td>
     </tr>
   `).join("") : `<tr><td colspan="5" class="text-secondary">нет данных</td></tr>`;
+
+  // Таблица миров
+  const wt = document.getElementById("tbl-worlds");
+  const worlds = p.worlds||[];
+  wt.innerHTML = worlds.length ? worlds.map(w=>`
+    <tr>
+      <td>${w.name}</td>
+      <td>${w.type||""}</td>
+      <td>${(w.tps||[]).join(", ")}</td>
+      <td>${w.players??""}</td>
+      <td>${w.loadedChunks??w.chunks_loaded??""}</td>
+      <td>${w.entities??""}</td>
+      <td>${w.view_distance??""}</td>
+      <td>${w.simulation_distance??""}</td>
+      <td>${w.spawn?`${w.spawn.x},${w.spawn.y},${w.spawn.z}`:""}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="9" class="text-secondary">нет данных</td></tr>`;
 }
 
-/* ---------- polling (race-safe) ---------- */
+/* polling stats */
 async function fetchStats(){
-  try{ fetchAbort?.abort(); }catch{}
-  fetchAbort = new AbortController();
-  const t0 = performance.now();
   try{
-    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`, {cache:"no-store", signal:fetchAbort.signal});
+    const r = await fetch(`/admin/gameservers/api/stats?realm=${encodeURIComponent(realm)}`, {cache:"no-store"});
     const j = await r.json();
     if(!j.ok){ setStatusBadge("offline"); return; }
-    renderRaw(j.data||{});
-    setLatency(Math.max(0, Math.round(performance.now()-t0)));
-  }catch(e){ if(e.name!=='AbortError'){ setStatusBadge("offline"); } }
+    render(j.data||{});
+  }catch(e){ setStatusBadge("offline"); }
 }
 
-/* ---------- players modal ---------- */
+/* players modal */
 function openPlayersModal(){
   const list = document.getElementById("players-list");
   list.innerHTML = "";
@@ -463,7 +482,7 @@ function openPlayersModal(){
         <img class="player-head" width="32" height="32" src="${headSrc}" alt="">
         <div class="flex-grow-1">
           <div class="text-light">${p.name}</div>
-          <div class="small text-secondary">${uuid}${p.world? " · "+p.world : ""}${typeof p.ping==="number" ? " · "+p.ping+"ms":""}${p.lp_primary? " · "+p.lp_primary:""}</div>
+          <div class="small text-secondary">${uuid}${p.world? " · "+p.world : ""}</div>
         </div>`;
       list.appendChild(row);
     }
@@ -471,16 +490,27 @@ function openPlayersModal(){
   bootstrap.Modal.getOrCreateInstance(document.getElementById('playersModal')).show();
 }
 
-/* ---------- SSE console (query meta) ---------- */
+/* ---------- SSE: live console with meta in query ---------- */
+let es=null;
 function sseQuery(){
   const c = clientMeta();
-  const sp = new URLSearchParams({ realm, tz:c.tz||"", of:String(c.tzOffsetMin??""), lang:c.lang||"", vp:c.vp||"", sc:c.sc||"", vis:c.vis||"" });
+  const sp = new URLSearchParams({
+    realm,
+    tz: c.tz || "",
+    of: String(c.tzOffsetMin ?? ""),
+    lang: c.lang || "",
+    vp: c.vp || "",
+    sc: c.sc || "",
+    vis: c.vis || ""
+  });
   return sp.toString();
 }
 function appendLine(line){
   const pre = document.getElementById('console-log');
   pre.textContent += (pre.textContent?'\n':'') + line;
-  if(document.getElementById('auto-scroll').checked){ pre.scrollTop = pre.scrollHeight; }
+  if(document.getElementById('auto-scroll').checked){
+    pre.scrollTop = pre.scrollHeight;
+  }
 }
 function fmtLine(p){
   const t  = new Date().toLocaleTimeString();
@@ -491,38 +521,28 @@ function fmtLine(p){
 }
 function startLive(){
   if(es) return;
-  const st = document.querySelector('[data-sse="state"]');
   const url = `/admin/gameservers/api/console/stream?` + sseQuery();
   es = new EventSource(url);
-  st.textContent = 'connecting…';
-  es.onopen = ()=>{ st.textContent = 'connected'; };
   es.onmessage = (ev)=>{ try{ appendLine(fmtLine(JSON.parse(ev.data||'{}')));}catch{} };
   es.addEventListener('err', (ev)=>{ appendLine(`[stream] ${ev.data}`); });
-  es.onerror = ()=>{ st.textContent = 'disconnected'; };
+  es.onerror = ()=>{}; // авто-reconnect от EventSource
 }
-function stopLive(){ try{es?.close();}catch{} es=null; document.querySelector('[data-sse="state"]').textContent='stopped'; }
+function stopLive(){ try{es?.close();}catch{} es=null; }
 
-/* ---------- POST helper (with meta) ---------- */
+/* ---------- POST helpers that attach client meta ---------- */
 async function postJSON(url, obj){
   const c = clientMeta();
-  const r = await fetch(url, { method:"POST", headers:clientHeaders(c), body: JSON.stringify({...obj, client:c}) });
+  const r = await fetch(url, {
+    method:"POST",
+    headers: clientHeaders(c),
+    body: JSON.stringify({...obj, client: c})
+  });
   return r.json();
 }
 
-/* ---------- console send + history ---------- */
-function pushHistory(cmd){
-  if(!cmd) return;
-  const key = `gs_history_${realm}`;
-  try{
-    const arr = JSON.parse(localStorage.getItem(key) || "[]");
-    if(arr[0] !== cmd){ arr.unshift(cmd); }
-    localStorage.setItem(key, JSON.stringify(arr.slice(0,50)));
-  }catch{}
-}
-function loadHistory(){ try{ return JSON.parse(localStorage.getItem(`gs_history_${realm}`) || "[]"); }catch{ return []; } }
+/* console: send command */
 async function sendCmd(){
-  const input = document.getElementById("cmd");
-  const cmd = input.value.trim();
+  const cmd = document.getElementById("cmd").value.trim();
   if(!cmd) return;
   const btn = document.getElementById("send"), st = document.getElementById("console-status");
   btn.disabled = true; st.textContent = "Отправка...";
@@ -530,51 +550,12 @@ async function sendCmd(){
     const j = await postJSON("/admin/gameservers/api/console", {realm, cmd});
     st.textContent = j.ok ? "OK" : (j.error||"error");
     toast(j.ok ? "Команда отправлена" : (j.error||"Ошибка"), j.ok);
-    if(j.ok){ pushHistory(cmd); cmdHistory = loadHistory(); cmdIdx = -1; input.value=""; }
+    if(j.ok){ document.getElementById("cmd").value=""; }
   }catch(e){ st.textContent = e.message||"network error"; toast(st.textContent, false); }
-  finally{ btn.disabled = false; input.focus(); }
-}
-function navigateHistory(dir){
-  if(!cmdHistory.length) return;
-  if(dir<0){ cmdIdx = Math.min(cmdHistory.length-1, cmdIdx+1); }
-  else{ cmdIdx = Math.max(-1, cmdIdx-1); }
-  document.getElementById("cmd").value = cmdIdx>=0 ? cmdHistory[cmdIdx] : "";
+  finally{ btn.disabled = false; }
 }
 
-/* ---------- binds ---------- */
-document.getElementById("send").addEventListener("click", sendCmd);
-document.getElementById("cmd").addEventListener("keydown", e=>{
-  if((e.ctrlKey||e.metaKey) && e.key==="Enter") return sendCmd();
-  if(e.key==="ArrowUp") return (e.preventDefault(), navigateHistory(-1));
-  if(e.key==="ArrowDown") return (e.preventDefault(), navigateHistory(1));
-});
-document.addEventListener("keydown", e=>{
-  if(e.key === "/" && document.activeElement !== document.getElementById("cmd")){
-    e.preventDefault(); document.getElementById("cmd").focus();
-  }
-});
-document.getElementById("refresh").addEventListener("click", fetchStats);
-document.getElementById("players-tile")?.addEventListener("click", openPlayersModal);
-document.getElementById("players-filter").addEventListener("input", ()=> applyPlayersTable(lastStats?.players_list||[]));
-
-document.getElementById("maint-on").addEventListener("click", ()=>maintToggle(true));
-document.getElementById("maint-off").addEventListener("click", ()=>maintToggle(false));
-document.getElementById("wl-add").addEventListener("click", ()=>wlChange("add"));
-document.getElementById("wl-remove").addEventListener("click", ()=>wlChange("remove"));
-
-document.getElementById("live-toggle").addEventListener("change", e=>{ e.target.checked ? startLive() : stopLive(); });
-document.getElementById("clear-log").addEventListener("click", ()=>{ document.getElementById('console-log').textContent=""; });
-document.getElementById("copy-realm").addEventListener("click", async ()=>{ try{ await navigator.clipboard.writeText(realm); toast("Realm скопирован"); }catch{ toast("Не удалось скопировать", false); }});
-
-const autoEl = document.getElementById("autorefresh");
-autoEl.checked = (localStorage.getItem(LS_AUTO_KEY) ?? "1") !== "0";
-autoEl.addEventListener("change", e=>{
-  clearInterval(timer);
-  localStorage.setItem(LS_AUTO_KEY, e.target.checked ? "1" : "0");
-  if(e.target.checked) timer = setInterval(fetchStats, 3000);
-});
-
-/* ---------- maintenance API ---------- */
+/* maintenance API */
 async function maintToggle(enabled){
   const msg = document.getElementById("maint-msg").value.trim();
   const j = await postJSON("/admin/gameservers/api/maintenance", {realm, enabled, kickMessage: msg, message: msg});
@@ -590,10 +571,44 @@ async function wlChange(op){
   if (j.ok && op === "add") document.getElementById("wl-player").value = "";
 }
 
-/* ---------- init ---------- */
-cmdHistory = loadHistory();
+/* sidebar actives */
+const links = Array.from(document.querySelectorAll('.gs-side .nav-link[href^="#"]'));
+const ids = links.map(a => a.getAttribute('href')).filter(Boolean).map(h => h.replace('#',''));
+const obs = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    const id = e.target.id;
+    const link = links.find(a => a.getAttribute('href') === '#' + id);
+    if(link){ e.isIntersecting ? link.classList.add('active') : link.classList.remove('active'); }
+  });
+},{rootMargin:'-40% 0px -50% 0px', threshold:0.01});
+ids.forEach(id => { const el = document.getElementById(id); if(el) obs.observe(el); });
+
+/* binds + persistence */
+document.getElementById("send").addEventListener("click", sendCmd);
+document.getElementById("cmd").addEventListener("keydown", e=>{ if(e.key==="Enter") sendCmd(); });
+document.getElementById("refresh").addEventListener("click", fetchStats);
+document.getElementById("players-tile")?.addEventListener("click", openPlayersModal);
+document.getElementById("players-filter").addEventListener("input", ()=>{ if(lastStats) render(lastStats); });
+
+document.getElementById("maint-on").addEventListener("click", ()=>maintToggle(true));
+document.getElementById("maint-off").addEventListener("click", ()=>maintToggle(false));
+document.getElementById("wl-add").addEventListener("click", ()=>wlChange("add"));
+document.getElementById("wl-remove").addEventListener("click", ()=>wlChange("remove"));
+
+document.getElementById("live-toggle").addEventListener("change", e=>{ e.target.checked ? startLive() : stopLive(); });
+document.getElementById("clear-log").addEventListener("click", ()=>{ document.getElementById('console-log').textContent=""; });
+
+const autoEl = document.getElementById("autorefresh");
+autoEl.checked = (localStorage.getItem(LS_AUTO_KEY) ?? "1") !== "0";
+autoEl.addEventListener("change", e=>{
+  clearInterval(timer);
+  localStorage.setItem(LS_AUTO_KEY, e.target.checked ? "1" : "0");
+  if(e.target.checked) timer = setInterval(fetchStats, 3000);
+});
+
+/* init */
 fetchStats();
 if(autoEl.checked) timer = setInterval(fetchStats, 3000);
-startLive();
+startLive(); // по умолчанию включён
 </script>
 {% endblock %}

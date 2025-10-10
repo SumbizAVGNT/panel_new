@@ -161,16 +161,56 @@ def api_stats():
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
     try:
-        raw = stats_query(realm)
+        raw = stats_query(realm)  # может вернуть server.stats c payload или плоский dict
         if raw.get("type") == "bridge.error":
             return jsonify({"ok": False, "error": raw.get("error") or "bridge error"}), 502
-        norm = normalize_server_stats(raw)
-        if norm.get("type") == "bridge.error":
+
+        # Базовая нормализация
+        norm = normalize_server_stats(raw) or {}
+
+        # Если нормализатор сообщил об ошибке — вернём исходные данные,
+        # чтобы фронт хотя бы что-то показал.
+        if isinstance(norm, dict) and norm.get("type") == "bridge.error":
             return jsonify({"ok": True, "data": raw})
+
+        # ---- Дозаполнение отсутствующих полей из исходного кадра ----
+        src = (raw.get("payload") or raw.get("data") or raw) if isinstance(raw, dict) else {}
+
+        if isinstance(norm, dict) and isinstance(src, dict):
+            # players_list
+            if "players_list" not in norm and "players_list" in src:
+                norm["players_list"] = src.get("players_list") or []
+
+            # players summary (online/max)
+            if "players" not in norm and "players" in src:
+                norm["players"] = src.get("players")
+
+            # Если нормализатор не добавил online/max — возьмём старые поля
+            if "players_online" in src and ("players" not in norm or "online" not in (norm.get("players") or {})):
+                norm.setdefault("players", {}).update({"online": src.get("players_online")})
+            if "players_max" in src and ("players" not in norm or "max" not in (norm.get("players") or {})):
+                norm.setdefault("players", {}).update({"max": src.get("players_max")})
+
+            # worlds (массив или объект с именованными ключами — отдаём как есть)
+            if "worlds" not in norm and "worlds" in src:
+                norm["worlds"] = src.get("worlds")
+
+            # TPS/MSPT
+            if "tps" not in norm and any(k in src for k in ("tps", "tps_1m", "tps_5m", "tps_15m")):
+                norm["tps"] = src.get("tps") or {
+                    "1m": src.get("tps_1m"),
+                    "5m": src.get("tps_5m"),
+                    "15m": src.get("tps_15m"),
+                    "mspt": src.get("mspt"),
+                }
+            if "mspt" not in norm and "mspt" in src:
+                norm["mspt"] = src.get("mspt")
+
         return jsonify({"ok": True, "data": norm})
     except Exception as e:
         current_app.logger.exception("stats_query failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
+
 
 @admin_bp.route("/gameservers/api/console", methods=["POST"])
 @login_required
