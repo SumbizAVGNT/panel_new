@@ -90,7 +90,8 @@ pre.console{max-height:320px;overflow:auto;background:rgba(15,23,42,.44);border-
         <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
       </div>
       <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
-      <a href="{{ url_for('admin.gameservers.index') }}" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left"></i> Назад</a>
+      <!-- Исправлено: правильный endpoint -->
+      <a href="{{ url_for('admin.gameservers_index') }}" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left"></i> Назад</a>
     </div>
   </div>
 
@@ -333,7 +334,7 @@ function render(p){
   document.getElementById("t-tps").textContent  = (typeof tpsAvg==="number") ? tpsAvg.toFixed(2) : "—";
   document.getElementById("t-online").textContent = (typeof online==="number") ? online : "—";
 
-  const playersArr = p.players_list || []; // если когда-то добавишь список
+  const playersArr = p.players_list || [];
   document.getElementById("t-players").textContent = playersArr.map(x=>x.name).join(", ") || "—";
   unskeleton();
 
