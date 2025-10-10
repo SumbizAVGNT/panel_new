@@ -1,4 +1,4 @@
-# app/routes/admin/gameservers.py
+# admin/gameservers.py
 from __future__ import annotations
 
 import os
@@ -17,15 +17,9 @@ import websockets
 from PIL import Image
 from flask import render_template, jsonify, request, send_file, current_app
 
-try:
-    # опционально: если используется flask-login, добавим имя пользователя в hello
-    from flask_login import current_user
-except Exception:  # pragma: no cover
-    current_user = None  # type: ignore
-
 from ...decorators import login_required
 from ...modules.bridge_client import (
-    bridge_list, bridge_info, stats_query, console_exec,
+    bridge_list, bridge_info, stats_query, console_exec, bridge_send,
     maintenance_set, maintenance_whitelist, normalize_server_stats,
     # LuckPerms
     lp_web_open, lp_web_apply,
@@ -50,6 +44,89 @@ def gameservers_index():
 def gameservers_section(realm: str):
     return render_template("admin/gameservers/section.html", realm=realm)
 
+# ===================== helpers: client meta =====================
+
+def _client_from_headers() -> Dict[str, Any]:
+    h = request.headers
+    # то, что шлёт фронт дополнительными заголовками
+    tz = h.get("X-Client-TZ") or ""
+    of = h.get("X-Client-Of") or ""
+    lang = h.get("X-Client-Lang") or (h.get("Accept-Language") or "")
+    return {
+        "tz": tz,
+        "tzOffsetMin": int(of) if (of and of.lstrip("+-").isdigit()) else None,
+        "lang": lang.split(",")[0] if lang else "",
+        "ua": h.get("User-Agent") or "",
+        "ip": (h.get("X-Forwarded-For") or "").split(",")[0].strip() or request.remote_addr,
+    }
+
+def _client_from_query() -> Dict[str, Any]:
+    q = request.args
+    return {
+        "tz": q.get("tz") or "",
+        "tzOffsetMin": int(q.get("of")) if (q.get("of") and q.get("of").lstrip("+-").isdigit()) else None,
+        "lang": (q.get("lang") or ""),
+        "vp": (q.get("vp") or ""),  # "WxH@DPR"
+        "sc": (q.get("sc") or ""),  # "WxH"
+        "vis": (q.get("vis") or ""),
+        "page": request.path,
+        "ip": (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or request.remote_addr,
+        "ua": request.headers.get("User-Agent") or "",
+        "_source": "query",
+    }
+
+def _client_from_body(j: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    c = (j or {}).get("client") or {}
+    # лёгкая нормализация
+    return {
+        "tz": c.get("tz") or "",
+        "tzOffsetMin": c.get("tzOffsetMin"),
+        "lang": c.get("lang") or "",
+        "ua": c.get("ua") or (request.headers.get("User-Agent") or ""),
+        "vp": c.get("vp"),
+        "sc": c.get("sc"),
+        "page": c.get("page") or request.path,
+        "ref": c.get("ref") or "",
+        "vis": c.get("vis") or "",
+        "ts": c.get("ts"),
+        "ip": (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or request.remote_addr,
+        "_source": "body",
+    }
+
+def _client_meta(j: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Собираем метаданные клиента из body + заголовков (+ query для SSE)."""
+    meta = _client_from_headers()
+    if request.method == "GET" and request.args:
+        meta.update({k:v for k,v in _client_from_query().items() if v not in (None, "", [])})
+    if request.method == "POST":
+        meta.update({k:v for k,v in _client_from_body(j).items() if v not in (None, "", [])})
+    return meta
+
+def _log_client(action: str, realm: str, meta: Dict[str, Any], extra: Optional[Dict[str, Any]] = None):
+    try:
+        current_app.logger.info(
+            "client-meta action=%s realm=%s meta=%s extra=%s",
+            action, realm, json.dumps(meta, ensure_ascii=False), json.dumps(extra or {}, ensure_ascii=False)
+        )
+    except Exception:
+        pass
+
+def _bridge_origin(action: str, realm: str, meta: Dict[str, Any], extra: Optional[Dict[str, Any]] = None):
+    """Отправляем в бридж служебный кадр с происхождением действия (fire-and-forget)."""
+    try:
+        bridge_send({
+            "type": "admin.origin",
+            "realm": realm,
+            "payload": {
+                "realm": realm,
+                "action": action,
+                "client": meta,
+                "extra": extra or {}
+            }
+        })
+    except Exception:
+        current_app.logger.exception("bridge admin.origin failed")
+
 # ===================== API: list / stats / console =====================
 
 @admin_bp.route("/gameservers/api/list")
@@ -69,7 +146,7 @@ def api_list():
 def api_bridge_info():
     try:
         data = bridge_info()
-        # для совместимости: допускаем bridge.list.result, если отдельно bridge.info.result нет
+        # для совместимости: bridge_info() возвращает bridge.list.result
         if data.get("type") not in ("bridge.info.result", "bridge.list.result"):
             return jsonify({"ok": False, "error": data.get("error") or "bridge unavailable"}), 502
         return jsonify({"ok": True, "data": data.get("payload", {})})
@@ -89,7 +166,6 @@ def api_stats():
             return jsonify({"ok": False, "error": raw.get("error") or "bridge error"}), 502
         norm = normalize_server_stats(raw)
         if norm.get("type") == "bridge.error":
-            # вернём как есть, если нормализация не смогла
             return jsonify({"ok": True, "data": raw})
         return jsonify({"ok": True, "data": norm})
     except Exception as e:
@@ -104,6 +180,9 @@ def api_console():
     cmd = (j.get("cmd") or "").strip()
     if not realm or not cmd:
         return jsonify({"ok": False, "error": "realm and cmd required"}), 400
+    meta = _client_meta(j)
+    _log_client("console.exec", realm, meta, {"cmd_preview": cmd[:120]})
+    _bridge_origin("console.exec", realm, meta, {"cmd_preview": cmd[:120]})
     try:
         data = console_exec(realm, cmd)
         return jsonify({"ok": True, "data": data})
@@ -122,6 +201,9 @@ def api_maintenance_toggle():
     kick_message = (j.get("kickMessage") or j.get("message") or "").strip()
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
+    meta = _client_meta(j)
+    _log_client("maintenance.toggle", realm, meta, {"enabled": enabled})
+    _bridge_origin("maintenance.toggle", realm, meta, {"enabled": enabled, "message": kick_message[:160]})
     try:
         ok = maintenance_set(realm, enabled, kick_message)
         if not ok:
@@ -140,6 +222,9 @@ def api_maintenance_whitelist():
     player = (j.get("player") or "").strip()
     if not realm or op not in ("add", "remove") or not player:
         return jsonify({"ok": False, "error": "realm, op(add|remove) and player required"}), 400
+    meta = _client_meta(j)
+    _log_client("maintenance.whitelist", realm, meta, {"op": op, "player": player})
+    _bridge_origin("maintenance.whitelist", realm, meta, {"op": op, "player": player})
     try:
         ok = maintenance_whitelist(realm, op, player)
         if not ok:
@@ -157,33 +242,8 @@ MOJANG_PROFILE_URL = "https://sessionserver.mojang.com/session/minecraft/profile
 CRAFATAR_AVATAR    = "https://crafatar.com/avatars/{uuid}?size=32&overlay"
 CRAFATAR_SKIN      = "https://crafatar.com/skins/{uuid}"
 
-def _client_ip() -> str:
-    # учитываем прокси
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.remote_addr or ""
-
-def _client_user_agent() -> str:
-    return request.headers.get("User-Agent", "")
-
-def _client_user_name() -> Optional[str]:
-    try:
-        if current_user and hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
-            # стараемся достать читаемое имя
-            for attr in ("name", "username", "login", "email", "id"):
-                if hasattr(current_user, attr):
-                    val = getattr(current_user, attr)
-                    if val:
-                        return str(val)
-    except Exception:
-        pass
-    return None
-
 def _http_get(url: str):
-    headers = {
-        "User-Agent": f"MoonReinPanel/1.0 (+bridge; { _client_user_agent() or 'unknown-UA' })"
-    }
+    headers = {"User-Agent": "MoonReinPanel/1.0 (+bridge)"}
     return requests.get(url, headers=headers, timeout=REQ_TIMEOUT)
 
 @lru_cache(maxsize=512)
@@ -210,33 +270,26 @@ def _cached_skin_url_for_uuid(uuid_nodash: str) -> Optional[str]:
 def _compose_head_png_from_skin_url(url: str) -> io.BytesIO:
     r = _http_get(url); r.raise_for_status()
     img = Image.open(io.BytesIO(r.content)).convert("RGBA")
-    face = img.crop((8, 8, 16, 16)).resize((32, 32), Image.NEAREST)
+    face = img.crop((8,8,16,16)).resize((32,32), Image.NEAREST)
     try:
-        hat = img.crop((40, 8, 48, 16)).resize((32, 32), Image.NEAREST)
+        hat = img.crop((40,8,48,16)).resize((32,32), Image.NEAREST)
         face.alpha_composite(hat)
     except Exception:
         pass
-    bio = io.BytesIO()
-    face.save(bio, format="PNG")
-    bio.seek(0)
-    return bio
+    buf = io.BytesIO(); face.save(buf, format="PNG"); buf.seek(0); return buf
 
 def _compose_head_png_from_crafatar(uuid_nodash: str) -> io.BytesIO:
     r = _http_get(CRAFATAR_AVATAR.format(uuid=uuid_nodash))
-    if r.ok:
-        return io.BytesIO(r.content)
+    if r.ok: return io.BytesIO(r.content)
     r2 = _http_get(CRAFATAR_SKIN.format(uuid=uuid_nodash)); r2.raise_for_status()
     img = Image.open(io.BytesIO(r2.content)).convert("RGBA")
-    face = img.crop((8, 8, 16, 16)).resize((32, 32), Image.NEAREST)
+    face = img.crop((8,8,16,16)).resize((32,32), Image.NEAREST)
     try:
-        hat = img.crop((40, 8, 48, 16)).resize((32, 32), Image.NEAREST)
+        hat = img.crop((40,8,48,16)).resize((32,32), Image.NEAREST)
         face.alpha_composite(hat)
     except Exception:
         pass
-    bio = io.BytesIO()
-    face.save(bio, format="PNG")
-    bio.seek(0)
-    return bio
+    bio = io.BytesIO(); face.save(bio, format="PNG"); bio.seek(0); return bio
 
 @admin_bp.route("/gameservers/api/player-head")
 @login_required
@@ -264,22 +317,11 @@ def api_player_head():
             return send_file(buf, mimetype="image/png", max_age=600)
     except Exception as e:
         log.warning("player-head Crafatar fail (uuid=%s): %s", uuid, e)
-    img = Image.new("RGBA", (32, 32), (60, 75, 92, 255))
+    img = Image.new("RGBA", (32,32), (60,75,92,255))
     bio = io.BytesIO(); img.save(bio, format="PNG"); bio.seek(0)
     return send_file(bio, mimetype="image/png", max_age=120)
 
 # ===================== SSE: console stream =====================
-
-def _admin_hello_payload(realm: str) -> Dict[str, Any]:
-    user_name = _client_user_name()
-    payload: Dict[str, Any] = {
-        "realm": realm,
-        "ip": _client_ip(),
-        "ua": _client_user_agent(),
-    }
-    if user_name:
-        payload["user"] = user_name
-    return payload
 
 @admin_bp.route("/gameservers/api/console/stream")
 @login_required
@@ -287,7 +329,7 @@ def api_console_stream():
     """
     SSE-прокси: bridge (WS) -> браузер.
     Пропускаем кадры console.stream / bridge.log / console.out только для указанного realm.
-    Новое: отправляем на бридж кадр admin.hello с метаданными клиента (ip/ua/пользователь).
+    При подключении отправляем в бридж кадр admin.hello с данными клиента.
     """
     realm = (request.args.get("realm") or "").strip()
     if not realm:
@@ -296,6 +338,12 @@ def api_console_stream():
     BRIDGE_URL = os.getenv("SP_BRIDGE_URL", "ws://127.0.0.1:8765/ws")
     BRIDGE_TOKEN = os.getenv("SP_TOKEN", "SUPER_SECRET")
     BRIDGE_MAX_SIZE = int(os.getenv("SP_MAX_SIZE", "131072"))
+
+    # метаданные клиента из query/headers
+    client_meta = _client_meta()
+    _log_client("console.stream.open", realm, client_meta)
+    # продублируем в бридж отдельным кадром (fire-and-forget) на всякий случай
+    _bridge_origin("console.stream.open", realm, client_meta)
 
     q: Queue = Queue(maxsize=256)
     STOP = object()
@@ -311,25 +359,16 @@ def api_console_stream():
                     ping_timeout=20,
                     max_size=BRIDGE_MAX_SIZE,
                 ) as ws:
-                    # 1) Отправляем admin.hello — бридж сможет логировать и метить соединение как админское
-                    hello = {
-                        "type": "admin.hello",
-                        "realm": realm,
-                        "payload": _admin_hello_payload(realm),
-                    }
+                    # помечаем admin-сессию и передаём метаданные клиента
                     try:
-                        await ws.send(json.dumps(hello, ensure_ascii=False))
-                    except Exception:
-                        # не смертельно, просто идём дальше
-                        pass
-
-                    # 2) Дополнительно отправим bridge.list — совместимость со старым поведением
-                    try:
-                        await ws.send(json.dumps({"type": "bridge.list"}, ensure_ascii=False))
+                        await ws.send(json.dumps({
+                            "type": "admin.hello",
+                            "realm": realm,
+                            "payload": {"realm": realm, "client": client_meta}
+                        }, ensure_ascii=False))
                     except Exception:
                         pass
 
-                    # 3) Слушаем и фильтруем кадры на наш realm
                     while True:
                         raw = await ws.recv()
                         try:
@@ -339,7 +378,6 @@ def api_console_stream():
                         t = obj.get("type")
                         if t not in ("console.stream", "bridge.log", "console.out"):
                             continue
-                        # realm может приезжать в корне, payload.realm или data.realm
                         r = (
                             obj.get("realm")
                             or (obj.get("payload") or {}).get("realm")
@@ -371,14 +409,12 @@ def api_console_stream():
     threading.Thread(target=worker, daemon=True).start()
 
     def gen():
-        # рекомендуемая задержка реконнекта SSE (мс)
         yield "retry: 2000\n\n"
         try:
             while True:
                 try:
                     item = q.get(timeout=20)
                 except Empty:
-                    # keep-alive, чтобы не рвались прокси
                     yield ": keepalive\n\n"
                     continue
                 if item is STOP:
@@ -410,6 +446,9 @@ def api_lp_web_open():
     realm = (j.get("realm") or "").strip()
     if not realm:
         return jsonify({"ok": False, "error": "realm required"}), 400
+    meta = _client_meta(j)
+    _log_client("lp.web.open", realm, meta)
+    _bridge_origin("lp.web.open", realm, meta)
     try:
         data = lp_web_open(realm)
         return jsonify({"ok": True, "data": data})
@@ -425,6 +464,9 @@ def api_lp_web_apply():
     code = (j.get("code") or "").strip()
     if not realm or not code:
         return jsonify({"ok": False, "error": "realm and code required"}), 400
+    meta = _client_meta(j)
+    _log_client("lp.web.apply", realm, meta)
+    _bridge_origin("lp.web.apply", realm, meta, {"code_preview": code[:12]})
     try:
         data = lp_web_apply(realm, code)
         return jsonify({"ok": True, "data": data})
@@ -442,6 +484,9 @@ def api_lp_user_perm_add():
     value = _parse_bool(j.get("value", True))
     if not realm or not user or not permission:
         return jsonify({"ok": False, "error": "realm, user, permission required"}), 400
+    meta = _client_meta(j)
+    _log_client("lp.user.perm.add", realm, meta, {"user": user, "permission": permission, "value": value})
+    _bridge_origin("lp.user.perm.add", realm, meta, {"user": user, "permission": permission, "value": value})
     try:
         data = lp_user_perm_add(realm, user, permission, value=value)
         return jsonify({"ok": True, "data": data})
@@ -458,6 +503,9 @@ def api_lp_user_perm_remove():
     permission = (j.get("permission") or "").strip()
     if not realm or not user or not permission:
         return jsonify({"ok": False, "error": "realm, user, permission required"}), 400
+    meta = _client_meta(j)
+    _log_client("lp.user.perm.remove", realm, meta, {"user": user, "permission": permission})
+    _bridge_origin("lp.user.perm.remove", realm, meta, {"user": user, "permission": permission})
     try:
         data = lp_user_perm_remove(realm, user, permission)
         return jsonify({"ok": True, "data": data})
@@ -474,6 +522,9 @@ def api_lp_user_group_add():
     group = (j.get("group") or "").strip()
     if not realm or not user or not group:
         return jsonify({"ok": False, "error": "realm, user, group required"}), 400
+    meta = _client_meta(j)
+    _log_client("lp.user.group.add", realm, meta, {"user": user, "group": group})
+    _bridge_origin("lp.user.group.add", realm, meta, {"user": user, "group": group})
     try:
         data = lp_user_group_add(realm, user, group)
         return jsonify({"ok": True, "data": data})
@@ -490,6 +541,9 @@ def api_lp_user_group_remove():
     group = (j.get("group") or "").strip()
     if not realm or not user or not group:
         return jsonify({"ok": False, "error": "realm, user, group required"}), 400
+    meta = _client_meta(j)
+    _log_client("lp.user.group.remove", realm, meta, {"user": user, "group": group})
+    _bridge_origin("lp.user.group.remove", realm, meta, {"user": user, "group": group})
     try:
         data = lp_user_group_remove(realm, user, group)
         return jsonify({"ok": True, "data": data})
@@ -507,6 +561,9 @@ def api_lp_group_perm_add():
     value = _parse_bool(j.get("value", True))
     if not realm or not group or not permission:
         return jsonify({"ok": False, "error": "realm, group, permission required"}), 400
+    meta = _client_meta(j)
+    _log_client("lp.group.perm.add", realm, meta, {"group": group, "permission": permission, "value": value})
+    _bridge_origin("lp.group.perm.add", realm, meta, {"group": group, "permission": permission, "value": value})
     try:
         data = lp_group_perm_add(realm, group, permission, value=value)
         return jsonify({"ok": True, "data": data})
@@ -523,6 +580,9 @@ def api_lp_group_perm_remove():
     permission = (j.get("permission") or "").strip()
     if not realm or not group or not permission:
         return jsonify({"ok": False, "error": "realm, group, permission required"}), 400
+    meta = _client_meta(j)
+    _log_client("lp.group.perm.remove", realm, meta, {"group": group, "permission": permission})
+    _bridge_origin("lp.group.perm.remove", realm, meta, {"group": group, "permission": permission})
     try:
         data = lp_group_perm_remove(realm, group, permission)
         return jsonify({"ok": True, "data": data})
@@ -537,6 +597,9 @@ def api_lp_user_info():
     user = (request.args.get("user") or "").strip()
     if not realm or not user:
         return jsonify({"ok": False, "error": "realm and user required"}), 400
+    meta = _client_meta()
+    _log_client("lp.user.info", realm, meta, {"user": user})
+    _bridge_origin("lp.user.info", realm, meta, {"user": user})
     try:
         data = lp_user_info(realm, user)
         return jsonify({"ok": True, "data": data})
@@ -551,6 +614,9 @@ def api_lp_group_info():
     group = (request.args.get("group") or "").strip()
     if not realm or not group:
         return jsonify({"ok": False, "error": "realm and group required"}), 400
+    meta = _client_meta()
+    _log_client("lp.group.info", realm, meta, {"group": group})
+    _bridge_origin("lp.group.info", realm, meta, {"group": group})
     try:
         data = lp_group_info(realm, group)
         return jsonify({"ok": True, "data": data})
@@ -567,6 +633,9 @@ def api_jp_balance_get():
     user = (request.args.get("user") or "").strip()
     if not realm or not user:
         return jsonify({"ok": False, "error": "realm and user required"}), 400
+    meta = _client_meta()
+    _log_client("jp.balance.get", realm, meta, {"user": user})
+    _bridge_origin("jp.balance.get", realm, meta, {"user": user})
     try:
         data = jp_balance_get(realm, user)
         return jsonify({"ok": True, "data": data})
@@ -589,6 +658,9 @@ def api_jp_balance_set():
     amount = _parse_amount(j)
     if not realm or not user or amount is None:
         return jsonify({"ok": False, "error": "realm, user, amount required"}), 400
+    meta = _client_meta(j)
+    _log_client("jp.balance.set", realm, meta, {"user": user, "amount": amount})
+    _bridge_origin("jp.balance.set", realm, meta, {"user": user, "amount": amount})
     try:
         data = jp_balance_set(realm, user, amount)
         return jsonify({"ok": True, "data": data})
@@ -605,6 +677,9 @@ def api_jp_balance_add():
     amount = _parse_amount(j)
     if not realm or not user or amount is None:
         return jsonify({"ok": False, "error": "realm, user, amount required"}), 400
+    meta = _client_meta(j)
+    _log_client("jp.balance.add", realm, meta, {"user": user, "amount": amount})
+    _bridge_origin("jp.balance.add", realm, meta, {"user": user, "amount": amount})
     try:
         data = jp_balance_add(realm, user, amount)
         return jsonify({"ok": True, "data": data})
@@ -621,6 +696,9 @@ def api_jp_balance_take():
     amount = _parse_amount(j)
     if not realm or not user or amount is None:
         return jsonify({"ok": False, "error": "realm, user, amount required"}), 400
+    meta = _client_meta(j)
+    _log_client("jp.balance.take", realm, meta, {"user": user, "amount": amount})
+    _bridge_origin("jp.balance.take", realm, meta, {"user": user, "amount": amount})
     try:
         data = jp_balance_take(realm, user, amount)
         return jsonify({"ok": True, "data": data})
