@@ -268,18 +268,49 @@ def api_maintenance_toggle():
 def api_maintenance_whitelist():
     j = request.get_json(silent=True) or {}
     realm = (j.get("realm") or "").strip()
-    op = (j.get("op") or "").strip().lower()
-    player = (j.get("player") or "").strip()
-    if not realm or op not in ("add", "remove") or not player:
-        return jsonify({"ok": False, "error": "realm, op(add|remove) and player required"}), 400
+    op = (j.get("op") or j.get("action") or "add").strip().lower()
+
+    # принимаем либо один ник/uuid, либо список
+    player = (j.get("player") or j.get("user") or "").strip()
+    players = j.get("players") or j.get("users") or None
+    if isinstance(players, list):
+        # нормализуем список строк
+        players = [str(x).strip() for x in players if str(x or "").strip()]
+    elif player:
+        players = player  # одиночное значение
+
+    # валидация
+    if not realm:
+        return jsonify({"ok": False, "error": "realm required"}), 400
+    if op not in ("add", "remove", "list"):
+        return jsonify({"ok": False, "error": "op must be add|remove|list"}), 400
+    if op in ("add", "remove") and (not players):
+        return jsonify({"ok": False, "error": "player or players required"}), 400
+
     meta = _client_meta(j)
-    _log_client("maintenance.whitelist", realm, meta, {"op": op, "player": player})
-    _bridge_origin("maintenance.whitelist", realm, meta, {"op": op, "player": player})
+    _log_client("maintenance.whitelist", realm, meta, {
+        "op": op,
+        "players": players if isinstance(players, list) else [players] if players else [],
+    })
+    _bridge_origin("maintenance.whitelist", realm, meta, {
+        "op": op,
+        "players": players if isinstance(players, list) else [players] if players else [],
+    })
+
     try:
-        ok = maintenance_whitelist(realm, op, player)
-        if not ok:
-            return jsonify({"ok": False, "error": "bridge send failed"}), 502
-        return jsonify({"ok": True})
+        # ВАЖНО: maintenance_whitelist теперь ждёт именно кадр "maintenance.whitelist"
+        data = maintenance_whitelist(realm, op, players)
+        # ожидаем структуру вида {"type":"maintenance.whitelist","data":{...}} или {"payload":{...}}
+        if isinstance(data, dict) and data.get("type") == "maintenance.whitelist":
+            payload = data.get("data") or data.get("payload") or {}
+            return jsonify({"ok": True, "data": payload})
+
+        # если бридж вернул ошибку-обёртку
+        if isinstance(data, dict) and data.get("type") == "bridge.error":
+            return jsonify({"ok": False, "error": data.get("error") or "bridge error"}), 502
+
+        # fallback: считаем успехом, но отдадим как есть
+        return jsonify({"ok": True, "data": data})
     except Exception as e:
         current_app.logger.exception("maintenance_whitelist failed: %s", e)
         return jsonify({"ok": False, "error": "bridge error"}), 502
