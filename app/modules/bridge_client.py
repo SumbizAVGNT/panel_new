@@ -8,8 +8,8 @@ import contextlib
 import threading
 import logging
 from logging import Logger
-from typing import Any, Dict, Optional, Sequence, Iterable, Union
-from typing import TYPE_CHECKING, Dict, Any, Tuple, Iterable, Union, List
+from typing import Any, Dict, Optional, Sequence, Iterable, Union, Tuple, List, TYPE_CHECKING
+
 import websockets
 
 # -------- конфиг --------
@@ -124,7 +124,6 @@ async def _connect():
     Устанавливает одноразовое подключение к бриджу.
     По умолчанию совпадает с настройками сервера (ping, max_size).
     """
-    headers = {"Authorization": "Bearer <hidden>"}
     _log.info("ws.connect: url=%s, timeout=%s, max_size=%s", BRIDGE_URL, BRIDGE_TIMEOUT, BRIDGE_MAX_SIZE)
     try:
         ws = await asyncio.wait_for(
@@ -226,36 +225,81 @@ async def _send_only(message: Dict[str, Any]) -> None:
     finally:
         await _graceful_close(ws)
 
+# ---- Sync aliases (compat) ----
+
+def ws_send_and_wait(message: Dict[str, Any],
+                     expect: Optional[Sequence[str]] = None,
+                     realm: Optional[str] = None,
+                     timeout: float = BRIDGE_TIMEOUT) -> Dict[str, Any]:
+    """Синхронная обёртка над _send_and_wait (для совместимости с внешними вызовами)."""
+    return _run(_send_and_wait(message, expect_types=tuple(expect) if expect else None,
+                               realm=realm, timeout=timeout))
+
+def send_and_wait(message: Dict[str, Any],
+                  expect: Optional[Sequence[str]] = None,
+                  realm: Optional[str] = None,
+                  timeout: float = BRIDGE_TIMEOUT) -> Dict[str, Any]:
+    """Алиас — некоторые места могут ожидать такую функцию по имени."""
+    return ws_send_and_wait(message, expect=expect, realm=realm, timeout=timeout)
+
 
 # ====================== УТИЛИТЫ ДЛЯ ФРОНТА ======================
 
 def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
     """
     Принимает кадр server.stats или stats.report.
-    Возвращает стабилизированный словарь для UI.
+    Возвращает стабилизированный словарь для UI, не теряя тяжелые поля (players_list, worlds).
     """
-    if obj.get("type") not in ("server.stats", "stats.report"):
-        _log.warning("normalize_stats: unexpected frame type=%s", obj.get("type"))
+    t = obj.get("type")
+    if t not in ("server.stats", "stats.report"):
+        _log.warning("normalize_stats: unexpected frame type=%s", t)
         return {"type": "bridge.error", "error": "not_stats_frame", "payload": {}}
 
-    # Одни плагины кладут данные в data, другие — в payload
+    # разные плагины кладут в data или payload
     d = obj.get("data") or obj.get("payload") or {}
     realm = d.get("realm") or obj.get("realm")
-    plugins = d.get("plugins") or {}
 
-    return {
-        "type": obj["type"],
+    # players section: берём как агрегаты, так и вложенный dict
+    players_block = d.get("players") or {}
+    players_online = d.get("players_online", players_block.get("online"))
+    players_max = d.get("players_max", players_block.get("max"))
+
+    # тяжелые поля — ПРОКИДЫВАЕМ как есть
+    players_list = d.get("players_list") or []  # [{name, uuid, world, ping, ...}]
+
+    # worlds: плагин может прислать списком или картой
+    worlds_list = d.get("worlds") or []
+    worlds_map = d.get("worlds_map") or {}
+
+    if not worlds_list and isinstance(worlds_map, dict):
+        # сконвертим карту в список со стабильными полями (name/type могут отсутствовать)
+        tmp = []
+        for name, info in worlds_map.items():
+            if not isinstance(info, dict):
+                continue
+            item = dict(info)
+            item.setdefault("name", name)
+            # если нет type — поставим NORMAL как безопасный дефолт (не критично для UI)
+            item.setdefault("type", item.get("environment") or "NORMAL")
+            item.setdefault("players", item.get("players") or 0)
+            tmp.append(item)
+        # сортируем по имени, чтобы UI не «мигал»
+        worlds_list = sorted(tmp, key=lambda x: str(x.get("name", "")).lower())
+
+    out = {
+        "type": t,
         "realm": realm,
         "players": {
-            "online": d.get("players_online"),
-            "max": d.get("players_max"),
+            "online": players_online,
+            "max": players_max,
         },
         "motd": d.get("motd"),
+
         "tps": {
-            "1m": d.get("tps_1m"),
-            "5m": d.get("tps_5m"),
-            "15m": d.get("tps_15m"),
-            "mspt": d.get("mspt"),
+            "1m": d.get("tps_1m") if d.get("tps_1m") is not None else (d.get("tps") or {}).get("1m"),
+            "5m": d.get("tps_5m") if d.get("tps_5m") is not None else (d.get("tps") or {}).get("5m"),
+            "15m": d.get("tps_15m") if d.get("tps_15m") is not None else (d.get("tps") or {}).get("15m"),
+            "mspt": d.get("mspt") if d.get("mspt") is not None else (d.get("tps") or {}).get("mspt"),
         },
         "heap": {
             "used": d.get("heap_used"),
@@ -289,8 +333,17 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
                 "process": d.get("cpu_process_load"),
             },
         },
-        "plugins": plugins,  # dict: {name: version}
+        "fs": d.get("fs") or {},
+        "entities_top_types": d.get("entities_top_types") or {},
+        "entities_total_types": d.get("entities_total_types") or {},
+        "plugins": d.get("plugins") or {},
+        # --- ВАЖНО: тяжёлые поля не теряем ---
+        "players_list": players_list,
+        "worlds": worlds_list,
+        "worlds_map": worlds_map,
     }
+
+    return out
 
 
 # ====================== ПУБЛИЧНЫЙ API ======================
@@ -487,11 +540,11 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
         "data": {
           "realm": <realm>,
           "action": <add/remove/list>,
-          "users": [...],         # для add/remove
+          "users": [...],
           "applied": <int>,
           "size": <int>
         },
-        "errors": [ {"user": "...", "error": "..."} ]  # если были ошибки/bridge.error
+        "errors": [ {"user": "...", "error": "..."} ]
       }
     """
     action = (op or "").strip().lower()
