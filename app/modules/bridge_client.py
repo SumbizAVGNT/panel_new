@@ -232,65 +232,109 @@ async def _send_only(message: Dict[str, Any]) -> None:
 def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
     """
     Принимает кадр server.stats или stats.report.
-    Возвращает стабилизированный словарь для UI.
+    Возвращает стабилизированный словарь для UI со «спаянными» полями
+    из data/payload и удобными ключами:
+      - players.online/max/list/count
+      - tps.{1m,5m,15m,mspt}
+      - heap/nonheap
+      - jvm/os
+      - plugins (dict name->version)
+      - worlds (по мирам)
+      - entities.{top_types,total_types}
+      - fs (filesystem summary, если есть)
     """
-    if obj.get("type") not in ("server.stats", "stats.report"):
-        _log.warning("normalize_stats: unexpected frame type=%s", obj.get("type"))
+    t = obj.get("type")
+    if t not in ("server.stats", "stats.report"):
+        _log.warning("normalize_stats: unexpected frame type=%s", t)
         return {"type": "bridge.error", "error": "not_stats_frame", "payload": {}}
 
-    # Одни плагины кладут данные в data, другие — в payload
+    # Разные источники кладут данные в data или payload
     d = obj.get("data") or obj.get("payload") or {}
     realm = d.get("realm") or obj.get("realm")
+
+    # TPS может приходить и в плоских ключах, и вложенно.
+    tps_block = d.get("tps") or {}
+    tps = {
+        "1m": d.get("tps_1m", tps_block.get("1m")),
+        "5m": d.get("tps_5m", tps_block.get("5m")),
+        "15m": d.get("tps_15m", tps_block.get("15m")),
+        "mspt": d.get("mspt", tps_block.get("mspt")),
+    }
+
+    # Игроки: считаем обе возможные формы и даём фронту единый интерфейс
+    players_dict = d.get("players") or {}
+    players_online = d.get("players_online", players_dict.get("online"))
+    players_max = d.get("players_max", players_dict.get("max"))
+    players_list = (
+        d.get("players_list")
+        or players_dict.get("list")
+        or []
+    )
+    players_count = d.get("players_count", players_dict.get("count"))
+
+    # JVM/OS/Memory
+    heap = {"used": d.get("heap_used"), "max": d.get("heap_max")}
+    nonheap = {"used": d.get("nonheap_used"), "max": d.get("nonheap_max")}
+    jvm = {
+        "uptime_ms": d.get("jvm_uptime_ms"),
+        "classes": {
+            "loaded": d.get("classes_loaded"),
+            "total_loaded": d.get("classes_total_loaded"),
+            "unloaded": d.get("classes_unloaded"),
+        },
+        "threads": {
+            "live": d.get("threads_live"),
+            "peak": d.get("threads_peak"),
+            "daemon": d.get("threads_daemon"),
+        },
+        "gc": d.get("gc") or {},
+        "mem_pools": d.get("mem_pools") or {},
+    }
+    os_block = {
+        "name": d.get("os_name"),
+        "arch": d.get("os_arch"),
+        "cores": d.get("os_cores"),
+        "cpu_load": {
+            "system": d.get("cpu_system_load"),
+            "process": d.get("cpu_process_load"),
+        },
+    }
+
+    # Плагины
     plugins = d.get("plugins") or {}
 
-    return {
-        "type": obj["type"],
-        "realm": realm,
-        "players": {
-            "online": d.get("players_online"),
-            "max": d.get("players_max"),
-        },
-        "motd": d.get("motd"),
-        "tps": {
-            "1m": d.get("tps_1m"),
-            "5m": d.get("tps_5m"),
-            "15m": d.get("tps_15m"),
-            "mspt": d.get("mspt"),
-        },
-        "heap": {
-            "used": d.get("heap_used"),
-            "max": d.get("heap_max"),
-        },
-        "nonheap": {
-            "used": d.get("nonheap_used"),
-            "max": d.get("nonheap_max"),
-        },
-        "jvm": {
-            "uptime_ms": d.get("jvm_uptime_ms"),
-            "classes": {
-                "loaded": d.get("classes_loaded"),
-                "total_loaded": d.get("classes_total_loaded"),
-                "unloaded": d.get("classes_unloaded"),
-            },
-            "threads": {
-                "live": d.get("threads_live"),
-                "peak": d.get("threads_peak"),
-                "daemon": d.get("threads_daemon"),
-            },
-            "gc": d.get("gc") or {},
-            "mem_pools": d.get("mem_pools") or {},
-        },
-        "os": {
-            "name": d.get("os_name"),
-            "arch": d.get("os_arch"),
-            "cores": d.get("os_cores"),
-            "cpu_load": {
-                "system": d.get("cpu_system_load"),
-                "process": d.get("cpu_process_load"),
-            },
-        },
-        "plugins": plugins,  # dict: {name: version}
+    # Миры / сущности / ФС — если приходят, прокидываем как есть
+    worlds = d.get("worlds") or {}
+    entities = {
+        "top_types": d.get("entities_top_types") or {},
+        "total_types": d.get("entities_total_types"),
     }
+    fs = d.get("fs") or {}
+
+    # MOTD и прочее
+    motd = d.get("motd")
+
+    return {
+        "type": t,
+        "realm": realm,
+        "motd": motd,
+        "players": {
+            "online": players_online,
+            "max": players_max,
+            "list": players_list,     # [{name, uuid, world, ping, lp_primary, ...}]
+            "count": players_count,   # если плагин присылает отдельным полем
+        },
+        "tps": tps,
+        "heap": heap,
+        "nonheap": nonheap,
+        "jvm": jvm,
+        "os": os_block,
+        "plugins": plugins,
+        "worlds": worlds,
+        "entities": entities,
+        "fs": fs,
+    }
+
 
 
 # ====================== ПУБЛИЧНЫЙ API ======================
