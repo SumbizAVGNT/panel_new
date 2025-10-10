@@ -31,6 +31,7 @@ from ...modules.bridge_client import (
     # JustPoints
     jp_balance_get, jp_balance_set, jp_balance_add, jp_balance_take,
 )
+
 # --- DB: stats storage (soft import with fallbacks) ---
 try:
     # preferred names
@@ -73,7 +74,8 @@ def gameservers_index():
 def gameservers_section(realm: str):
     """
     Страница конкретного сервера.
-    TODO (frontend): сделать плитки кликабельными; при клике — запрашивать историю/детали из /api/stats/series и /api/stats/latest
+    Данные для истории берутся из БД (/gameservers/api/stats/series).
+    Если сервер офлайн — история доступна.
     """
     return render_template("admin/gameservers/section.html", realm=realm)
 
@@ -355,7 +357,13 @@ def api_stats_series_from_db():
     fields_raw = (request.args.get("fields") or "").strip()
     fields: Optional[Iterable[str]] = None
     if fields_raw:
-        fields = [f.strip() for f in fields_raw.split(",") if f.strip()]
+        raw_fields = [f.strip() for f in fields_raw.split(",") if f.strip()]
+        # Маппинг алиасов, которые может прислать фронт
+        alias = {
+            "cpu_system_load": "cpu_sys",
+            "cpu_process_load": "cpu_proc",
+        }
+        fields = [alias.get(f, f) for f in raw_fields]
 
     since_ts = int(time.time() - minutes * 60)
 

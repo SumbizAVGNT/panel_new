@@ -24,16 +24,12 @@ def _setup_logger() -> Logger:
     level = getattr(logging, level_name, logging.INFO)
     log = logging.getLogger("bridge_client")
     if log.handlers:
-        # уже инициализирован (например, через gunicorn/flask)
         log.setLevel(level)
         return log
 
-    # Формат: либо JSON, либо краткий текстовый
     json_mode = (os.getenv("SP_LOG_JSON") or "").lower() in ("1", "true", "yes", "y", "on")
-
     handler = logging.StreamHandler()
     if json_mode:
-        # Простой JSON-формат без сторонних зависимостей
         class JsonFormatter(logging.Formatter):
             def format(self, record: logging.LogRecord) -> str:
                 obj = {
@@ -58,8 +54,7 @@ def _setup_logger() -> Logger:
     return log
 
 _log = _setup_logger()
-_TRUNC = int(os.getenv("SP_LOG_MAX_PAYLOAD", "800"))  # обрезаем большие строки в логах
-
+_TRUNC = int(os.getenv("SP_LOG_MAX_PAYLOAD", "800"))
 
 def _safe_trunc(s: Any) -> str:
     try:
@@ -70,14 +65,9 @@ def _safe_trunc(s: Any) -> str:
         return ss[:_TRUNC] + f"... (+{len(ss)-_TRUNC} chars)"
     return ss
 
-
 # ====================== ВСПОМОГАТЕЛЬНОЕ ======================
 
 def _run(coro) -> Any:
-    """
-    Безопасно выполнить async-корутину из синхронного кода.
-    Если уже есть запущенный loop — исполним в отдельном треде со своим event loop.
-    """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -108,7 +98,6 @@ def _run(coro) -> Any:
         raise box["error"]
     return box.get("result")
 
-
 def _json_loads(s: str) -> Dict[str, Any]:
     try:
         return json.loads(s or "{}")
@@ -116,14 +105,9 @@ def _json_loads(s: str) -> Dict[str, Any]:
         _log.warning("json_loads: bad json: %s", _safe_trunc(s))
         return {"type": "bridge.error", "error": "bad_json", "payload": {"raw": (s[:200] + "...") if s else ""}}
 
-
 # ====================== НИЗКОУРОВНЕВЫЙ WS ======================
 
 async def _connect():
-    """
-    Устанавливает одноразовое подключение к бриджу.
-    По умолчанию совпадает с настройками сервера (ping, max_size).
-    """
     _log.info("ws.connect: url=%s, timeout=%s, max_size=%s", BRIDGE_URL, BRIDGE_TIMEOUT, BRIDGE_MAX_SIZE)
     try:
         ws = await asyncio.wait_for(
@@ -142,7 +126,6 @@ async def _connect():
         _log.exception("ws.connect: failed")
         raise
 
-
 async def _graceful_close(ws, code: int = 1000, reason: str = "ok") -> None:
     try:
         await ws.close(code=code, reason=reason)
@@ -151,7 +134,6 @@ async def _graceful_close(ws, code: int = 1000, reason: str = "ok") -> None:
         _log.debug("ws.close: code=%s reason=%s", code, reason)
     except Exception:
         _log.exception("ws.close: failed")
-
 
 async def _recv_with_timeout(ws, timeout: float) -> Dict[str, Any]:
     try:
@@ -166,22 +148,15 @@ async def _recv_with_timeout(ws, timeout: float) -> Dict[str, Any]:
     _log.debug("ws.recv: type=%s", obj.get("type"))
     return obj
 
-
 async def _send_and_wait(
     message: Dict[str, Any],
     expect_types: Optional[Sequence[str]] = None,
     realm: Optional[str] = None,
     timeout: float = BRIDGE_TIMEOUT,
 ) -> Dict[str, Any]:
-    """
-    Отправить message и дождаться кадра одного из типов expect_types.
-    Если expect_types=None — вернуть первый полученный кадр (обычно это bridge.ack).
-    При указании realm — фильтруем ответы: obj.realm или payload.realm или data.realm должны совпадать.
-    """
     ws = await _connect()
     try:
         payload_for_log = dict(message)
-        # не логируем токены
         if "headers" in payload_for_log:
             payload_for_log["headers"] = "<hidden>"
         _log.info("ws.send: %s", _safe_trunc(payload_for_log))
@@ -192,7 +167,6 @@ async def _send_and_wait(
             _log.info("ws.wait: first-frame type=%s", obj.get("type"))
             return obj
 
-        # ждём пока не прилетит один из ожидаемых типов
         while True:
             obj = await _recv_with_timeout(ws, timeout)
             t = obj.get("type")
@@ -213,9 +187,7 @@ async def _send_and_wait(
     finally:
         await _graceful_close(ws)
 
-
 async def _send_only(message: Dict[str, Any]) -> None:
-    """Fire-and-forget отправка кадра (без ожидания ответа)."""
     ws = await _connect()
     try:
         _log.info("ws.send-only: %s", _safe_trunc(message))
@@ -231,7 +203,6 @@ def ws_send_and_wait(message: Dict[str, Any],
                      expect: Optional[Sequence[str]] = None,
                      realm: Optional[str] = None,
                      timeout: float = BRIDGE_TIMEOUT) -> Dict[str, Any]:
-    """Синхронная обёртка над _send_and_wait (для совместимости с внешними вызовами)."""
     return _run(_send_and_wait(message, expect_types=tuple(expect) if expect else None,
                                realm=realm, timeout=timeout))
 
@@ -239,51 +210,38 @@ def send_and_wait(message: Dict[str, Any],
                   expect: Optional[Sequence[str]] = None,
                   realm: Optional[str] = None,
                   timeout: float = BRIDGE_TIMEOUT) -> Dict[str, Any]:
-    """Алиас — некоторые места могут ожидать такую функцию по имени."""
     return ws_send_and_wait(message, expect=expect, realm=realm, timeout=timeout)
-
 
 # ====================== УТИЛИТЫ ДЛЯ ФРОНТА ======================
 
 def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Принимает кадр server.stats или stats.report.
-    Возвращает стабилизированный словарь для UI, не теряя тяжелые поля (players_list, worlds).
-    """
     t = obj.get("type")
     if t not in ("server.stats", "stats.report"):
         _log.warning("normalize_stats: unexpected frame type=%s", t)
         return {"type": "bridge.error", "error": "not_stats_frame", "payload": {}}
 
-    # разные плагины кладут в data или payload
     d = obj.get("data") or obj.get("payload") or {}
     realm = d.get("realm") or obj.get("realm")
 
-    # players section: берём как агрегаты, так и вложенный dict
     players_block = d.get("players") or {}
     players_online = d.get("players_online", players_block.get("online"))
     players_max = d.get("players_max", players_block.get("max"))
 
-    # тяжелые поля — ПРОКИДЫВАЕМ как есть
-    players_list = d.get("players_list") or []  # [{name, uuid, world, ping, ...}]
+    players_list = d.get("players_list") or []
 
-    # worlds: плагин может прислать списком или картой
     worlds_list = d.get("worlds") or []
     worlds_map = d.get("worlds_map") or {}
 
     if not worlds_list and isinstance(worlds_map, dict):
-        # сконвертим карту в список со стабильными полями (name/type могут отсутствовать)
         tmp = []
         for name, info in worlds_map.items():
             if not isinstance(info, dict):
                 continue
             item = dict(info)
             item.setdefault("name", name)
-            # если нет type — поставим NORMAL как безопасный дефолт (не критично для UI)
             item.setdefault("type", item.get("environment") or "NORMAL")
             item.setdefault("players", item.get("players") or 0)
             tmp.append(item)
-        # сортируем по имени, чтобы UI не «мигал»
         worlds_list = sorted(tmp, key=lambda x: str(x.get("name", "")).lower())
 
     out = {
@@ -337,38 +295,66 @@ def normalize_server_stats(obj: Dict[str, Any]) -> Dict[str, Any]:
         "entities_top_types": d.get("entities_top_types") or {},
         "entities_total_types": d.get("entities_total_types") or {},
         "plugins": d.get("plugins") or {},
-        # --- ВАЖНО: тяжёлые поля не теряем ---
         "players_list": players_list,
         "worlds": worlds_list,
         "worlds_map": worlds_map,
     }
-
     return out
 
+# ====================== DB (soft import) ======================
+
+# По месту: безопасно подключаемся к твоему database.py и используем save_server_stats.
+try:
+    # имена из твоего файла
+    from ..database import (
+        get_db_connection,         # -> MySQLConnection
+        init_stats_schema,         # (conn) -> None
+        save_server_stats,         # (conn, stats: dict, collected_at: datetime|None) -> int
+    )
+    _DB_OK = True
+except Exception:
+    get_db_connection = None       # type: ignore
+    init_stats_schema = None       # type: ignore
+    save_server_stats = None       # type: ignore
+    _DB_OK = False
+
+def _maybe_save_stats_to_db(norm: Dict[str, Any]) -> Optional[int]:
+    """
+    Best-effort сохранение нормализованной статистики в БД.
+    Возвращает id вставленной строки или None.
+    """
+    if not _DB_OK or get_db_connection is None or save_server_stats is None:
+        return None
+    try:
+        with get_db_connection() as conn:  # type: ignore[misc]
+            if init_stats_schema:
+                init_stats_schema(conn)    # type: ignore[misc]
+            rid = save_server_stats(conn, norm)  # type: ignore[misc]
+            conn.commit()
+            return int(rid)
+    except Exception as e:
+        _log.warning("db.save_stats failed: %s", e)
+        try:
+            conn.rollback()  # type: ignore[name-defined]
+        except Exception:
+            pass
+        return None
 
 # ====================== ПУБЛИЧНЫЙ API ======================
 
 # ---- Health / meta ----
 
 def bridge_ping() -> Dict[str, Any]:
-    """
-    Пинг через доступный метод сервера: bridge.list -> bridge.list.result.
-    (В bridge.py нет отдельной обработки 'bridge.ping'.)
-    """
     try:
         return _run(_send_and_wait({"type": "bridge.list"}, expect_types=("bridge.list.result",)))
     except Exception as e:
         _log.exception("bridge_ping failed")
         return {"type": "bridge.error", "error": str(e), "payload": {}}
 
-
 def bridge_info() -> Dict[str, Any]:
-    """Краткая сводка по бриджу (используем bridge.list)."""
     return bridge_ping()
 
-
 def bridge_list() -> Dict[str, Any]:
-    """Список онлайновых плагинов по realm’ам (type=bridge.list.result)."""
     msg = {"type": "bridge.list"}
     try:
         return _run(_send_and_wait(msg, expect_types=("bridge.list.result",)))
@@ -376,30 +362,33 @@ def bridge_list() -> Dict[str, Any]:
         _log.exception("bridge_list failed")
         return {"type": "bridge.error", "error": str(e), "payload": {}}
 
-
 # ---- Stats ----
 
 def stats_query(realm: str) -> Dict[str, Any]:
     """
     Запрос статуса сервера.
-    Бридж/плагин может прислать как {"type":"server.stats", ...}, так и {"type":"stats.report", ...}.
+    После получения кадра нормализуем и best-effort сохраняем в MySQL.
     """
     msg = {"type": "stats.query", "realm": realm, "payload": {"realm": realm}}
     try:
-        return _run(_send_and_wait(msg, expect_types=("server.stats", "stats.report"), realm=realm))
+        frame = _run(_send_and_wait(msg, expect_types=("server.stats", "stats.report"), realm=realm))
     except Exception as e:
         _log.exception("stats_query failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {}}
 
+    # Нормализуем и пытаемся сохранить
+    try:
+        norm = normalize_server_stats(frame)
+        if isinstance(norm, dict) and norm.get("type") not in ("bridge.error", None):
+            _maybe_save_stats_to_db(norm)
+    except Exception:
+        _log.exception("stats_query: normalize/save failed (realm=%s)", realm)
+
+    return frame
 
 # ---- Console ----
 
 def console_exec(realm: str, cmd: str) -> Dict[str, Any]:
-    """
-    Выполнить одну консольную команду.
-    Возвращаем первый ответ (обычно это bridge.ack), чтобы фронт не висел.
-    На стороне бриджа запрос нормализуется в {"type":"console.exec","command": "..."}
-    """
     msg = {"type": "console.exec", "realm": realm, "payload": {"realm": realm, "cmd": cmd}}
     try:
         return _run(_send_and_wait(msg, expect_types=None))
@@ -410,12 +399,7 @@ def console_exec(realm: str, cmd: str) -> Dict[str, Any]:
             "payload": {"sent": False, "realm": realm, "cmd": cmd, "error": str(e)},
         }
 
-
 def console_exec_lines(realm: str, lines: Sequence[str]) -> Dict[str, Any]:
-    """
-    Отправить несколько строк разом (аналог console.execLines).
-    Ждём первый ответ (ACK).
-    """
     msg = {"type": "console.execLines", "realm": realm, "payload": {"realm": realm}, "lines": list(lines)}
     try:
         return _run(_send_and_wait(msg, expect_types=None))
@@ -425,7 +409,6 @@ def console_exec_lines(realm: str, lines: Sequence[str]) -> Dict[str, Any]:
             "type": "bridge.ack",
             "payload": {"sent": False, "realm": realm, "lines": list(lines), "error": str(e)},
         }
-
 
 # ---- Broadcast / Online ----
 
@@ -437,7 +420,6 @@ def broadcast(realm: str, message: str) -> Dict[str, Any]:
         _log.exception("broadcast failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
 
-
 def player_is_online(realm: str, name_or_uuid: str) -> Dict[str, Any]:
     msg = {"type": "player.is_online", "realm": realm, "name": name_or_uuid}
     try:
@@ -446,13 +428,9 @@ def player_is_online(realm: str, name_or_uuid: str) -> Dict[str, Any]:
         _log.exception("player_is_online failed: realm=%s name=%s", realm, name_or_uuid)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "name": name_or_uuid}}
 
-
 # ---- Maintenance ----
 
 def maintenance_set(realm: str, enabled: bool, kick_message: str = "") -> bool:
-    """
-    Включить/выключить техработы. Текст дублируем в разных ключах (совместимость).
-    """
     msg = (kick_message or "").strip()
     payload = {
         "realm": realm,
@@ -465,15 +443,12 @@ def maintenance_set(realm: str, enabled: bool, kick_message: str = "") -> bool:
     obj = {"type": "maintenance.set", "realm": realm, "payload": payload}
     return bridge_send(obj)
 
-
 def _normalize_op(op: str) -> str:
     o = (op or "").strip().lower()
     if o in ("add", "+"): return "add"
     if o in ("remove", "del", "rm", "-"): return "remove"
     if o in ("list", "show"): return "list"
-    # дефолт: list — безопасней всего
     return "list"
-
 
 def _is_seq_of_users(x: Union[str, Iterable[str]]) -> bool:
     if isinstance(x, str): return False
@@ -483,18 +458,10 @@ def _is_seq_of_users(x: Union[str, Iterable[str]]) -> bool:
     except Exception:
         return False
 
-
 if TYPE_CHECKING:
-    # только для линтера/IDE; во время исполнения не импортируется
     from .bridge_client import ws_send_and_wait as _ws_send_and_wait_typed  # noqa: F401
 
-
 def _ws_call(payload: Dict[str, Any], expect: Tuple[str, ...]) -> Dict[str, Any]:
-    """
-    Унифицированный вызов «отправить и подождать ответа».
-    Пытается найти любой доступный хелпер ожидания в текущем модуле, иначе шлёт fire-and-forget.
-    """
-    # 1) Попробуем найти подходящую функцию прямо в globals текущего модуля:
     for name in ("ws_send_and_wait", "send_and_wait", "bridge_send_and_wait",
                  "_send_and_wait_sync", "_send_and_wait"):
         fn = globals().get(name)
@@ -502,67 +469,37 @@ def _ws_call(payload: Dict[str, Any], expect: Tuple[str, ...]) -> Dict[str, Any]
             try:
                 return fn(payload, expect=expect)  # type: ignore[misc]
             except TypeError:
-                # запасной вызов (вдруг другая сигнатура)
                 try:
                     return fn(payload)  # type: ignore[misc]
                 except Exception:
                     pass
             except Exception:
-                # если конкретная реализация упала — попробуем следующую
                 pass
 
-    # 2) Нет «ждущих» — шлём синхронно без ожидания через bridge_send и возвращаем синтетический ACK
     try:
-        # bridge_send определён в этом же модуле
         bs = globals().get("bridge_send")
         if callable(bs):
             bs(payload)  # type: ignore[misc]
             return {"type": "bridge.ack", "synthetic": True}
-        # на всякий случай попробуем мягко импортнуть
         from .bridge_client import bridge_send as _send_only  # type: ignore[no-redef]
         _send_only(payload)
         return {"type": "bridge.ack", "synthetic": True}
     except Exception as e:
         return {"type": "bridge.error", "error": str(e)}
 
-
 # ---- Admin Origin helper ----
 
 def _admin_origin_payload(*, realm: str, action: str, extra: Optional[Dict[str, Any]] = None,
                           client: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Конструирует кадр совместимый с бриджом admin.origin:
-      {
-        "type": "admin.origin",
-        "realm": "<realm>",
-        "payload": {
-            "realm": "<realm>",
-            "action": "<action>",
-            "client": {...},    # опционально
-            "extra": {...}      # произвольные параметры для действия
-        }
-      }
-    """
-    payload: Dict[str, Any] = {
-        "realm": realm,
-        "action": action,
-    }
+    payload: Dict[str, Any] = {"realm": realm, "action": action}
     if client:
         payload["client"] = client
     if extra:
         payload["extra"] = extra
-    return {
-        "type": "admin.origin",
-        "realm": realm,
-        "payload": payload,
-    }
-
+    return {"type": "admin.origin", "realm": realm, "payload": payload}
 
 def admin_origin_send(realm: str, action: str, *, extra: Optional[Dict[str, Any]] = None,
                       client: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Универсальная отправка admin.origin. Возвращаем первый ответ кадром (обычно bridge.ack).
-    """
     frame = _admin_origin_payload(realm=realm, action=action, extra=extra, client=client)
     try:
         return _run(_send_and_wait(frame, expect_types=None, realm=realm))
@@ -570,17 +507,9 @@ def admin_origin_send(realm: str, action: str, *, extra: Optional[Dict[str, Any]
         _log.exception("admin_origin_send failed: realm=%s action=%s", realm, action)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "action": action}}
 
-
 def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str], None]) -> Dict[str, Any]:
-    """
-    Отправить изменения whitelist через admin.origin -> action='maintenance.whitelist'.
-
-    op: "add" | "remove" | "list"
-    players: str (ник/uuid) или Iterable[str] или None (для "list")
-    """
     action = _normalize_op(op)
 
-    # нормализация входа
     if isinstance(players, (list, tuple, set)):
         users: List[str] = [str(x).strip() for x in players if str(x or "").strip()]
     elif isinstance(players, str):
@@ -588,12 +517,10 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
     else:
         users = []
 
-    # admin.origin ожидает extra = {"op": "...", "players": [...]}
     extra: Dict[str, Any] = {"op": action}
     if action != "list":
         extra["players"] = users
 
-    # client — минимальный, чтобы не светить лишнее
     client = {
         "lang": os.getenv("SP_LANG", "ru"),
         "tz": os.getenv("TZ", "UTC"),
@@ -619,7 +546,6 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
     }
     return result
 
-
 def maintenance_whitelist_add(realm: str, user: str) -> Dict[str, Any]:
     return maintenance_whitelist(realm, "add", user)
 
@@ -632,7 +558,6 @@ def maintenance_whitelist_add_many(realm: str, users: Iterable[str]) -> Dict[str
 def maintenance_whitelist_remove_many(realm: str, users: Iterable[str]) -> Dict[str, Any]:
     return maintenance_whitelist(realm, "remove", users)
 
-
 # ---- LuckPerms wrappers ----
 
 def lp_web_open(realm: str) -> Dict[str, Any]:
@@ -643,7 +568,6 @@ def lp_web_open(realm: str) -> Dict[str, Any]:
         _log.exception("lp_web_open failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
 
-
 def lp_web_apply(realm: str, code: str) -> Dict[str, Any]:
     msg = {"type": "lp.web.apply", "realm": realm, "payload": {"realm": realm, "code": code}}
     try:
@@ -651,7 +575,6 @@ def lp_web_apply(realm: str, code: str) -> Dict[str, Any]:
     except Exception as e:
         _log.exception("lp_web_apply failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
-
 
 def lp_user_perm_add(realm: str, user: str, permission: str, value: bool = True) -> Dict[str, Any]:
     msg = {"type": "lp.user.perm.add", "realm": realm,
@@ -662,7 +585,6 @@ def lp_user_perm_add(realm: str, user: str, permission: str, value: bool = True)
         _log.exception("lp_user_perm_add failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
 
-
 def lp_user_perm_remove(realm: str, user: str, permission: str) -> Dict[str, Any]:
     msg = {"type": "lp.user.perm.remove", "realm": realm,
            "payload": {"realm": realm, "user": user, "permission": permission}}
@@ -671,7 +593,6 @@ def lp_user_perm_remove(realm: str, user: str, permission: str) -> Dict[str, Any
     except Exception as e:
         _log.exception("lp_user_perm_remove failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
-
 
 def lp_user_group_add(realm: str, user: str, group: str) -> Dict[str, Any]:
     msg = {"type": "lp.user.group.add", "realm": realm,
@@ -682,7 +603,6 @@ def lp_user_group_add(realm: str, user: str, group: str) -> Dict[str, Any]:
         _log.exception("lp_user_group_add failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
 
-
 def lp_user_group_remove(realm: str, user: str, group: str) -> Dict[str, Any]:
     msg = {"type": "lp.user.group.remove", "realm": realm,
            "payload": {"realm": realm, "user": user, "group": group}}
@@ -691,7 +611,6 @@ def lp_user_group_remove(realm: str, user: str, group: str) -> Dict[str, Any]:
     except Exception as e:
         _log.exception("lp_user_group_remove failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
-
 
 def lp_group_perm_add(realm: str, group: str, permission: str, value: bool = True) -> Dict[str, Any]:
     msg = {"type": "lp.group.perm.add", "realm": realm,
@@ -702,7 +621,6 @@ def lp_group_perm_add(realm: str, group: str, permission: str, value: bool = Tru
         _log.exception("lp_group_perm_add failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
 
-
 def lp_group_perm_remove(realm: str, group: str, permission: str) -> Dict[str, Any]:
     msg = {"type": "lp.group.perm.remove", "realm": realm,
            "payload": {"realm": realm, "group": group, "permission": permission}}
@@ -712,7 +630,6 @@ def lp_group_perm_remove(realm: str, group: str, permission: str) -> Dict[str, A
         _log.exception("lp_group_perm_remove failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
 
-
 def lp_user_info(realm: str, user: str) -> Dict[str, Any]:
     msg = {"type": "lp.user.info", "realm": realm, "payload": {"realm": realm, "user": user}}
     try:
@@ -720,7 +637,6 @@ def lp_user_info(realm: str, user: str) -> Dict[str, Any]:
     except Exception as e:
         _log.exception("lp_user_info failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
-
 
 def lp_group_info(realm: str, group: str) -> Dict[str, Any]:
     msg = {"type": "lp.group.info", "realm": realm, "payload": {"realm": realm, "group": group}}
@@ -730,21 +646,15 @@ def lp_group_info(realm: str, group: str) -> Dict[str, Any]:
         _log.exception("lp_group_info failed: realm=%s", realm)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm}}
 
-
 # ---- JetPay / Coins (JP) wrappers ----
 
 def jp_balance_get(realm: str, user: str) -> Dict[str, Any]:
-    """
-    Получить баланс пользователя.
-    Тип ответа не фиксируем — возвращаем первый кадр (ACK/результат).
-    """
     msg = {"type": "jp.balance.get", "realm": realm, "payload": {"realm": realm, "user": user}}
     try:
         return _run(_send_and_wait(msg, expect_types=None, realm=realm))
     except Exception as e:
         _log.exception("jp_balance_get failed: realm=%s user=%s", realm, user)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user}}
-
 
 def jp_balance_set(realm: str, user: str, amount: int) -> Dict[str, Any]:
     msg = {"type": "jp.balance.set", "realm": realm,
@@ -755,7 +665,6 @@ def jp_balance_set(realm: str, user: str, amount: int) -> Dict[str, Any]:
         _log.exception("jp_balance_set failed: realm=%s user=%s", realm, user)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user}}
 
-
 def jp_balance_add(realm: str, user: str, delta: int) -> Dict[str, Any]:
     msg = {"type": "jp.balance.add", "realm": realm,
            "payload": {"realm": realm, "user": user, "delta": int(delta)}}
@@ -765,12 +674,7 @@ def jp_balance_add(realm: str, user: str, delta: int) -> Dict[str, Any]:
         _log.exception("jp_balance_add failed: realm=%s user=%s", realm, user)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user}}
 
-
 def jp_balance_take(realm: str, user: str, amount: int) -> Dict[str, Any]:
-    """
-    Списать фиксированную сумму с баланса пользователя.
-    Если на бридже нет отдельного метода — он может быть алиасом к "add" с отрицательным значением.
-    """
     msg = {"type": "jp.balance.take", "realm": realm,
            "payload": {"realm": realm, "user": user, "amount": int(amount)}}
     try:
@@ -778,7 +682,6 @@ def jp_balance_take(realm: str, user: str, amount: int) -> Dict[str, Any]:
     except Exception as e:
         _log.exception("jp_balance_take failed: realm=%s user=%s", realm, user)
         return {"type": "bridge.error", "error": str(e), "payload": {"realm": realm, "user": user, "amount": int(amount)}}
-
 
 def jp_transfer(realm: str, src_user: str, dst_user: str, amount: int, *, reason: str = "") -> Dict[str, Any]:
     msg = {"type": "jp.transfer", "realm": realm,
@@ -790,14 +693,9 @@ def jp_transfer(realm: str, src_user: str, dst_user: str, amount: int, *, reason
         return {"type": "bridge.error", "error": str(e),
                 "payload": {"realm": realm, "from": src_user, "to": dst_user, "amount": int(amount)}}
 
-
 # ---- Универсальная отправка ----
 
 def bridge_send(obj: Dict[str, Any]) -> bool:
-    """
-    Fire-and-forget отправка любого кадра.
-    Возвращает True, если отправка прошла без исключений.
-    """
     try:
         _run(_send_only(obj))
         return True
