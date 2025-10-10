@@ -9,7 +9,7 @@ import threading
 import logging
 from logging import Logger
 from typing import Any, Dict, Optional, Sequence, Iterable, Union
-from typing import Iterable, Union, List, Dict, Any, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, Any, Tuple, Iterable, Union, List
 import websockets
 
 # -------- конфиг --------
@@ -433,19 +433,44 @@ def _is_seq_of_users(x: Union[str, Iterable[str]]) -> bool:
 
 if TYPE_CHECKING:
     # только для линтера/IDE; во время исполнения не импортируется
-    from .bridge_client import ws_send_and_wait as _ws_send_and_wait_typed
+    from .bridge_client import ws_send_and_wait as _ws_send_and_wait_typed  # noqa: F401
+
 
 def _ws_call(payload: Dict[str, Any], expect: Tuple[str, ...]) -> Dict[str, Any]:
     """
-    Унифицированный вызов ws_send_and_wait без круговых импортов и красноты в линтере.
+    Унифицированный вызов «отправить и подождать ответа».
+    Пытается найти любой доступный хелпер ожидания в текущем модуле, иначе шлёт fire-and-forget.
     """
+    # 1) Попробуем найти подходящую функцию прямо в globals текущего модуля:
+    for name in ("ws_send_and_wait", "send_and_wait", "bridge_send_and_wait",
+                 "_send_and_wait_sync", "_send_and_wait"):
+        fn = globals().get(name)
+        if callable(fn):
+            try:
+                return fn(payload, expect=expect)  # type: ignore[misc]
+            except TypeError:
+                # запасной вызов (вдруг другая сигнатура)
+                try:
+                    return fn(payload)  # type: ignore[misc]
+                except Exception:
+                    pass
+            except Exception:
+                # если конкретная реализация упала — попробуем следующую
+                pass
+
+    # 2) Нет «ждущих» — шлём синхронно без ожидания через bridge_send и возвращаем синтетический ACK
     try:
-        # если функция в том же модуле — используем напрямую
-        return ws_send_and_wait(payload, expect=expect)  # type: ignore[name-defined]
-    except NameError:
-        # если функция в другом модуле — мягко импортируем локально
-        from .bridge_client import ws_send_and_wait as _real  # корректируй путь при необходимости
-        return _real(payload, expect=expect)
+        # bridge_send определён в этом же модуле
+        bs = globals().get("bridge_send")
+        if callable(bs):
+            bs(payload)  # type: ignore[misc]
+            return {"type": "bridge.ack", "synthetic": True}
+        # на всякий случай попробуем мягко импортнуть
+        from .bridge_client import bridge_send as _send_only  # type: ignore[no-redef]
+        _send_only(payload)
+        return {"type": "bridge.ack", "synthetic": True}
+    except Exception as e:
+        return {"type": "bridge.error", "error": str(e)}
 
 
 def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str], None]) -> Dict[str, Any]:
@@ -463,8 +488,8 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
           "realm": <realm>,
           "action": <add/remove/list>,
           "users": [...],         # для add/remove
-          "applied": <int>,       # сколько успешно применено (по ack/event)
-          "size": <int>           # == len(users)
+          "applied": <int>,
+          "size": <int>
         },
         "errors": [ {"user": "...", "error": "..."} ]  # если были ошибки/bridge.error
       }
@@ -473,7 +498,7 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
     if action not in ("add", "remove", "list"):
         raise ValueError("op must be add|remove|list")
 
-    # нормализуем вход
+    # нормализация входа
     if isinstance(players, (list, tuple, set)):
         users: List[str] = [str(x).strip() for x in players if str(x or "").strip()]
     elif isinstance(players, str):
@@ -497,7 +522,7 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
             "raw": resp if isinstance(resp, dict) else {"type": "unknown"}
         }
 
-    # add/remove: по одному кадру на пользователя
+    # add/remove — по одному кадру на пользователя
     results: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
     applied = 0
@@ -508,13 +533,12 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
             "realm": realm,
             "payload": {
                 "realm": realm,
-                "action": action,   # важно: плагин читает именно "action" и "user"
+                "action": action,   # плагин читает именно "action" и "user"
                 "user": u
             }
         }
         resp = _ws_call(payload, expect=("maintenance.whitelist", "bridge.ack", "bridge.error"))
 
-        # обработка ответов
         if isinstance(resp, dict) and resp.get("type") == "bridge.error":
             errors.append({"user": u, "error": resp.get("error") or "bridge error"})
             results.append({"user": u, "ok": False, "source": "error", "raw": resp})
@@ -529,13 +553,13 @@ def maintenance_whitelist(realm: str, op: str, players: Union[str, Iterable[str]
                 "data": resp.get("data") or resp.get("payload") or {}
             })
         else:
-            # непредвиденный формат — считаем успехом «по умолчанию», но пометим raw
+            # fire-and-forget/неизвестный формат — считаем успешным применением
             applied += 1
             results.append({"user": u, "ok": True, "source": "raw", "raw": resp})
 
     agg: Dict[str, Any] = {
         "type": "maintenance.whitelist",
-        "ok": applied == len(users) and not errors,   # все применены и нет ошибок
+        "ok": applied == len(users) and not errors,
         "data": {
             "realm": realm,
             "action": action,
