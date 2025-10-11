@@ -40,6 +40,14 @@
 .promo{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .cardx{border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(13,17,23,.55);padding:14px}
 .cardx h6{margin:0 0 8px 0}
+
+/* iframe embed */
+.embed-wrap{position:relative}
+.embed-frame{
+  width:100%; border:1px solid rgba(148,163,184,.18); border-radius:12px;
+  background:#0b1220; display:block; height:1px; min-height:200px; /* автоподгон */
+}
+.embed-toolbar{display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px}
 </style>
 
 <div class="container-xxl py-4">
@@ -47,7 +55,6 @@
     <h2 class="m-0">Game Servers</h2>
     <div class="d-flex align-items-center gap-2">
       <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
-      <!-- простая ссылка на /admin без current_app -->
       <a class="btn btn-sm btn-outline-light" href="/admin"><i class="bi bi-house"></i></a>
     </div>
   </div>
@@ -73,9 +80,15 @@
   <!-- Accounts -->
   <div id="tab-accounts" class="tab-pane">
     <div class="cardx mb-2 small-dim">
-      Раздел «Accounts» встроен сюда для удобства. Откройте на полный экран при необходимости.
+      Раздел «Accounts» встроен сюда. Откройте в полный экран при необходимости.
     </div>
-    <iframe src="{{ url_for('admin.accounts.index') }}?embed=1" style="width:100%;height:70vh;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0b1220"></iframe>
+    <div class="embed-toolbar">
+      <a class="btn btn-sm btn-outline-light" target="_blank" href="{{ url_for('admin.accounts.index') }}"><i class="bi bi-arrows-fullscreen"></i> Open full</a>
+    </div>
+    <div class="embed-wrap">
+      <!-- лениво поставим src после первого открытия -->
+      <iframe id="accFrame" class="embed-frame" title="Accounts" loading="lazy" referrerpolicy="no-referrer"></iframe>
+    </div>
   </div>
 
   <!-- Promo -->
@@ -99,7 +112,6 @@
 
       <div class="cardx">
         <h6><i class="bi bi-graph-up-arrow me-1 text-info"></i>Последние кампании</h6>
-        <div class="small small-dim">Заготовка под список активных промо-кампаний (подключите ваш API).</div>
         <ul id="promo-list" class="mt-2 mb-0 small">
           <li class="small-dim">Нет данных</li>
         </ul>
@@ -118,6 +130,9 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
     const pane = document.getElementById('tab-'+k);
     if(pane) pane.classList.add('active');
+
+    // ленивое подключение iframe + авто-высота
+    if(k==='accounts') initAccountsEmbed();
   });
 });
 
@@ -185,19 +200,16 @@ async function loadRealms(){
     return;
   }
 
-  // отрисуем карточки
   box.innerHTML = '';
-  realms.forEach(name=>{
-    box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0));
-  });
+  realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
 
-  // селект на вкладке Promo
+  // селект на Promo
   const sel = document.getElementById('pr-realm');
   if (sel){
     sel.innerHTML = `<option value="">all realms</option>` + realms.map(r=>`<option>${r}</option>`).join('');
   }
 
-  // ленивые метрики
+  // ленивая подгрузка кратких метрик
   for(const name of realms){
     try{
       const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
@@ -208,7 +220,6 @@ async function loadRealms(){
     }catch(e){}
   }
 }
-
 function normalize(d){
   d = d || {};
   const tps = d.tps || {};
@@ -244,11 +255,56 @@ function humanMs(ms){
   const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
   const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
 }
-
 document.getElementById('refresh').addEventListener('click', loadRealms);
 loadRealms();
 
-/* ---------------- Promo mock actions ---------------- */
+/* ---------------- Accounts embed (auto-height) ---------------- */
+let accInit = false;
+function initAccountsEmbed(){
+  if (accInit) return;
+  accInit = true;
+  const f = document.getElementById('accFrame');
+  // строим URL с режимом встраивания
+  const url = new URL("{{ url_for('admin.accounts.index') }}", location.origin);
+  url.searchParams.set('embed','1');
+  f.src = url.toString();
+
+  const MIN = 200, MAX = 3000;
+
+  function setH(px){
+    const h = Math.max(MIN, Math.min(MAX, Math.round(px||0)));
+    if (f.style.height !== h+'px') f.style.height = h+'px';
+  }
+
+  // принимаем сообщения от фрейма
+  window.addEventListener('message', (ev)=>{
+    if (!ev || !ev.data) return;
+    if (ev.data.type === 'embed:height' && ev.source === f.contentWindow){
+      setH(ev.data.height || 0);
+    }
+  });
+
+  // фолбэк (same-origin) — если политики совпадают, читаем высоту напрямую
+  f.addEventListener('load', ()=>{
+    try{
+      const doc = f.contentDocument;
+      if(!doc) return;
+      const meas = ()=>{
+        const h = Math.max(
+          doc.body?.scrollHeight||0,
+          doc.documentElement?.scrollHeight||0
+        ) + 8; // небольшой запас
+        setH(h);
+      };
+      meas();
+      const mo = new MutationObserver(()=>meas());
+      mo.observe(doc.documentElement, {subtree:true, childList:true, attributes:true});
+      window.addEventListener('resize', meas);
+    }catch(_){ /* кросс-домен — полагаемся на postMessage */ }
+  });
+}
+
+/* ---------------- Promo mock ---------------- */
 document.getElementById('pr-create').addEventListener('click', ()=>{
   const code = (document.getElementById('pr-code').value.trim() || ('PR' + Math.random().toString(36).slice(2,8).toUpperCase()));
   const amount = parseFloat(document.getElementById('pr-amount').value || '0');

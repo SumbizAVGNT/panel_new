@@ -55,7 +55,8 @@ header.navbar, .navbar, .site-header, .app-header, .app-navbar, .topbar, .brandb
   <div class="d-flex justify-content-between align-items-center mb-3 embed-hide">
     <h3 class="m-0">Accounts</h3>
     <div class="d-flex align-items-center gap-2">
-      <span id="count" class="text-secondary small">—</span>
+      <!-- во избежание дублей id, в обычном режиме id='count', в embed — отдельный блок ниже -->
+      <span id="{{ 'count' if not EMBED else 'countTop' }}" class="text-secondary small">—</span>
       <a href="/admin/gameservers" class="btn btn-sm btn-outline-light">Game Servers</a>
     </div>
   </div>
@@ -675,5 +676,25 @@ m.ip.addEventListener('click',   ()=> copyText(m.ip.textContent.replace(/^📋/,
 
 /* init */
 fetchData();
+
+/* --- EMBED: отправка высоты родителю для авто-ресайза iframe --- */
+{% if EMBED %}
+(function(){
+  function postH(){
+    try{
+      const h = Math.max(
+        document.body?.scrollHeight||0,
+        document.documentElement?.scrollHeight||0
+      ) + 4;
+      parent?.postMessage({type:'embed:height', height:h}, '*');
+    }catch(_){}
+  }
+  postH();
+  const mo = new MutationObserver(postH);
+  mo.observe(document.documentElement, {subtree:true, childList:true, attributes:true});
+  window.addEventListener('load', postH);
+  window.addEventListener('resize', postH);
+})();
+{% endif %}
 </script>
 {% endblock %}
