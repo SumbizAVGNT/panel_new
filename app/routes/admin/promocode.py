@@ -1,10 +1,9 @@
-# app/routes/admin/promocode.py
 from __future__ import annotations
 
 import os
 import json
 import random
-import string
+import re
 from typing import Optional, Iterable
 
 from flask import Blueprint, render_template, request, jsonify, current_app
@@ -18,7 +17,8 @@ bp = Blueprint("promocode", __name__, url_prefix="/promocode")
 # --------- utils ----------
 def _rand_code(n: int = 10) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    return "".join(random.choice(alphabet) for _ in range(max(4, n)))
+    import secrets
+    return "".join(secrets.choice(alphabet) for _ in range(max(4, n)))
 
 def _json(v):
     try:
@@ -32,11 +32,20 @@ def _rows(conn: MySQLConnection, sql: str, params: Iterable = ()):
 def _row(conn: MySQLConnection, sql: str, params: Iterable = ()):
     return conn.query_one(sql, params)
 
+def _load_json_lenient(path: str):
+    """JSON с поддержкой // и /* */ комментариев и массивов-строк."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    # убрать комментарии
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"//.*?$", "", text, flags=re.M)
+    return json.loads(text or "[]")
+
 # --------- HTML ----------
 @bp.get("/")
 @login_required
 def ui_index():
-    # ВАЖНО: путь соответствует структуре templates/admin/gameservers/promocode/...
+    # Полная страница редактора (включает 2 partial’a)
     return render_template("admin/gameservers/promocode/index.html")
 
 # --------- API: items catalog ----------
@@ -44,33 +53,34 @@ def ui_index():
 @login_required
 def api_items_vanilla():
     """
-    Возвращает список ванильных предметов 1.20.6: [{id, name, icon}]
-    Источник — статический JSON: /static/data/vanilla-items-1.20.6.json
-    Формат файла:
-    [
-      {"id":"diamond_sword","name":"Diamond Sword"},
-      {"id":"netherite_pickaxe","name":"Netherite Pickaxe"},
-      ...
-    ]
+    /static/data/vanilla-items-1.20.6.json
+    Допустимые форматы:
+      - [{"id":"diamond_sword","name":"Diamond Sword"}, ...]
+      - ["stone","dirt","oak_log", ...]
+    Комментарии // и /* */ допустимы.
     """
     try:
-        path = current_app.root_path
-        fpath = os.path.join(path, "static", "data", "vanilla-items-1.20.6.json")
-        with open(fpath, "r", encoding="utf-8") as f:
-            items = json.load(f) or []
+        fpath = os.path.join(current_app.root_path, "static", "data", "vanilla-items-1.20.6.json")
+        raw = _load_json_lenient(fpath)
     except Exception as e:
-        current_app.logger.warning("vanilla items file missing: %s", e)
-        items = []
+        current_app.logger.warning("vanilla items parse failed: %s", e)
+        raw = []
 
     base = "/static/mc/1.20.6/items"
     out = []
-    for it in items:
-        iid = (it.get("id") or "").strip()
+    for it in raw:
+        if isinstance(it, str):
+            iid, name = it.strip(), None
+        elif isinstance(it, dict):
+            iid = (it.get("id") or "").strip()
+            name = (it.get("name") or "").strip() or None
+        else:
+            continue
         if not iid:
             continue
         out.append({
             "id": iid,
-            "name": it.get("name") or iid.replace("_", " ").title(),
+            "name": name or iid.replace("_", " ").title(),
             "icon": f"{base}/{iid}.png",
             "ns": "minecraft",
         })
@@ -80,33 +90,30 @@ def api_items_vanilla():
 @login_required
 def api_items_custom():
     """
-    Кастомные предметы из ItemsAdder (опционально).
-    Ожидается файл /static/data/itemsadder-items.json:
-    [{"id":"itemsadder:my_sword","name":"My Sword"}, ...]
-    Если нет — вернём пусто.
+    /static/data/itemsadder-items.json
+    Формат: [{"id":"itemsadder:my_sword","name":"My Sword"}, ...]
     """
     try:
-        path = current_app.root_path
-        fpath = os.path.join(path, "static", "data", "itemsadder-items.json")
-        with open(fpath, "r", encoding="utf-8") as f:
-            items = json.load(f) or []
+        fpath = os.path.join(current_app.root_path, "static", "data", "itemsadder-items.json")
+        raw = _load_json_lenient(fpath)
     except Exception:
-        items = []
+        raw = []
 
     base = "/static/mc/itemsadder"
     out = []
-    for it in items:
-        nid = (it.get("id") or "").strip()
-        if not nid:
-            continue
-        # split ns:id
-        if ":" in nid:
-            ns, iid = nid.split(":", 1)
+    for it in raw:
+        if isinstance(it, str):
+            full = it.strip()
+            name = None
         else:
-            ns, iid = "itemsadder", nid
+            full = (it.get("id") or "").strip()
+            name = (it.get("name") or "").strip() or None
+        if not full:
+            continue
+        ns, iid = (full.split(":", 1) + ["itemsadder"])[:2] if ":" in full else ("itemsadder", full)
         out.append({
             "id": iid,
-            "name": it.get("name") or iid.replace("_", " ").title(),
+            "name": name or iid.replace("_", " ").title(),
             "icon": f"{base}/{ns}.{iid}.png",
             "ns": ns,
             "full": f"{ns}:{iid}",
@@ -120,13 +127,19 @@ def api_kits_list():
     with get_db_connection() as conn:
         kits = _rows(conn, "SELECT id, name, description, created_at FROM promo_kits ORDER BY id DESC")
         for k in kits:
-            items = _rows(conn, "SELECT id, namespace, item_id, amount, display_name, enchants_json, nbt_json, slot FROM promo_kit_items WHERE kit_id = ? ORDER BY COALESCE(slot, 999), id", (k["id"],))
+            items = _rows(
+                conn,
+                "SELECT id, namespace, item_id, amount, display_name, enchants_json, nbt_json, slot "
+                "FROM promo_kit_items WHERE kit_id = ? ORDER BY COALESCE(slot, 999), id",
+                (k["id"],),
+            )
             for it in items:
-                for key in ("enchants_json", "nbt_json"):
+                # разворачиваем enchants/nbt в удобные поля
+                for src, dst in (("enchants_json", "enchants"), ("nbt_json", "nbt")):
                     try:
-                        it[key[:-5]+"s"] = json.loads(it[key] or "[]")
+                        it[dst] = json.loads(it.get(src) or "[]")
                     except Exception:
-                        it[key[:-5]+"s"] = []
+                        it[dst] = []
             k["items"] = items
         return jsonify({"ok": True, "data": kits})
 
@@ -203,9 +216,13 @@ def api_promo_create():
     currency = (js.get("currency_key") or os.getenv("POINTS_KEY", "rubs")).strip()
     realm = (js.get("realm") or "").strip() or None
     kit_id = js.get("kit_id")
+    try:
+        kit_id = int(kit_id) if kit_id else None
+    except Exception:
+        kit_id = None
     uses = int(js.get("uses") or 1)
     expires_at = (js.get("expires_at") or "").strip() or None
-    created_by = "admin"  # при необходимости возьми из сессии
+    created_by = "admin"
 
     if amount <= 0 and not kit_id:
         return jsonify({"ok": False, "error": "amount > 0 or kit_id required"}), 400
@@ -219,7 +236,7 @@ def api_promo_create():
                 realm=VALUES(realm), kit_id=VALUES(kit_id), uses_total=VALUES(uses_total),
                 uses_left=VALUES(uses_left), expires_at=VALUES(expires_at), created_by=VALUES(created_by)
             """,
-            (code, amount, currency, realm, int(kit_id) if kit_id else None, uses, uses, expires_at, created_by),
+            (code, amount, currency, realm, kit_id, uses, uses, expires_at, created_by),
         )
         conn.commit()
     return jsonify({"ok": True, "data": {"code": code}})

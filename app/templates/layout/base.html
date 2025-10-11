@@ -111,28 +111,28 @@
       <a class="brand me-1" href="{{ url_for('dashboard.dashboard') }}">MoonRein</a>
 
       <!-- Центр-меню -->
-        <nav class="nav-center d-flex gap-2 flex-grow-1 justify-content-center">
-          <a class="nav-link {{ 'active' if 'dashboard.dashboard' in ep else '' }}"
-             href="{{ url_for('dashboard.dashboard') }}">Overview</a>
+      <nav class="nav-center d-flex gap-2 flex-grow-1 justify-content-center">
+        <a class="nav-link {{ 'active' if 'dashboard.dashboard' in ep else '' }}"
+           href="{{ url_for('dashboard.dashboard') }}">Overview</a>
 
-          <a class="nav-link {{ 'active' if ep.startswith('news.') else '' }}"
-             href="{{ url_for('news.index') }}">News</a>
+        <a class="nav-link {{ 'active' if ep.startswith('news.') else '' }}"
+           href="{{ url_for('news.index') }}">News</a>
 
-          {% if role in ['admin','superadmin'] %}
-            <!-- NEW: Game Servers -->
-            <a class="nav-link {{ 'active' if ep.startswith('admin.gameservers') or ep.startswith('admin.game_console') else '' }}"
-               href="{{ url_for('admin.gameservers_index') }}">Game&nbsp;Servers</a>
+        {% if role in ['admin','superadmin'] %}
+          <!-- NEW: Game Servers -->
+          <a class="nav-link {{ 'active' if ep.startswith('admin.gameservers') or ep.startswith('admin.game_console') else '' }}"
+             href="{{ url_for('admin.gameservers_index') }}">Game&nbsp;Servers</a>
 
-            <a class="nav-link {{ 'active' if 'admin.admin_users' in ep else '' }}"
-               href="{{ url_for('admin.admin_users') }}">Users</a>
-            <a class="nav-link {{ 'active' if ep.startswith('logs.') else '' }}" href="#">Logs</a>
-          {% endif %}
+          <a class="nav-link {{ 'active' if 'admin.admin_users' in ep else '' }}"
+             href="{{ url_for('admin.admin_users') }}">Users</a>
+          <a class="nav-link {{ 'active' if ep.startswith('logs.') else '' }}" href="#">Logs</a>
+        {% endif %}
 
-          {% if role == 'superadmin' %}
-            <a class="nav-link {{ 'active' if 'admin.settings' in ep else '' }}"
-               href="{{ url_for('admin.settings') }}">Settings</a>
-          {% endif %}
-        </nav>
+        {% if role == 'superadmin' %}
+          <a class="nav-link {{ 'active' if 'admin.settings' in ep else '' }}"
+             href="{{ url_for('admin.settings') }}">Settings</a>
+        {% endif %}
+      </nav>
 
       <!-- Переключатель темы -->
       <button id="openTheme" class="theme-btn" type="button" title="Background theme">
