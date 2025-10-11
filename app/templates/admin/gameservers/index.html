@@ -47,7 +47,8 @@
     <h2 class="m-0">Game Center</h2>
     <div class="d-flex align-items-center gap-2">
       <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
-      <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin.dashboard') if 'admin.dashboard' in current_app.view_functions else '#' }}"><i class="bi bi-house"></i></a>
+      <!-- простая ссылка на /admin без current_app -->
+      <a class="btn btn-sm btn-outline-light" href="/admin"><i class="bi bi-house"></i></a>
     </div>
   </div>
 
@@ -69,7 +70,7 @@
     </div>
   </div>
 
-  <!-- Accounts (встроим текущую страницу как iframe) -->
+  <!-- Accounts -->
   <div id="tab-accounts" class="tab-pane">
     <div class="cardx mb-2 small-dim">
       Раздел «Accounts» встроен сюда для удобства. Откройте на полный экран при необходимости.
@@ -190,13 +191,13 @@ async function loadRealms(){
     box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0));
   });
 
-  // заполним селект во вкладке Promo
+  // селект на вкладке Promo
   const sel = document.getElementById('pr-realm');
   if (sel){
     sel.innerHTML = `<option value="">all realms</option>` + realms.map(r=>`<option>${r}</option>`).join('');
   }
 
-  // ленивые метрики для каждой карточки
+  // ленивые метрики
   for(const name of realms){
     try{
       const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
@@ -208,9 +209,8 @@ async function loadRealms(){
   }
 }
 
-// нормализация под карточку
-function normalize(raw){
-  const d = raw || {};
+function normalize(d){
+  d = d || {};
   const tps = d.tps || {};
   const players = d.players || {};
   const jvm = d.jvm || {};
