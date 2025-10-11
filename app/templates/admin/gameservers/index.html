@@ -2,6 +2,7 @@
 {% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
+/* ---------- Tabs & layout ---------- */
 .tabs{display:flex;gap:6px;margin-bottom:14px}
 .tabs .tab-btn{
   border-radius:10px;border:1px solid rgba(148,163,184,.22);
@@ -12,7 +13,7 @@
 .tab-pane{display:none}
 .tab-pane.active{display:block}
 
-/* grid */
+/* ---------- Realms grid ---------- */
 .grid-realms{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
 .tile{
   position:relative;border-radius:14px;border:1px solid rgba(148,163,184,.18);
@@ -36,18 +37,13 @@
 .skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:shimmer 1.1s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
 
-/* promo */
+/* ---------- Promo ---------- */
 .promo{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .cardx{border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(13,17,23,.55);padding:14px}
 .cardx h6{margin:0 0 8px 0}
 
-/* iframe embed */
-.embed-wrap{position:relative}
-.embed-frame{
-  width:100%; border:1px solid rgba(148,163,184,.18); border-radius:12px;
-  background:#0b1220; display:block; height:1px; min-height:200px; /* автоподгон */
-}
-.embed-toolbar{display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px}
+/* ---------- Accounts (scoped) ---------- */
+{% include "admin/gameservers/accounts/accounts_styles.html" %}
 </style>
 
 <div class="container-xxl py-4">
@@ -77,18 +73,9 @@
     </div>
   </div>
 
-  <!-- Accounts -->
+  <!-- Accounts (embedded) -->
   <div id="tab-accounts" class="tab-pane">
-    <div class="cardx mb-2 small-dim">
-      Раздел «Accounts» встроен сюда. Откройте в полный экран при необходимости.
-    </div>
-    <div class="embed-toolbar">
-      <a class="btn btn-sm btn-outline-light" target="_blank" href="{{ url_for('admin.accounts.index') }}"><i class="bi bi-arrows-fullscreen"></i> Open full</a>
-    </div>
-    <div class="embed-wrap">
-      <!-- лениво поставим src после первого открытия -->
-      <iframe id="accFrame" class="embed-frame" title="Accounts" loading="lazy" referrerpolicy="no-referrer"></iframe>
-    </div>
+    {% include "admin/gameservers/accounts/accounts.html" %}
   </div>
 
   <!-- Promo -->
@@ -121,28 +108,24 @@
 </div>
 
 <script>
-/* ---------------- Tabs ---------------- */
+/* --- Tabs --- */
 document.querySelectorAll('.tab-btn').forEach(b=>{
   b.addEventListener('click', ()=>{
     document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     const k = b.dataset.tab;
     document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-    const pane = document.getElementById('tab-'+k);
-    if(pane) pane.classList.add('active');
-
-    // ленивое подключение iframe + авто-высота
-    if(k==='accounts') initAccountsEmbed();
+    document.getElementById('tab-'+k)?.classList.add('active');
+    if(k==='accounts' && window.accInit) window.accInit(); // ленивый старт модуля Accounts
   });
 });
 
-/* ---------------- Servers list ---------------- */
+/* --- Servers --- */
 function badge(isOnline, text){
   return `<span class="badge badge-cap ${isOnline?'bg-success':'bg-secondary'}">${text || (isOnline?'online':'offline')}</span>`;
 }
 function tileSkeleton(){
-  return `
-  <div class="tile">
+  return `<div class="tile">
     <div class="cap">Realm</div>
     <div class="row2"><div class="h5 m-0 skel" style="height:22px;width:120px"></div>${badge(false,'—')}</div>
     <div class="meta">
@@ -158,13 +141,9 @@ function tileSkeleton(){
 }
 function realmTileHtml(name, plugins){
   const href = `/admin/gameservers/${encodeURIComponent(name)}`;
-  return `
-  <a class="tile text-decoration-none text-reset" href="${href}" data-realm="${name}">
+  return `<a class="tile text-decoration-none text-reset" href="${href}" data-realm="${name}">
     <div class="cap">Realm</div>
-    <div class="row2">
-      <div class="h5 m-0">${name}</div>
-      ${badge((plugins|0)>0)}
-    </div>
+    <div class="row2"><div class="h5 m-0">${name}</div>${badge((plugins|0)>0)}</div>
     <div class="meta" id="m-${name}">
       <span class="pill">plugins: ${(plugins|0)}</span>
       <span class="pill" data-k="online">online: —</span>
@@ -178,140 +157,58 @@ function realmTileHtml(name, plugins){
     </div>
   </a>`;
 }
-
 async function loadRealms(){
   const box = document.getElementById('realms');
   box.innerHTML = tileSkeleton();
-
   let data = {};
   try{
     const r = await fetch('/admin/gameservers/api/list',{cache:'no-store'});
-    const j = await r.json();
-    if(!j.ok) throw new Error(j.error||'bridge error');
+    const j = await r.json(); if(!j.ok) throw new Error(j.error||'bridge error');
     data = j.data || {};
   }catch(e){
     box.innerHTML = `<div class="tile"><div class="cap">Error</div><div class="small small-dim">${e.message||e}</div></div>`;
     return;
   }
-
   const realms = Object.keys(data).sort((a,b)=>a.localeCompare(b));
-  if (realms.length===0){
-    box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`;
-    return;
-  }
-
+  if(!realms.length){ box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`; return; }
   box.innerHTML = '';
   realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
-
-  // селект на Promo
+  // promo select
   const sel = document.getElementById('pr-realm');
-  if (sel){
-    sel.innerHTML = `<option value="">all realms</option>` + realms.map(r=>`<option>${r}</option>`).join('');
-  }
-
-  // ленивая подгрузка кратких метрик
+  if (sel) sel.innerHTML = `<option value="">all realms</option>` + realms.map(r=>`<option>${r}</option>`).join('');
+  // lazy metrics
   for(const name of realms){
     try{
       const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
-      const j = await r.json();
-      if(!j.ok || !j.data) continue;
-      const p = normalize(j.data);
-      fillTile(name, p);
-    }catch(e){}
+      const j = await r.json(); if(!j.ok || !j.data) continue; fillTile(name, normalize(j.data));
+    }catch(_){}
   }
 }
 function normalize(d){
-  d = d || {};
-  const tps = d.tps || {};
-  const players = d.players || {};
-  const jvm = d.jvm || {};
-  return {
-    tps1: tps["1m"] ?? d.tps_1m ?? null,
-    mspt: (tps.mspt ?? d.mspt ?? null),
-    online: players.online ?? d.players_online ?? null,
-    uptime_ms: jvm.uptime_ms ?? d.uptime_ms ?? null,
-    ts: d.ts || Math.floor(Date.now()/1000)
-  };
+  d=d||{}; const t=d.tps||{}, p=d.players||{}, j=d.jvm||{};
+  return { tps1: t["1m"] ?? d.tps_1m ?? null, mspt: t.mspt ?? d.mspt ?? null,
+           online: p.online ?? d.players_online ?? null, uptime_ms: j.uptime_ms ?? d.uptime_ms ?? null,
+           ts: d.ts || Math.floor(Date.now()/1000) };
 }
 function fillTile(name, p){
-  const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`);
-  if(!root) return;
-  const meta = root.querySelector(`#m-${CSS.escape(name)}`);
-  const q = k => meta.querySelector(`[data-k="${k}"]`);
+  const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`); if(!root) return;
+  const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta.querySelector(`[data-k="${k}"]`);
   if(q('online')) q('online').textContent = `online: ${p.online ?? '—'}`;
   if(q('tps'))    q('tps').textContent    = `TPS1m: ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`;
   if(q('mspt'))   q('mspt').textContent   = `MSPT: ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`;
-  const up = root.querySelector('[data-k="uptime"]');
-  if(up) up.textContent = `uptime: ${humanMs(p.uptime_ms)}`;
+  const up = root.querySelector('[data-k="uptime"]'); if(up) up.textContent = `uptime: ${humanMs(p.uptime_ms)}`;
   const upd = root.querySelector('[data-k="updated"]');
-  if(upd){
-    const ago = Math.max(0, Math.floor(Date.now()/1000 - (p.ts||Math.floor(Date.now()/1000))));
-    upd.textContent = `· обновлено: ${ago}s ago`;
-  }
+  if(upd){ const ago = Math.max(0, Math.floor(Date.now()/1000 - (p.ts||Math.floor(Date.now()/1000)))); upd.textContent = `· обновлено: ${ago}s ago`; }
 }
 function humanMs(ms){
-  if(!ms || ms<0) return '—';
-  let s = Math.floor(ms/1000);
+  if(!ms || ms<0) return '—'; let s=Math.floor(ms/1000);
   const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
   const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
 }
 document.getElementById('refresh').addEventListener('click', loadRealms);
 loadRealms();
-
-/* ---------------- Accounts embed (auto-height) ---------------- */
-let accInit = false;
-function initAccountsEmbed(){
-  if (accInit) return;
-  accInit = true;
-  const f = document.getElementById('accFrame');
-  // строим URL с режимом встраивания
-  const url = new URL("{{ url_for('admin.accounts.index') }}", location.origin);
-  url.searchParams.set('embed','1');
-  f.src = url.toString();
-
-  const MIN = 200, MAX = 3000;
-
-  function setH(px){
-    const h = Math.max(MIN, Math.min(MAX, Math.round(px||0)));
-    if (f.style.height !== h+'px') f.style.height = h+'px';
-  }
-
-  // принимаем сообщения от фрейма
-  window.addEventListener('message', (ev)=>{
-    if (!ev || !ev.data) return;
-    if (ev.data.type === 'embed:height' && ev.source === f.contentWindow){
-      setH(ev.data.height || 0);
-    }
-  });
-
-  // фолбэк (same-origin) — если политики совпадают, читаем высоту напрямую
-  f.addEventListener('load', ()=>{
-    try{
-      const doc = f.contentDocument;
-      if(!doc) return;
-      const meas = ()=>{
-        const h = Math.max(
-          doc.body?.scrollHeight||0,
-          doc.documentElement?.scrollHeight||0
-        ) + 8; // небольшой запас
-        setH(h);
-      };
-      meas();
-      const mo = new MutationObserver(()=>meas());
-      mo.observe(doc.documentElement, {subtree:true, childList:true, attributes:true});
-      window.addEventListener('resize', meas);
-    }catch(_){ /* кросс-домен — полагаемся на postMessage */ }
-  });
-}
-
-/* ---------------- Promo mock ---------------- */
-document.getElementById('pr-create').addEventListener('click', ()=>{
-  const code = (document.getElementById('pr-code').value.trim() || ('PR' + Math.random().toString(36).slice(2,8).toUpperCase()));
-  const amount = parseFloat(document.getElementById('pr-amount').value || '0');
-  const realm = document.getElementById('pr-realm').value || 'all';
-  const msg = document.getElementById('pr-msg');
-  if(!(amount>0)){ msg.textContent='Введите сумму > 0'; msg.classList.add('text-danger'); return; }
-  msg.classList.remove('text-danger'); msg.textContent = `Создан промо-код ${code} на ${amount} для ${realm}. (Демо; подключите ваш API)`;
-});
 </script>
+
+{# Подключаем JS модуля Accounts отдельно (внизу страницы) #}
+{% include "admin/gameservers/accounts/accounts_script.html" %}
 {% endblock %}

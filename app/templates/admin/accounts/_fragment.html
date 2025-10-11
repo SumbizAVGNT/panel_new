@@ -1,0 +1,279 @@
+{# Общий фрагмент блока Accounts. Никаких extends! #}
+{# Параметры:
+   embedded: bool — если true, скрываем верхнюю панельку и уменьшаем отступы
+   scope_id: str  — id корневого контейнера (по умолчанию acc-scope)
+#}
+{% set embedded = embedded|default(false) %}
+{% set scope_id = scope_id|default('acc-scope') %}
+
+<style>
+/* scoped стили — всё завёрнуто в #{{ scope_id }} */
+#{{ scope_id }}{
+  --glass-bg: rgba(13,17,23,.6);
+  --glass-br: 1px solid rgba(148,163,184,.18);
+  --muted: #9aa4b2; --ok:#22c55e; --bad:#ef4444;
+}
+#{{ scope_id }} .card.glass{background:var(--glass-bg);border:var(--glass-br);backdrop-filter:blur(8px)}
+#{{ scope_id }} .table>:not(caption)>*>*{background:transparent}
+#{{ scope_id }} .searchbar{display:flex;gap:.5rem;align-items:center}
+#{{ scope_id }} .searchbar .form-control{background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);color:#e5e7eb}
+#{{ scope_id }} .player-head{width:32px;height:32px;border-radius:8px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220}
+#{{ scope_id }} .badge-role{background:#0b1220;border:1px solid rgba(148,163,184,.24);padding:.25rem .5rem;border-radius:999px}
+#{{ scope_id }} .hint{color:var(--muted);font-size:.9rem}
+#{{ scope_id }} .cursor-pointer{cursor:pointer}
+#{{ scope_id }} .status-dot{display:inline-block;width:10px;height:10px;border-radius:50%}
+#{{ scope_id }} .status-online{background:var(--ok);box-shadow:0 0 10px #22c55e80}
+#{{ scope_id }} .status-offline{background:var(--bad)}
+#{{ scope_id }} .status-unknown{background:#9aa4b2}
+#{{ scope_id }} .sticky-th th{position:sticky;top:0;background:rgba(13,17,23,.9);backdrop-filter:blur(4px)}
+#{{ scope_id }} .skeleton{border-radius:.5rem;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12),rgba(255,255,255,.06));background-size:200% 100%;animation:s-{{ scope_id }} 1.1s linear infinite}
+@keyframes s-{{ scope_id }}{0%{background-position:200% 0}100%{background-position:-200% 0}}
+#{{ scope_id }} .small-muted{color:var(--muted);font-size:.85rem}
+#{{ scope_id }} .kv{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+#{{ scope_id }} .kv .k{color:var(--muted)}
+#{{ scope_id }} .table-xs td,#{{ scope_id }} .table-xs th{padding:.4rem .5rem;font-size:.92rem}
+#{{ scope_id }} .modal .form-control{background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.20);color:#e5e7eb}
+#{{ scope_id }} .nav-pills .nav-link{border:1px solid transparent}
+#{{ scope_id }} .nav-pills .nav-link.active{background:#111827;border-color:rgba(148,163,184,.25)}
+#{{ scope_id }} .metric{display:flex;flex-direction:column;gap:.2rem}
+#{{ scope_id }} .metric .val{font-weight:700;font-size:1.15rem}
+#{{ scope_id }} .metric .lbl{color:var(--muted);font-size:.8rem}
+#{{ scope_id }} .divider{border-top:1px dashed rgba(148,163,184,.28);margin:1rem 0}
+#{{ scope_id }} .btn-icon{display:inline-flex;align-items:center;gap:.4rem}
+#{{ scope_id }} .copy{cursor:pointer} #{{ scope_id }} .copy:hover{opacity:.85}
+
+/* компактный режим при embedded */
+#{{ scope_id }}.embedded .embed-hide{display:none !important}
+#{{ scope_id }}.embedded .container-xxl{padding-top:.5rem !important}
+</style>
+
+<div id="{{ scope_id }}" class="container-xxl {% if embedded %}embedded{% endif %}">
+  <div class="d-flex justify-content-between align-items-center mb-3 embed-hide">
+    <h3 class="m-0">Accounts</h3>
+    <div class="d-flex align-items-center gap-2">
+      <span id="acc-count" class="text-secondary small">—</span>
+      <a href="/admin/gameservers" class="btn btn-sm btn-outline-light">Game Servers</a>
+    </div>
+  </div>
+
+  {% if embedded %}
+    <div class="text-end small text-secondary mb-1"><span id="acc-count">—</span></div>
+  {% endif %}
+
+  <div class="card glass mb-3">
+    <div class="card-body">
+      <div class="searchbar">
+        <div class="input-group">
+          <span class="input-group-text bg-transparent text-secondary"><i class="bi bi-search"></i></span>
+          <input id="acc-q" class="form-control" placeholder="Ник / UUID / email / ip (prefix)">
+        </div>
+        <button id="acc-btnSearch" class="btn btn-primary">Поиск</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card glass">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0">
+          <thead class="sticky-th">
+          <tr>
+            <th style="width:26%">Ник</th><th style="width:12%">Роль</th>
+            <th style="width:28%">UUID</th><th style="width:12%">Email</th>
+            <th style="width:10%">IP</th><th style="width:12%">Reg</th>
+            <th style="width:12%">Last</th><th style="width:10%">Premium</th>
+          </tr>
+          </thead>
+          <tbody id="acc-rows">
+            <tr><td colspan="8" class="text-secondary">Введите ник и нажмите «Поиск»</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-2 hint embed-hide">Клик по строке — подробная карточка. Поиск поддерживает ник, uuid (с/без дефисов), email и ip.</div>
+</div>
+
+{# Модалка выводится вне container, чтобы работала одинаково в обеих страницах #}
+<div class="modal fade" id="acc-accountModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content card glass">
+      <div class="modal-header">
+        <div class="d-flex align-items-center gap-2">
+          <img id="acc-mHead" class="player-head" src="" alt="">
+          <div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="fw-semibold" id="acc-mName">—</span>
+              <span id="acc-mOnline"><span class="status-dot status-unknown me-1"></span><span class="align-middle">unknown</span></span>
+            </div>
+            <div class="small-muted"><span id="acc-mRole" class="badge-role">default</span></div>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        <ul class="nav nav-pills mb-3" id="acc-mTabs">
+          <li class="nav-item"><a class="nav-link active" data-tab="overview"><i class="bi bi-person-badge"></i> Обзор</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="balance"><i class="bi bi-coin"></i> Баланс</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="donations"><i class="bi bi-bag-heart"></i> Донаты</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="punishments"><i class="bi bi-shield-exclamation"></i> Наказания</a></li>
+        </ul>
+
+        <div id="acc-mLoading" class="skeleton p-3" style="display:none;height:54px;"></div>
+        <div id="acc-mAlert" class="alert alert-danger d-none"></div>
+
+        <!-- OVERVIEW -->
+        <section id="acc-tab-overview">
+          <div class="row g-3">
+            <div class="col-lg-8">
+              <div class="card glass">
+                <div class="card-body">
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <div class="kv"><span class="k">UUID:</span>
+                        <span id="acc-mUuid" class="copy" title="Скопировать"><i class="bi bi-clipboard"></i> —</span>
+                      </div>
+                      <div class="kv"><span class="k">Email:</span><span id="acc-mEmail">—</span></div>
+                      <div class="kv"><span class="k">IP:</span><span id="acc-mIp" class="copy" title="Скопировать"><i class="bi bi-clipboard"></i> —</span></div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="metric"><span class="lbl">Регистрация</span><span class="val" id="acc-mReg">—</span></div>
+                      <div class="metric"><span class="lbl">Последний вход</span><span class="val" id="acc-mLast">—</span></div>
+                    </div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="d-flex flex-wrap gap-3">
+                    <div class="metric"><span class="lbl">Премиум</span><span class="val" id="acc-mPremium">—</span></div>
+                    <div class="metric"><span class="lbl">Текущая роль</span><span class="val"><span id="acc-mRole2" class="badge-role">default</span></span></div>
+                    <div class="metric"><span class="lbl">Баланс</span><span class="val"><span id="acc-mPointsCurrBig">0.00</span> <span class="small-muted" id="acc-mKeyBig">(rubs)</span></span></div>
+                    <div class="metric"><span class="lbl">Статус бана</span><span class="val"><span class="badge" id="acc-banStatus">—</span></span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="card glass h-100">
+                <div class="card-body">
+                  <div class="fw-bold mb-2"><i class="bi bi-shield-lock"></i> Быстрые действия</div>
+                  <div class="d-flex flex-column gap-2">
+                    <div class="input-group">
+                      <input id="acc-banReason" class="form-control" placeholder="Причина бана">
+                    </div>
+                    <div class="input-group">
+                      <input id="acc-banDuration" type="number" min="0" step="1" class="form-control" placeholder="Секунды (0=навеки)">
+                      <button id="acc-btnBan" class="btn btn-outline-danger btn-icon"><i class="bi bi-slash-circle"></i> Забанить</button>
+                      <button id="acc-btnUnban" class="btn btn-outline-warning btn-icon d-none"><i class="bi bi-arrow-counterclockwise"></i> Разбанить</button>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="acc-banSilent">
+                      <label class="form-check-label" for="acc-banSilent">Silent</label>
+                    </div>
+                  </div>
+                  <div id="acc-banActiveBox" class="small mt-3 d-none"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- BALANCE -->
+        <section id="acc-tab-balance" class="d-none">
+          <div class="card glass">
+            <div class="card-body">
+              <div class="d-flex align-items-end gap-3 flex-wrap">
+                <div class="metric"><span class="lbl">Донатная валюта</span><span class="val"><span id="acc-mKey">rubs</span></span></div>
+                <div class="metric"><span class="lbl">Текущий баланс</span><span class="val" id="acc-mPointsCurr">0.00</span></div>
+                <div class="ms-auto w-100 w-sm-auto" style="max-width:420px;">
+                  <div class="input-group">
+                    <input id="acc-mPoints" type="number" min="0" step="0.01" class="form-control" placeholder="Новое значение">
+                    <button id="acc-btnSavePoints" class="btn btn-success btn-icon" disabled><i class="bi bi-save"></i> Сохранить</button>
+                  </div>
+                  <div id="acc-pointsNote" class="small-muted mt-1"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- DONATIONS -->
+        <section id="acc-tab-donations" class="d-none">
+          <div class="card glass"><div class="card-body">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="fw-bold"><i class="bi bi-bag-heart"></i> История донатов</div>
+              <span class="small-muted">последние 200</span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-dark table-hover table-xs">
+                <thead><tr><th>#Платёж</th><th>#Покупка</th><th>Продукт</th><th>Кол-во</th><th>Стоимость</th><th>Создано</th></tr></thead>
+                <tbody id="acc-donationRows"><tr><td colspan="6" class="text-secondary">Нет данных</td></tr></tbody>
+              </table>
+            </div>
+          </div></div>
+        </section>
+
+        <!-- PUNISHMENTS -->
+        <section id="acc-tab-punishments" class="d-none">
+          <div id="acc-punishSpinner" class="small-muted mb-2">Загрузка...</div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="card glass"><div class="card-body">
+                <div class="fw-bold mb-2">Баны</div>
+                <div class="table-responsive">
+                  <table class="table table-dark table-xs">
+                    <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
+                    <tbody id="acc-banRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
+                  </table>
+                </div>
+              </div></div>
+              <div class="card glass mt-3"><div class="card-body">
+                <div class="fw-bold mb-2">Варны</div>
+                <div class="table-responsive">
+                  <table class="table table-dark table-xs">
+                    <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
+                    <tbody id="acc-warnRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
+                  </table>
+                </div>
+              </div></div>
+            </div>
+            <div class="col-md-6">
+              <div class="card glass"><div class="card-body">
+                <div class="fw-bold mb-2">Муты</div>
+                <div class="table-responsive">
+                  <table class="table table-dark table-xs">
+                    <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
+                    <tbody id="acc-muteRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
+                  </table>
+                </div>
+              </div></div>
+              <div class="card glass mt-3"><div class="card-body">
+                <div class="fw-bold mb-2">История заходов</div>
+                <div class="table-responsive">
+                  <table class="table table-dark table-xs">
+                    <thead><tr><th>ID</th><th>Дата</th><th>Ник</th><th>IP</th></tr></thead>
+                    <tbody id="acc-histRows"><tr><td colspan="4" class="text-secondary">—</td></tr></tbody>
+                  </table>
+                </div>
+              </div></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast (общий) -->
+<div class="toast-container position-fixed top-0 end-0 p-3">
+  <div id="acc-toast" class="toast align-items-center text-bg-dark border-0" role="alert">
+    <div class="d-flex">
+      <div id="acc-toastBody" class="toast-body">done</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>

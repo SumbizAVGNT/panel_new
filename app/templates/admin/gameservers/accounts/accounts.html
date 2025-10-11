@@ -1,0 +1,56 @@
+<div id="acc-scope">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="m-0">Accounts</h5>
+    <span id="acc-count" class="text-secondary small">—</span>
+  </div>
+
+  <div class="card glass mb-3">
+    <div class="card-body">
+      <div class="searchbar">
+        <div class="input-group">
+          <span class="input-group-text bg-transparent text-secondary"><i class="bi bi-search"></i></span>
+          <input id="acc-q" class="form-control" placeholder="Ник / UUID / email / ip (prefix)">
+        </div>
+        <button id="acc-btnSearch" class="btn btn-primary">Поиск</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card glass">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0">
+          <thead class="sticky-th">
+          <tr>
+            <th style="width:26%">Ник</th>
+            <th style="width:12%">Роль</th>
+            <th style="width:28%">UUID</th>
+            <th style="width:12%">Email</th>
+            <th style="width:10%">IP</th>
+            <th style="width:12%">Reg</th>
+            <th style="width:12%">Last</th>
+            <th style="width:10%">Premium</th>
+          </tr>
+          </thead>
+          <tbody id="acc-rows">
+            <tr><td colspan="8" class="text-secondary">Введите ник и нажмите «Поиск»</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-2 hint">Клик по строке — подробная карточка. Поиск поддерживает ник, uuid (с/без дефисов), email и ip.</div>
+
+  {% include "admin/gameservers/accounts/accounts_modal.html" %}
+
+  <!-- Toast -->
+  <div class="toast-container position-fixed top-0 end-0 p-3">
+    <div id="acc-toast" class="toast align-items-center text-bg-dark border-0" role="alert">
+      <div class="d-flex">
+        <div id="acc-toastBody" class="toast-body">done</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>
+  </div>
+</div>

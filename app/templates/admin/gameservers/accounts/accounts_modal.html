@@ -1,0 +1,186 @@
+<div class="modal fade" id="acc-accountModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <div class="d-flex align-items-center gap-2">
+          <img id="acc-mHead" class="player-head" src="" alt="">
+          <div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="fw-semibold" id="acc-mName">—</span>
+              <span id="acc-mOnline"><span class="status-dot status-unknown me-1"></span><span class="align-middle">unknown</span></span>
+            </div>
+            <div class="small-muted"><span id="acc-mRole" class="badge-role">default</span></div>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        <!-- tabs -->
+        <ul class="nav nav-pills mb-3" id="acc-mTabs">
+          <li class="nav-item"><a class="nav-link active" data-tab="overview"><i class="bi bi-person-badge"></i> Обзор</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="balance"><i class="bi bi-coin"></i> Баланс</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="donations"><i class="bi bi-bag-heart"></i> Донаты</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="punishments"><i class="bi bi-shield-exclamation"></i> Наказания</a></li>
+        </ul>
+
+        <div id="acc-mLoading" class="skeleton p-3" style="display:none;height:54px;"></div>
+        <div id="acc-mAlert" class="alert alert-danger d-none"></div>
+
+        <!-- OVERVIEW -->
+        <section id="acc-tab-overview">
+          <div class="row g-3">
+            <div class="col-lg-8">
+              <div class="card glass">
+                <div class="card-body">
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <div class="kv"><span class="k">UUID:</span>
+                        <span id="acc-mUuid" class="copy" title="Скопировать"><i class="bi bi-clipboard"></i> —</span>
+                      </div>
+                      <div class="kv"><span class="k">Email:</span><span id="acc-mEmail">—</span></div>
+                      <div class="kv"><span class="k">IP:</span><span id="acc-mIp" class="copy" title="Скопировать"><i class="bi bi-clipboard"></i> —</span></div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="metric"><span class="lbl">Регистрация</span><span class="val" id="acc-mReg">—</span></div>
+                      <div class="metric"><span class="lbl">Последний вход</span><span class="val" id="acc-mLast">—</span></div>
+                    </div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="d-flex flex-wrap gap-3">
+                    <div class="metric"><span class="lbl">Премиум</span><span class="val" id="acc-mPremium">—</span></div>
+                    <div class="metric"><span class="lbl">Текущая роль</span><span class="val"><span id="acc-mRole2" class="badge-role">default</span></span></div>
+                    <div class="metric"><span class="lbl">Баланс</span><span class="val"><span id="acc-mPointsCurrBig">0.00</span> <span class="small-muted" id="acc-mKeyBig">(rubs)</span></span></div>
+                    <div class="metric"><span class="lbl">Статус бана</span><span class="val"><span class="badge" id="acc-banStatus">—</span></span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="card glass h-100">
+                <div class="card-body">
+                  <div class="fw-bold mb-2"><i class="bi bi-shield-lock"></i> Быстрые действия</div>
+                  <div class="d-flex flex-column gap-2">
+                    <div class="input-group">
+                      <input id="acc-banReason" class="form-control" placeholder="Причина бана">
+                    </div>
+                    <div class="input-group">
+                      <input id="acc-banDuration" type="number" min="0" step="1" class="form-control" placeholder="Секунды (0=навеки)">
+                      <button id="acc-btnBan" class="btn btn-outline-danger btn-icon"><i class="bi bi-slash-circle"></i> Забанить</button>
+                      <button id="acc-btnUnban" class="btn btn-outline-warning btn-icon d-none"><i class="bi bi-arrow-counterclockwise"></i> Разбанить</button>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="acc-banSilent">
+                      <label class="form-check-label" for="acc-banSilent">Silent</label>
+                    </div>
+                  </div>
+                  <div id="acc-banActiveBox" class="small mt-3 d-none"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- BALANCE -->
+        <section id="acc-tab-balance" class="d-none">
+          <div class="card glass">
+            <div class="card-body">
+              <div class="d-flex align-items-end gap-3 flex-wrap">
+                <div class="metric"><span class="lbl">Донатная валюта</span><span class="val"><span id="acc-mKey">rubs</span></span></div>
+                <div class="metric"><span class="lbl">Текущий баланс</span><span class="val" id="acc-mPointsCurr">0.00</span></div>
+                <div class="ms-auto w-100 w-sm-auto" style="max-width:420px;">
+                  <div class="input-group">
+                    <input id="acc-mPoints" type="number" min="0" step="0.01" class="form-control" placeholder="Новое значение">
+                    <button id="acc-btnSavePoints" class="btn btn-success btn-icon" disabled><i class="bi bi-save"></i> Сохранить</button>
+                  </div>
+                  <div id="acc-pointsNote" class="small-muted mt-1"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- DONATIONS -->
+        <section id="acc-tab-donations" class="d-none">
+          <div class="card glass">
+            <div class="card-body">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="fw-bold"><i class="bi bi-bag-heart"></i> История донатов</div>
+                <span class="small-muted">последние 200</span>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-dark table-hover table-xs">
+                  <thead><tr>
+                    <th>#Платёж</th><th>#Покупка</th><th>Продукт</th><th>Кол-во</th><th>Стоимость</th><th>Создано</th>
+                  </tr></thead>
+                  <tbody id="acc-donationRows">
+                    <tr><td colspan="6" class="text-secondary">Нет данных</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PUNISHMENTS -->
+        <section id="acc-tab-punishments" class="d-none">
+          <div id="acc-punishSpinner" class="small-muted mb-2">Загрузка...</div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="card glass">
+                <div class="card-body">
+                  <div class="fw-bold mb-2">Баны</div>
+                  <div class="table-responsive">
+                    <table class="table table-dark table-xs">
+                      <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
+                      <tbody id="acc-banRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              <div class="card glass mt-3">
+                <div class="card-body">
+                  <div class="fw-bold mb-2">Варны</div>
+                  <div class="table-responsive">
+                    <table class="table table-dark table-xs">
+                      <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
+                      <tbody id="acc-warnRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card glass">
+                <div class="card-body">
+                  <div class="fw-bold mb-2">Муты</div>
+                  <div class="table-responsive">
+                    <table class="table table-dark table-xs">
+                      <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
+                      <tbody id="acc-muteRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              <div class="card glass mt-3">
+                <div class="card-body">
+                  <div class="fw-bold mb-2">История заходов</div>
+                  <div class="table-responsive">
+                    <table class="table table-dark table-xs">
+                      <thead><tr><th>ID</th><th>Дата</th><th>Ник</th><th>IP</th></tr></thead>
+                      <tbody id="acc-histRows"><tr><td colspan="4" class="text-secondary">—</td></tr></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div><!-- /row -->
+        </section>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>

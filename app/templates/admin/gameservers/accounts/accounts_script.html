@@ -1,0 +1,195 @@
+<script>
+let accReady = false;
+window.accInit = function(){ if(accReady) return; accReady = true; (function(){
+  const $ = id => document.getElementById(id);
+  const rows = $('acc-rows'), countEl = $('acc-count');
+
+  // Bootstrap fallback
+  const BS = (()=> {
+    const has = !!(window.bootstrap && window.bootstrap.Modal && window.bootstrap.Toast);
+    if (has) return window.bootstrap;
+    class Modal{constructor(root){this.root=root;this._b=null;} show(){this.root.classList.add('show');this.root.style.display='block';document.body.classList.add('modal-open');this._b=document.createElement('div');this._b.className='modal-backdrop fade show';document.body.appendChild(this._b);} hide(){this.root.classList.remove('show');this.root.style.display='none';document.body.classList.remove('modal-open');this._b?.remove();this._b=null;}}
+    class Toast{constructor(root){this.root=root;} show(){this.root.classList.add('show');this.root.style.display='block';setTimeout(()=>this.hide(),2400)} hide(){this.root.classList.remove('show');this.root.style.display='none';}}
+    return { Modal, Toast };
+  })();
+
+  const toast = new BS.Toast($('acc-toast'));
+  const toastMsg = m => { $('acc-toastBody').textContent = m; toast.show(); };
+
+  const z2 = n => String(n).padStart(2,'0');
+  const fmtTime = ms => {
+    if (ms==null) return '—';
+    try{ const d=new Date(Number(ms)); if(isNaN(d.getTime())) return '—';
+      return `${z2(d.getDate())}.${z2(d.getMonth()+1)}.${d.getFullYear()}, ${z2(d.getHours())}:${z2(d.getMinutes())}:${z2(d.getSeconds())}`; }
+    catch{ return '—'; }
+  };
+  const skin = (name, uuid) => { const u=(uuid||'').replaceAll('-',''); const qs = u?`uuid=${u}`:`name=${encodeURIComponent(name||'')}`; return `/admin/gameservers/api/player-head?${qs}`; };
+  const setCount = n => { countEl.textContent = Number.isFinite(n) ? `${n} результатов` : '—'; };
+
+  function render(list){
+    setCount(Array.isArray(list)? list.length : 0);
+    if(!list || !list.length){
+      rows.innerHTML = `<tr><td colspan="8" class="text-secondary">ничего не найдено</td></tr>`; return;
+    }
+    rows.innerHTML = list.map(r=>{
+      const nm=r.name||r.player_name||'—', uid=r.uuid||r.unique_id||'', em=r.email??'—', ip=r.ip||r.lastip||'—',
+            reg=fmtTime(r.regdate), last=fmtTime(r.lastlogin), prem=(r.premium===1||r.premium===true)?'yes':'—', role=r.role||'default';
+      return `<tr class="cursor-pointer" data-uuid="${uid}" data-name="${nm}">
+        <td><img class="player-head me-2" src="${skin(nm,uid)}" alt=""> <a href="#" class="link-light text-decoration-none fw-semibold">${nm}</a></td>
+        <td><span class="badge-role">${role}</span></td>
+        <td class="small">${uid||'—'}</td><td>${em}</td><td>${ip}</td><td>${reg}</td><td>${last}</td><td>${prem}</td>
+      </tr>`;
+    }).join('');
+    rows.querySelectorAll('tr').forEach(tr=> tr.addEventListener('click', e=>{
+      e.preventDefault(); openModal({uuid: tr.dataset.uuid, name: tr.dataset.name});
+    }));
+  }
+
+  async function fetchData(q=""){
+    const url = new URL("/admin/accounts/api/search", location.origin);
+    if(q) url.searchParams.set("q", q);
+    rows.innerHTML = `<tr><td colspan="8"><div class="skeleton p-3">Загрузка…</div></td></tr>`;
+    try{
+      const res = await fetch(url,{cache:"no-store"});
+      const j = await res.json(); if(!j.ok) throw new Error(j.error||"error");
+      render(j.data||[]);
+    }catch(e){
+      rows.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message}</td></tr>`;
+      setCount(0);
+    }
+  }
+
+  const onInputDebounce = (fn, ms=400)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms);} };
+  $('acc-btnSearch').addEventListener('click', ()=> fetchData(($('acc-q').value||'').trim()));
+  $('acc-q').addEventListener('keydown', e=>{ if(e.key==='Enter') $('acc-btnSearch').click(); });
+  $('acc-q').addEventListener('input', onInputDebounce(()=>$('acc-btnSearch').click(), 450));
+
+  // Modal state (scoped)
+  const m = {
+    root:$('acc-accountModal'), head:$('acc-mHead'), name:$('acc-mName'),
+    uuid:$('acc-mUuid'), email:$('acc-mEmail'), ip:$('acc-mIp'),
+    reg:$('acc-mReg'), last:$('acc-mLast'), role:$('acc-mRole'), role2:$('acc-mRole2'),
+    premium:$('acc-mPremium'), loading:$('acc-mLoading'), alert:$('acc-mAlert'), online:$('acc-mOnline'),
+    key:$('acc-mKey'), keyBig:$('acc-mKeyBig'), curr:$('acc-mPointsCurr'), currBig:$('acc-mPointsCurrBig'),
+    points:$('acc-mPoints'), save:$('acc-btnSavePoints'), note:$('acc-pointsNote'),
+    tabs:$('acc-mTabs'),
+    secOverview:$('acc-tab-overview'), secBalance:$('acc-tab-balance'), secDon:$('acc-tab-donations'), secPun:$('acc-tab-punishments'),
+    donationRows:$('acc-donationRows'), punishSpinner:$('acc-punishSpinner'),
+    banRows:$('acc-banRows'), muteRows:$('acc-muteRows'), warnRows:$('acc-warnRows'), histRows:$('acc-histRows'),
+    banStatus:$('acc-banStatus'), banBox:$('acc-banActiveBox'), banReason:$('acc-banReason'), banDuration:$('acc-banDuration'),
+    btnBan:$('acc-btnBan'), btnUnban:$('acc-btnUnban'), banSilent:$('acc-banSilent'),
+  };
+  const modal = new BS.Modal(m.root);
+  document.querySelectorAll('#acc-scope [data-bs-dismiss="modal"]').forEach(btn=> btn.addEventListener('click', ()=> modal.hide()));
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') modal.hide(); });
+
+  function setBadge(node, text, danger){ node.textContent=text; node.className='badge '+(danger?'bg-danger':'bg-secondary'); }
+  function setOnline(o){
+    const dot = m.online.querySelector('.status-dot'), text = m.online.querySelector('span.align-middle');
+    dot.className = 'status-dot ' + (o===true?'status-online':o===false?'status-offline':'status-unknown');
+    text.textContent = o===true ? 'online' : o===false ? 'offline' : 'unknown';
+  }
+  function setPointsValue(v){ const num = Number.isFinite(v)?Number(v):0; m.points.value=num.toFixed(2); m.curr.textContent=num.toFixed(2); m.currBig.textContent=num.toFixed(2); }
+  function copyText(t){ if(!t) return; navigator.clipboard?.writeText(t).then(()=>toastMsg('Скопировано')); }
+
+  let current = {uuid:'', name:''}, punishLoaded=false;
+
+  function showTab(name){
+    m.tabs.querySelectorAll('.nav-link').forEach(a=> a.classList.toggle('active', a.dataset.tab===name));
+    m.secOverview.classList.toggle('d-none', name!=='overview');
+    m.secBalance.classList.toggle('d-none', name!=='balance');
+    m.secDon.classList.toggle('d-none', name!=='donations');
+    m.secPun.classList.toggle('d-none', name!=='punishments');
+    if (name==='punishments' && !punishLoaded) loadPunishments(current.uuid);
+  }
+  m.tabs.querySelectorAll('.nav-link').forEach(a=> a.addEventListener('click', ()=> showTab(a.dataset.tab)));
+
+  async function openModal({uuid,name}){
+    current={uuid:uuid||'', name:name||''}; showTab('overview'); punishLoaded=false;
+    // reset
+    m.loading.style.display=''; m.alert.classList.add('d-none'); m.alert.textContent='';
+    m.head.src = skin(name,uuid); m.name.textContent=name||'—';
+    m.uuid.textContent='—'; m.email.textContent='—'; m.ip.textContent='—';
+    m.reg.textContent='—'; m.last.textContent='—'; m.role.textContent='default'; m.role2.textContent='default';
+    m.premium.textContent='—'; setOnline(null); setPointsValue(0); m.save.disabled=true; m.note.textContent='';
+    m.key.textContent='rubs'; m.keyBig.textContent='(rubs)'; setBadge(m.banStatus,'—',false);
+    m.banBox.classList.add('d-none'); m.banBox.innerHTML=''; m.btnBan.disabled=true; m.btnUnban.classList.add('d-none');
+    modal.show();
+    try{
+      const u = new URL("/admin/accounts/api/details", location.origin);
+      if(uuid) u.searchParams.set('uuid', uuid); if(name) u.searchParams.set('name', name);
+      const res = await fetch(u,{cache:'no-store'}); const j = await res.json(); if(!j.ok) throw new Error(j.error||'error');
+      const d = j.data||{};
+      m.name.textContent=d.name||name||'—'; m.uuid.textContent=d.uuid||uuid||'—'; m.email.textContent=d.email||'—'; m.ip.textContent=d.ip||'—';
+      m.reg.textContent=fmtTime(d.regdate); m.last.textContent=fmtTime(d.lastlogin); m.role.textContent=d.role||'default'; m.role2.textContent=d.role||'default';
+      m.premium.textContent=d.premium?'yes':'—'; m.head.src=skin(d.name,d.uuid); setOnline(d.online);
+      const key=(d.points_key||'rubs').trim(); m.key.textContent=key; m.keyBig.textContent=`(${key})`;
+      setPointsValue(typeof d.points==='number'? d.points:0); m.save.disabled=!d.can_edit_points; m.note.textContent=d.can_edit_points?'':'У вас нет прав изменять баланс.';
+      renderDonations(d.donations||[]);
+      const ban=d.ban||{}; setBadge(m.banStatus, ban.is_banned?'Забанен':'Не забанен', !!ban.is_banned);
+      m.btnBan.disabled = !d.can_ban || !!ban.is_banned; m.btnUnban.classList.toggle('d-none', !d.can_ban || !ban.is_banned);
+      if (ban.active){ m.banBox.classList.remove('d-none'); m.banBox.innerHTML =
+        `<div class="small-muted">Активный бан:</div>
+         <div><span class="k">Причина:</span> ${ban.active.reason||'—'}</div>
+         <div><span class="k">От:</span> ${ban.active.actor_name||ban.active.banned_by_name||'—'}</div>
+         <div><span class="k">С:</span> ${fmtTime(ban.active.time_ms)}</div>
+         <div><span class="k">До:</span> ${ban.active.until_ms ? fmtTime(ban.active.until_ms) : 'навсегда'}</div>`; }
+    }catch(e){ m.alert.textContent = e.message||'Ошибка'; m.alert.classList.remove('d-none'); }
+    finally{ m.loading.style.display='none'; }
+  }
+
+  function renderDonations(list){
+    if(!list || !list.length){ m.donationRows.innerHTML = `<tr><td colspan="6" class="text-secondary">Нет данных</td></tr>`; return; }
+    m.donationRows.innerHTML = list.map(r=>`
+      <tr><td>${r.payment_id ?? '—'}</td><td>${r.purchase_id ?? '—'}</td><td>${r.product_name ?? '—'}</td>
+          <td>${r.amount ?? '—'}</td><td>${r.cost!=null? r.cost : '—'}</td><td>${r.payment_created_at || r.purchase_created_at || '—'}</td></tr>`).join('');
+  }
+
+  async function loadPunishments(uuid){
+    if(!uuid) return; m.punishSpinner.style.display='';
+    try{
+      const u = new URL('/admin/accounts/api/punishments', location.origin); u.searchParams.set('uuid', uuid);
+      const res = await fetch(u,{cache:'no-store'}); const j = await res.json(); if(!j.ok) throw new Error(j.error||'error');
+      const d=j.data||{}; fillPun(m.banRows,d.bans,true); fillPun(m.muteRows,d.mutes,true); fillPun(m.warnRows,d.warnings,true); fillHist(m.histRows,d.history); punishLoaded=true;
+    }catch(e){ m.alert.textContent='Не удалось загрузить наказания: '+(e.message||'unknown'); m.alert.classList.remove('d-none'); }
+    finally{ m.punishSpinner.style.display='none'; }
+  }
+  const fillPun = (tb,list,withActive)=>{ if(!list||!list.length){ tb.innerHTML=`<tr><td colspan="6" class="text-secondary">—</td></tr>`; return; }
+    tb.innerHTML=list.map(x=>`<tr><td>${x.id??'—'}</td><td>${x.reason||'—'}</td><td>${x.banned_by_name||x.actor_name||'—'}</td>
+      <td>${fmtTime(x.time_ms)}</td><td>${x.until_ms?fmtTime(x.until_ms):'—'}</td><td>${withActive?(x.active?'yes':'no'):'—'}</td></tr>`).join(''); };
+  const fillHist = (tb,list)=>{ if(!list||!list.length){ tb.innerHTML=`<tr><td colspan="4" class="text-secondary">—</td></tr>`; return; }
+    tb.innerHTML=list.map(x=>`<tr><td>${x.id??'—'}</td><td>${x.date||'—'}</td><td>${x.name||'—'}</td><td>${x.ip||'—'}</td></tr>`).join(''); };
+
+  // actions
+  m.save.addEventListener('click', async ()=>{
+    const uuid=(m.uuid.textContent||'').trim(), key=(m.key.textContent||'rubs').trim(), points=parseFloat(m.points.value);
+    if(!uuid || Number.isNaN(points)) return; m.save.disabled=true;
+    try{
+      const res = await fetch('/admin/accounts/api/points',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid,key,points})});
+      const j = await res.json(); if(!j.ok) throw new Error(j.error||'error');
+      const newVal=j.data?.points ?? points; setPointsValue(newVal); toastMsg('Баланс сохранён');
+    }catch(e){ toastMsg('Ошибка: '+(e.message||'save failed')); } finally{ m.save.disabled=false; }
+  });
+  m.btnBan.addEventListener('click', async ()=>{
+    const body={uuid:(m.uuid.textContent||'').trim(),reason:m.banReason.value||undefined,duration_seconds:parseInt(m.banDuration.value||'0',10)||0,silent:!!m.banSilent.checked,ipban:false};
+    try{
+      const r=await fetch('/admin/accounts/api/ban',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const j=await r.json(); if(!j.ok) throw new Error(j.error||'ban failed'); toastMsg('Пользователь забанен');
+      openModal({uuid:(m.uuid.textContent||'').trim(),name:(m.name.textContent||'').trim()});
+    }catch(e){ m.alert.textContent=e.message||'Ошибка'; m.alert.classList.remove('d-none'); }
+  });
+  m.btnUnban.addEventListener('click', async ()=>{
+    try{
+      const r=await fetch('/admin/accounts/api/unban',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid:(m.uuid.textContent||'').trim()})});
+      const j=await r.json(); if(!j.ok) throw new Error(j.error||'unban failed'); toastMsg('Бан снят');
+      openModal({uuid:(m.uuid.textContent||'').trim(),name:(m.name.textContent||'').trim()});
+    }catch(e){ m.alert.textContent=e.message||'Ошибка'; m.alert.classList.remove('д-none'); }
+  });
+
+  m.uuid.addEventListener('click', ()=> navigator.clipboard?.writeText(m.uuid.textContent.replace(/\s+/g,'').replace(/^📋/,'')));
+  m.ip.addEventListener('click',   ()=> navigator.clipboard?.writeText(m.ip.textContent.replace(/^📋/,'')));
+
+  // первичная загрузка
+  fetchData();
+})(); };
+</script>

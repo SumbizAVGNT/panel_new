@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Set, List, Optional
+from typing import Set, List, Optional, Dict, Any
 
 from flask import Blueprint, render_template, jsonify, request, current_app, session
 
@@ -65,8 +65,9 @@ except Exception:
 
 bp = Blueprint("accounts", __name__, url_prefix="/accounts")
 
-POINTS_KEY = os.getenv("POINTS_KEY", "rubs").strip()
-POINTS_EDITOR_NAME = (os.getenv("HBusiwshu9whsd") or "").strip()
+POINTS_KEY = (os.getenv("POINTS_KEY") or "rubs").strip()
+# читаем корректное имя переменной, но оставляем б/с совместимость со старым названием
+POINTS_EDITOR_NAME = (os.getenv("POINTS_EDITOR_NAME") or os.getenv("HBusiwshu9whsd") or "").strip()
 POINTS_EDIT_ALL = (os.getenv("POINTS_EDIT_ALL") or "0").lower() in ("1", "true", "yes")
 POINTS_EDIT_ROLES = [x.strip().lower() for x in (os.getenv("POINTS_EDIT_ROLES") or "admin,superadmin").split(",") if x.strip()]
 
@@ -79,6 +80,7 @@ LB_ACTOR_UUID_DEFAULT = os.getenv("LB_ACTOR_UUID", "00000000-0000-0000-0000-0000
 @bp.route("/")
 @login_required
 def index():
+    # Страница standalone /admin/accounts (встроенный вариант живёт в /admin/gameservers/index.html через include)
     return render_template("admin/accounts/index.html")
 
 
@@ -121,7 +123,7 @@ def _table_exists(conn, name: str) -> bool:
         return False
 
 
-def _pick_table(conn) -> str | None:
+def _pick_table(conn) -> Optional[str]:
     for t in _table_candidates():
         if _table_exists(conn, t):
             return t
@@ -136,18 +138,19 @@ def _cols(conn, table: str) -> Set[str]:
         return set()
 
 
-def _first_present(cols: Set[str], *variants) -> str | None:
+def _first_present(cols: Set[str], *variants: str) -> Optional[str]:
     for v in variants:
         if v and v in cols:
             return v
     return None
 
 
-def _norm_ts(v):
+def _norm_ts(v) -> Optional[int]:
     try:
         t = int(v)
     except Exception:
         return None
+    # если сек., переведём в мс
     return t if t > 10_000_000_000 else t * 1000
 
 
@@ -209,7 +212,7 @@ def _can_ban() -> bool:
     return _has_admin_flag()
 
 
-def _map_columns(cols: Set[str]) -> dict:
+def _map_columns(cols: Set[str]) -> Dict[str, Optional[str]]:
     return {
         "name": _first_present(cols, "realname", "username", "player_name", "name"),
         "uuid": _first_present(cols, "uuid", "unique_id"),
@@ -231,7 +234,7 @@ def _fetch_single_account(*, uuid: Optional[str] = None, name: Optional[str] = N
     cols_set = _cols(conn, table)
     m = _map_columns(cols_set)
 
-    row = None
+    row: Optional[Dict[str, Any]] = None
     if uuid and m["uuid"]:
         row = conn.query_one(f"SELECT * FROM `{table}` WHERE `{m['uuid']}` = ? LIMIT 1", (_dash(uuid),))
     elif name and m["name"]:
@@ -239,11 +242,11 @@ def _fetch_single_account(*, uuid: Optional[str] = None, name: Optional[str] = N
     if not row:
         return None
 
-    def gv(key, default=None):
+    def gv(key: str, default=None):
         c = m.get(key)
         return row.get(c) if c else default
 
-    data = {
+    data: Dict[str, Any] = {
         "name": gv("name"),
         "uuid": _dash(gv("uuid") or (uuid or "")) or None,
         "email": gv("email"),
@@ -301,7 +304,7 @@ def api_search():
 
     m = _map_columns(cols)
 
-    select_parts = []
+    select_parts: List[str] = []
     if m["name"]:      select_parts.append(f"`{m['name']}` AS `name`")
     if m["uuid"]:      select_parts.append(f"`{m['uuid']}` AS `uuid`")
     if m["email"]:     select_parts.append(f"`{m['email']}` AS `email`")
@@ -321,8 +324,17 @@ def api_search():
             where = "WHERE " + " OR ".join(f"`{c}` LIKE ?" for c in like_fields)
             params = [f"%{q}%"] * len(like_fields)
 
-    order_by = m["lastlogin"] or m["regdate"] or "id"
-    sql = f"SELECT {', '.join(select_parts)} FROM `{table}` {where} ORDER BY `{order_by}` DESC LIMIT {limit}"
+    # безопасный ORDER BY — выбираем первое реально существующее поле
+    order_candidates = [m["lastlogin"], m["regdate"], m["id"], m["uuid"], m["name"]]
+    order_by = next((x for x in order_candidates if x), None)
+    if not order_by:
+        # совсем уж fallback — сортировка по первому выбранному полю
+        order_by = select_parts[0].split("`")[1] if select_parts and "`" in select_parts[0] else None
+
+    sql = f"SELECT {', '.join(select_parts)} FROM `{table}` {where}"
+    if order_by:
+        sql += f" ORDER BY `{order_by}` DESC"
+    sql += f" LIMIT {limit}"
 
     try:
         rows = conn.query_all(sql, params)
@@ -337,7 +349,7 @@ def api_search():
             r["regdate"] = _norm_ts(r["regdate"])
 
     uuids_dashed = [_dash(r.get("uuid") or "") for r in rows if r.get("uuid")]
-    roles_map = {}
+    roles_map: Dict[str, str] = {}
     try:
         roles_map = effective_roles_for_uuids(uuids_dashed) or {}
         if not roles_map:
@@ -370,7 +382,7 @@ def api_details():
         return jsonify({"ok": False, "error": "Account not found"}), 404
 
     # points
-    points = None
+    points: Optional[float] = None
     try:
         if acc.get("uuid"):
             points = get_points_by_uuid(acc["uuid"], key=POINTS_KEY)
@@ -528,8 +540,10 @@ def api_ban():
         return jsonify({"ok": True, "data": {"banned": True, "active": active}})
     except Exception as e:
         current_app.logger.exception("litebans ban insert failed: %s", e)
-        try: conn.rollback()
-        except Exception: pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({"ok": False, "error": "Ban failed"}), 500
 
 
@@ -566,8 +580,10 @@ def api_unban():
         return jsonify({"ok": True, "data": {"unbanned": True, "is_banned": bool(is_banned(uuid))}})
     except Exception as e:
         current_app.logger.exception("litebans unban failed: %s", e)
-        try: conn.rollback()
-        except Exception: pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({"ok": False, "error": "Unban failed"}), 500
 
 
