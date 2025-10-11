@@ -1,38 +1,43 @@
 <script>
 (async function PromoModule(){
   const $ = (id)=>document.getElementById(id);
-  const listEl = $('pc-list'), kitSel = $('pc-kit'), msg = $('pc-msg');
+  const listBody = $('pc-list'), kitSel = $('pc-kit'), msg = $('pc-msg');
 
   async function loadKitsToSelect(){
     try{
       const r = await fetch('/admin/promocode/api/kits/list',{cache:'no-store'});
       const j = await r.json(); if(!j.ok) throw new Error(j.error||'kits');
-      kitSel.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+      kitSel.innerHTML = `<option value="">— без кита —</option>` + (j.data||[])
+        .map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
     }catch(e){ /* ignore */ }
   }
 
   async function loadPromos(){
-    listEl.innerHTML = `<li class="small-dim">Загрузка…</li>`;
+    listBody.innerHTML = `<tr><td colspan="8" class="text-secondary small">Загрузка…</td></tr>`;
     try{
       const r = await fetch('/admin/promocode/api/promo/list',{cache:'no-store'});
       const j = await r.json(); if(!j.ok) throw new Error(j.error||'list');
       const rows = j.data||[];
-      if(!rows.length){ listEl.innerHTML = `<li class="small-dim">Нет данных</li>`; return; }
-      listEl.innerHTML = rows.map(x=>`
-        <li>
-          <div class="d-flex align-items-center justify-content-between">
-            <div><span class="code">${x.code}</span> · ${x.amount!=null? x.amount+' '+(x.currency_key||'') : ''} ${x.kit_name? ' · kit: '+x.kit_name : ''}</div>
-            <div class="small-dim">${x.uses_left}/${x.uses_total}${x.expires_at? ' · до '+x.expires_at : ''}</div>
-          </div>
-        </li>`).join('');
+      if(!rows.length){ listBody.innerHTML = `<tr><td colspan="8" class="text-secondary small">Нет данных</td></tr>`; return; }
+      listBody.innerHTML = rows.map(x=>`
+        <tr>
+          <td class="fw-semibold">${x.code}</td>
+          <td class="text-end">${x.amount!=null? x.amount.toFixed(2) : ''}</td>
+          <td>${x.currency_key||''}</td>
+          <td>${x.realm||'<span class="text-secondary">all</span>'}</td>
+          <td>${x.kit_name? `<span class="badge text-bg-secondary">${x.kit_name}</span>` : ''}</td>
+          <td class="text-end">${x.uses_left}/${x.uses_total}</td>
+          <td>${x.expires_at||''}</td>
+          <td class="text-secondary">${x.created_at||''}</td>
+        </tr>`).join('');
     }catch(e){
-      listEl.innerHTML = `<li class="text-danger">${e.message||e}</li>`;
+      listBody.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message||e}</td></tr>`;
     }
   }
 
   $('pc-create').addEventListener('click', async ()=>{
     const body = {
-      code: ($('pc-code').value||'').trim(),
+      code: ($('pc-code').value||'').trim().toUpperCase(),
       amount: parseFloat($('pc-amount').value||'0'),
       uses: parseInt($('pc-uses').value||'1',10)||1,
       currency_key: $('pc-currency').value||'rubs',
@@ -41,12 +46,19 @@
       expires_at: $('pc-exp').value || null,
     };
     try{
-      const r = await fetch('/admin/promocode/api/promo/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const r = await fetch('/admin/promocode/api/promo/create',{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const j = await r.json(); if(!j.ok) throw new Error(j.error||'create failed');
       msg.textContent = `Создан промокод: ${j.data.code}`;
+      msg.className='small text-success';
       await loadPromos();
-    }catch(e){ msg.textContent = 'Ошибка: '+(e.message||e); }
+    }catch(e){
+      msg.textContent = 'Ошибка: '+(e.message||e);
+      msg.className='small text-danger';
+    }
   });
+
+  $('pc-refresh')?.addEventListener('click', loadPromos);
 
   await loadKitsToSelect();
   await loadPromos();
