@@ -1,3 +1,4 @@
+{# templates/admin/gameservers/promocode/index.html #}
 {% extends "layout/base.html" %}
 {% block title %}Promocode & Kits{% endblock %}
 {% block content %}
@@ -47,11 +48,13 @@
   </div>
 
   <div id="tab-promo" class="tab-pane active">
-    {% include "admin/promocode/promocode.html" %}
+    {# ВСТАВЛЯЕМ промокоды #}
+    {% include "admin/gameservers/promocode/promocode.html" %}
   </div>
 
   <div id="tab-kits" class="tab-pane">
-    {% include "admin/promocode/kits.html" %}
+    {# ВСТАВЛЯЕМ конструктор китов #}
+    {% include "admin/gameservers/promocode/kits.html" %}
   </div>
 </div>
 
@@ -66,6 +69,7 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
 });
 </script>
 
-{% include "admin/promocode/promocode_script.html" %}
-{% include "admin/promocode/kits_script.html" %}
+{# Скрипты модулей подключаем снизу #}
+{% include "admin/gameservers/promocode/promocode_script.html" %}
+{% include "admin/gameservers/promocode/kits_script.html" %}
 {% endblock %}
