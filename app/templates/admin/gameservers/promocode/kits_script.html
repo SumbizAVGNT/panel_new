@@ -1,154 +1,362 @@
 <script>
-(function KitsModule(){
+/* ============================
+   Конструктор Кит-Инвентаря
+   ============================ */
+(function(){
   const $ = (id)=>document.getElementById(id);
-  const grid = $('kit-grid'), list = $('cat-list'), count = $('kit-count');
-  let current = { id:null, name:'', description:'', items:[] };
+  const grid = $('inv-grid');
+  const list = $('cat-list');
+  const countEl = $('kit-count');
+
+  // --- state ---
+  const SLOTS = 54;              // 6x9
+  let kit = { id:null, name:'', description:'', items:[] }; // items: [{slot, ns, id, amount, display_name, enchants: [{id,lvl}]}]
+  let selectedSlot = null;
+
   const iconFor = (ns,id)=> ns==='minecraft'
     ? `/static/mc/1.20.6/items/${id}.png`
     : `/static/mc/itemsadder/${ns}.${id}.png`;
 
-  function renderCat(items){
-    if(!items || !items.length){ list.innerHTML = `<div class="small-dim">Нет данных</div>`; return; }
-    list.innerHTML = items.map(it=>`
-      <div class="item-row" data-ns="${it.ns||'minecraft'}" data-id="${it.id}">
-        <span class="item-icon" style="background-image:url('${it.icon}');background-size:cover"></span>
-        <div><div>${it.name||it.id}</div><div class="small-dim">${(it.ns||'minecraft')}:${it.id}</div></div>
-      </div>`).join('');
-    list.querySelectorAll('.item-row').forEach(r=>{
-      r.addEventListener('click', ()=>{
-        const ns = r.dataset.ns, id = r.dataset.id;
-        addItem({ns,id,name:r.querySelector('div>div').textContent});
+  // =================
+  // UI: inventory grid
+  // =================
+  function buildGrid(){
+    const frag = document.createDocumentFragment();
+    for(let i=0;i<SLOTS;i++){
+      const cell = document.createElement('div');
+      cell.className = 'inv-slot';
+      cell.dataset.slot = i;
+      cell.draggable = true;
+
+      const badge = document.createElement('span');
+      badge.className = 'slot-num';
+      badge.textContent = i;
+      cell.appendChild(badge);
+
+      cell.addEventListener('click', ()=> selectSlot(i));
+      // drag from grid
+      cell.addEventListener('dragstart', (ev)=>{
+        const it = itemAt(i);
+        if(!it){ ev.preventDefault(); return; }
+        ev.dataTransfer.setData('text/x-kit-item', JSON.stringify({from:'grid', slot:i}));
+        ev.dataTransfer.effectAllowed = 'move';
+      });
+      // drag over to grid
+      cell.addEventListener('dragover', (ev)=>{
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        cell.classList.add('drag-over');
+      });
+      cell.addEventListener('dragleave', ()=> cell.classList.remove('drag-over'));
+      cell.addEventListener('drop', (ev)=>{
+        ev.preventDefault();
+        cell.classList.remove('drag-over');
+        const dataItem = ev.dataTransfer.getData('text/x-catalog-item');
+        const dataGrid = ev.dataTransfer.getData('text/x-kit-item');
+
+        if (dataItem) {
+          // drop from catalog
+          const {ns,id,name} = JSON.parse(dataItem);
+          placeNewItem(i, {ns,id,display_name:'',amount:1,enchants:[]});
+        } else if (dataGrid) {
+          // move inside grid
+          const {slot:fromSlot} = JSON.parse(dataGrid);
+          moveItem(fromSlot, i);
+        }
+      });
+
+      frag.appendChild(cell);
+    }
+    grid.innerHTML = '';
+    grid.appendChild(frag);
+    renderGrid();
+  }
+
+  function itemAt(slot){
+    return kit.items.find(it => Number(it.slot) === Number(slot)) || null;
+  }
+
+  function renderGrid(){
+    countEl.textContent = kit.items.length.toString();
+    for(const cell of grid.querySelectorAll('.inv-slot')){
+      const s = Number(cell.dataset.slot);
+      const it = itemAt(s);
+      cell.classList.toggle('has-item', !!it);
+      cell.innerHTML = `<span class="slot-num">${s}</span>` + (it ? `
+        <div class="slot-item" title="${(it.display_name||`${it.ns}:${it.id}`)} ×${it.amount}">
+          <div class="slot-icon" style="background-image:url('${iconFor(it.ns||'minecraft', it.id)}')"></div>
+          ${Number(it.amount||1)>1?`<span class="slot-amount">${it.amount}</span>`:''}
+        </div>` : ``);
+      // re-attach clickable
+      cell.addEventListener('click', ()=> selectSlot(s));
+      // draggable if has item
+      cell.draggable = !!it;
+    }
+    // обновить форму выбранного
+    if(selectedSlot!=null) selectSlot(selectedSlot, true);
+  }
+
+  function selectSlot(slot, keepFocus=false){
+    selectedSlot = slot;
+    const it = itemAt(slot);
+
+    $('item-id').textContent = it ? `${it.ns||'minecraft'}:${it.id}` : '—';
+    $('item-title').textContent = it ? 'Редактирование предмета' : 'Слот пуст';
+    $('item-remove').classList.toggle('d-none', !it);
+    $('item-icon').style.backgroundImage = it ? `url('${iconFor(it.ns||'minecraft', it.id)}')` : '';
+
+    $('f-slot').value = slot;
+    $('f-amount').value = it ? (it.amount||1) : 1;
+    $('f-display').value = it ? (it.display_name||'') : '';
+
+    drawEnchants(it ? (it.enchants||[]) : []);
+    // визуальный выбор
+    grid.querySelectorAll('.inv-slot').forEach(el => el.classList.toggle('selected', Number(el.dataset.slot)===Number(slot)));
+    if(!keepFocus) $('f-display').focus();
+  }
+
+  function drawEnchants(list){
+    const box = $('ench-list');
+    if(!list || !list.length){
+      box.innerHTML = `<span class="small-dim">Нет зачарований</span>`;
+      return;
+    }
+    box.innerHTML = list.map((e,ix)=>`
+      <span class="ench-tag" data-ix="${ix}">
+        ${e.id}@${e.lvl}
+        <a href="#" class="x" title="Удалить" data-act="del">×</a>
+      </span>`).join('');
+    box.querySelectorAll('[data-act="del"]').forEach(a=>{
+      a.addEventListener('click', (ev)=>{
+        ev.preventDefault();
+        const it = itemAt(selectedSlot); if(!it) return;
+        const ix = Number(a.parentElement.dataset.ix);
+        it.enchants.splice(ix,1);
+        drawEnchants(it.enchants);
+        touch();
       });
     });
   }
 
-  async function loadCatalog(src){
-    try{
-      const url = src==='custom' ? '/admin/promocode/api/items/custom' : '/admin/promocode/api/items/vanilla';
-      const r = await fetch(url,{cache:'no-store'}); const j = await r.json(); if(!j.ok) throw new Error(j.error||'catalog');
-      renderCat(j.data||[]);
-    }catch(e){ list.innerHTML = `<div class="text-danger">${e.message||e}</div>`; }
+  function placeNewItem(slot, base){
+    // если занято — заменить
+    const existingIdx = kit.items.findIndex(it => Number(it.slot)===Number(slot));
+    if(existingIdx>=0) kit.items.splice(existingIdx,1);
+    kit.items.push({...base, slot:Number(slot)});
+    renderGrid();
+    touch();
   }
 
-  function render(){
-    count.textContent = `${current.items.length} items`;
-    if(!current.items.length){ grid.innerHTML = `<div class="small-dim">Добавьте предметы из каталога слева.</div>`; return; }
-    grid.innerHTML = current.items.map((it,idx)=>`
-      <div class="kit-card" data-idx="${idx}">
-        <span class="icon" style="background-image:url('${iconFor(it.ns||'minecraft', it.id)}');background-size:cover"></span>
-        <div class="w-100">
-          <div class="d-flex gap-2 align-items-center">
-            <div class="badge-role">${(it.ns||'minecraft')}:${it.id}</div>
-            <input class="form-control form-control-sm" style="max-width:220px" placeholder="Отображаемое имя" value="${it.display_name||''}" data-k="display_name">
-            <input class="form-control form-control-sm" type="number" min="1" step="1" value="${it.amount||1}" data-k="amount" style="max-width:90px">
-            <button class="btn btn-sm btn-outline-danger ms-auto" data-act="del"><i class="bi bi-x-lg"></i></button>
-          </div>
-          <div class="mt-2">
-            <div class="small-dim mb-1">Зачарования</div>
-            <div class="d-flex gap-2 align-items-center mb-2">
-              <input class="form-control form-control-sm" placeholder="enchant id, напр. sharpness или itemsadder:fire" data-k="e_id">
-              <input class="form-control form-control-sm" type="number" min="1" step="1" value="1" style="max-width:90px" data-k="e_lvl">
-              <button class="btn btn-sm btn-outline-secondary" data-act="add-ench"><i class="bi bi-plus"></i></button>
-            </div>
-            <div class="ench-list">${(it.enchants||[]).map((e,i)=>`<span class="tag" data-ix="${i}">${e.id}@${e.lvl} <a href="#" data-act="del-ench" class="text-decoration-none text-light ms-1">×</a></span>`).join('')}</div>
-          </div>
+  function moveItem(from, to){
+    if(from===to) return;
+    const itFrom = itemAt(from);
+    const itTo   = itemAt(to);
+    if(!itFrom) return;
+    itFrom.slot = Number(to);
+    if(itTo){ // swap
+      itTo.slot = Number(from);
+    }
+    renderGrid();
+    touch();
+  }
+
+  function clearInventory(){
+    kit.items = [];
+    renderGrid();
+    touch();
+  }
+
+  function compactInventory(){
+    // отсортировать по текущему слоту и сложить в ближайшие свободные
+    kit.items.sort((a,b)=>Number(a.slot)-Number(b.slot));
+    let p=0;
+    for(const it of kit.items){
+      it.slot = p++;
+    }
+    renderGrid();
+    touch();
+  }
+
+  // =================
+  // Catalog (drag out)
+  // =================
+  function renderCatalog(items){
+    if(!items || !items.length){
+      list.innerHTML = `<div class="small-dim p-2">Каталог пуст</div>`;
+      return;
+    }
+    list.innerHTML = items.map(it=>`
+      <div class="cat-item" draggable="true"
+           data-ns="${it.ns||'minecraft'}" data-id="${it.id}" title="${(it.name||it.id)}">
+        <div class="cat-icon" style="background-image:url('${it.icon}')"></div>
+        <div class="cat-meta">
+          <div class="cat-name">${it.name||it.id}</div>
+          <div class="cat-id small-dim">${(it.ns||'minecraft')}:${it.id}</div>
         </div>
       </div>`).join('');
 
-    grid.querySelectorAll('.kit-card').forEach(card=>{
-      const idx = +card.dataset.idx;
-      card.querySelectorAll('input[data-k]').forEach(inp=>{
-        inp.addEventListener('input', ()=>{
-          const k = inp.dataset.k;
-          if(k==='amount'){ current.items[idx][k] = Math.max(1, parseInt(inp.value||'1',10)||1); }
-          else { current.items[idx][k] = inp.value; }
-        });
+    list.querySelectorAll('.cat-item').forEach(el=>{
+      el.addEventListener('dragstart', (ev)=>{
+        const payload = {from:'catalog', ns: el.dataset.ns, id: el.dataset.id, name: el.querySelector('.cat-name').textContent};
+        ev.dataTransfer.setData('text/x-catalog-item', JSON.stringify(payload));
+        ev.dataTransfer.effectAllowed = 'copy';
       });
-      card.querySelector('[data-act="del"]')?.addEventListener('click', ()=>{
-        current.items.splice(idx,1); render();
-      });
-      card.querySelector('[data-act="add-ench"]')?.addEventListener('click', ()=>{
-        const eId = card.querySelector('input[data-k="e_id"]').value.trim();
-        const lvl = Math.max(1, parseInt(card.querySelector('input[data-k="e_lvl"]').value||'1',10)||1);
-        if(!eId) return;
-        current.items[idx].enchants = current.items[idx].enchants || [];
-        current.items[idx].enchants.push({id:eId, lvl});
-        render();
-      });
-      card.querySelectorAll('[data-act="del-ench"]').forEach(a=>{
-        a.addEventListener('click', (ev)=>{
-          ev.preventDefault();
-          const ix = +a.parentElement.dataset.ix;
-          current.items[idx].enchants.splice(ix,1);
-          render();
-        });
+      el.addEventListener('click', ()=>{
+        // клик по каталогу — авторазмещение в первый свободный слот
+        const ns = el.dataset.ns, id = el.dataset.id;
+        const free = firstFreeSlot();
+        if(free==null) return;
+        placeNewItem(free, {ns,id,display_name:'',amount:1,enchants:[]});
       });
     });
   }
 
-  function addItem(it){
-    current.items.push({ns: it.ns||'minecraft', id: it.id, amount:1, display_name:'', enchants:[]});
-    render();
-    $('kit-save').disabled = false;
+  function firstFreeSlot(){
+    const used = new Set(kit.items.map(it=>Number(it.slot)));
+    for(let i=0;i<SLOTS;i++) if(!used.has(i)) return i;
+    return null;
   }
 
-  // controls
+  async function loadCatalog(source){
+    try{
+      const url = source==='custom' ? '/admin/promocode/api/items/custom' : '/admin/promocode/api/items/vanilla';
+      const r = await fetch(url,{cache:'no-store'});
+      const j = await r.json();
+      if(!j.ok) throw new Error(j.error||'catalog');
+      fullCatalog = j.data||[];
+      applyCatalogFilter();
+    }catch(e){
+      list.innerHTML = `<div class="text-danger p-2">${e.message||e}</div>`;
+    }
+  }
+  let fullCatalog = [];
+
+  function applyCatalogFilter(){
+    const q = ($('cat-q').value||'').trim().toLowerCase();
+    const items = q ? fullCatalog.filter(it => (it.name||it.id).toLowerCase().includes(q) || (it.id||'').toLowerCase().includes(q)) : fullCatalog;
+    renderCatalog(items);
+  }
+
+  // =================
+  // Form bindings
+  // =================
+  function bindForm(){
+    $('f-display').addEventListener('input', ()=>{
+      const it = itemAt(selectedSlot); if(!it) return;
+      it.display_name = $('f-display').value;
+      touch();
+    });
+    $('f-amount').addEventListener('input', ()=>{
+      const it = itemAt(selectedSlot); if(!it) return;
+      it.amount = Math.max(1, parseInt($('f-amount').value||'1',10)||1);
+      renderGrid();
+      touch();
+    });
+    $('f-slot').addEventListener('change', ()=>{
+      const it = itemAt(selectedSlot); if(!it) return;
+      let s = Math.min(53, Math.max(0, parseInt($('f-slot').value||String(selectedSlot),10)||selectedSlot));
+      // если занято — swap
+      const other = itemAt(s);
+      if(other){ other.slot = selectedSlot; }
+      it.slot = s;
+      selectedSlot = s;
+      renderGrid();
+      touch();
+    });
+
+    $('item-remove').addEventListener('click', ()=>{
+      kit.items = kit.items.filter(it => Number(it.slot)!==Number(selectedSlot));
+      renderGrid();
+      touch();
+    });
+
+    $('e-add').addEventListener('click', ()=>{
+      const it = itemAt(selectedSlot); if(!it) return;
+      const id = ($('e-id').value||'').trim();
+      const lvl = Math.max(1, parseInt($('e-lvl').value||'1',10)||1);
+      if(!id) return;
+      it.enchants = it.enchants || [];
+      it.enchants.push({id, lvl});
+      $('e-id').value = ''; $('e-lvl').value = '1';
+      drawEnchants(it.enchants);
+      touch();
+    });
+  }
+
+  function touch(){
+    $('kit-save').disabled = !(kit.name && kit.items.length>0);
+  }
+
+  // =================
+  // Toolbar actions
+  // =================
   $('kit-new').addEventListener('click', ()=>{
-    current = {id:null, name:'', description:'', items:[]};
+    kit = {id:null, name:'', description:'', items:[]};
     $('kit-name').value=''; $('kit-desc').value='';
     $('kit-delete').classList.add('d-none');
-    $('kit-save').disabled=false;
-    render();
+    selectedSlot = 0;
+    renderGrid();
+    touch();
   });
-  $('kit-name').addEventListener('input', ()=>{ current.name = $('kit-name').value; });
-  $('kit-desc').addEventListener('input', ()=>{ current.description = $('kit-desc').value; });
+  $('kit-name').addEventListener('input', ()=>{ kit.name = $('kit-name').value.trim(); touch(); });
+  $('kit-desc').addEventListener('input', ()=>{ kit.description = $('kit-desc').value; });
 
   $('kit-save').addEventListener('click', async ()=>{
-    const body = { id: current.id, name: ($('kit-name').value||'').trim(), description: ($('kit-desc').value||'').trim(), items: current.items };
-    if(!body.name){ alert('Название кита обязательно'); return; }
-    const r = await fetch('/admin/promocode/api/kits/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const j = await r.json(); if(!j.ok){ alert(j.error||'save failed'); return; }
-    current.id = j.data.id; $('kit-delete').classList.remove('d-none');
-    await refreshKitsSelect(); // для промокодов
-    alert('Сохранено');
+    const body = {
+      id: kit.id,
+      name: kit.name,
+      description: kit.description,
+      items: kit.items.map(x=>({slot:x.slot, ns:x.ns||'minecraft', id:x.id, amount:x.amount||1, display_name:x.display_name||'', enchants:x.enchants||[]})),
+    };
+    try{
+      const r = await fetch('/admin/promocode/api/kits/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const j = await r.json(); if(!j.ok) throw new Error(j.error||'save failed');
+      kit.id = j.data.id;
+      $('kit-delete').classList.remove('d-none');
+      toast('Кит сохранён');
+      if (window.refreshKitsSelect) { window.refreshKitsSelect(); }
+    }catch(e){ toast('Ошибка: '+(e.message||e), true); }
   });
 
   $('kit-delete').addEventListener('click', async ()=>{
-    if(!current.id) return;
+    if(!kit.id) return;
     if(!confirm('Удалить кит и все его предметы?')) return;
-    const r = await fetch('/admin/promocode/api/kits/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id: current.id})});
-    const j = await r.json(); if(!j.ok){ alert(j.error||'delete failed'); return; }
-    current = {id:null,name:'',description:'',items:[]};
-    $('kit-name').value=''; $('kit-desc').value='';
-    $('kit-delete').classList.add('d-none');
-    render();
-    await refreshKitsSelect();
-  });
-
-  // каталог
-  $('cat-src').addEventListener('change', ()=> loadCatalog($('cat-src').value));
-  $('cat-q').addEventListener('input', ()=>{ // локальный фильтр
-    const q = $('cat-q').value.trim().toLowerCase();
-    list.querySelectorAll('.item-row').forEach(r=>{
-      const text = r.textContent.toLowerCase();
-      r.style.display = text.includes(q) ? '' : 'none';
-    });
-  });
-
-  async function refreshKitsSelect(){
     try{
-      const r = await fetch('/admin/promocode/api/kits/list',{cache:'no-store'});
-      const j = await r.json(); if(!j.ok) return;
-      const sel = document.getElementById('pc-kit'); if(!sel) return;
-      const cur = sel.value;
-      sel.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
-      if(cur) sel.value = cur;
-    }catch(_){}
+      const r = await fetch('/admin/promocode/api/kits/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id: kit.id})});
+      const j = await r.json(); if(!j.ok) throw new Error(j.error||'delete failed');
+      toast('Кит удалён');
+      kit = {id:null, name:'', description:'', items:[]};
+      $('kit-name').value=''; $('kit-desc').value='';
+      $('kit-delete').classList.add('d-none');
+      renderGrid(); touch();
+      if (window.refreshKitsSelect) { window.refreshKitsSelect(); }
+    }catch(e){ toast('Ошибка: '+(e.message||e), true); }
+  });
+
+  $('inv-clear').addEventListener('click', clearInventory);
+  $('inv-compact').addEventListener('click', compactInventory);
+
+  // Каталог: выбор источника/поиск
+  document.querySelectorAll('input[name="cat-src"]').forEach(r=>{
+    r.addEventListener('change', ()=> loadCatalog(r.value));
+  });
+  $('cat-q').addEventListener('input', applyCatalogFilter);
+
+  // =================
+  // Toast helper
+  // =================
+  function toast(text, isErr=false){
+    const el = document.createElement('div');
+    el.className = 'kit-toast' + (isErr?' err':'');
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(()=> el.classList.add('show'), 10);
+    setTimeout(()=> { el.classList.remove('show'); setTimeout(()=>el.remove(), 260); }, 2200);
   }
 
   // init
+  buildGrid();
+  bindForm();
   loadCatalog('vanilla');
-  refreshKitsSelect();
-  render();
 })();
 </script>
