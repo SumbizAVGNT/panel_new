@@ -1,4 +1,5 @@
 {% extends "layout/base.html" %}
+{% set EMBED = (request.args.get('embed','').lower() in ['1','true','yes']) %}
 {% block title %}Accounts{% endblock %}
 
 {% block content %}
@@ -39,16 +40,30 @@
 .btn-icon{display:inline-flex;align-items:center;gap:.4rem}
 .copy{cursor:pointer}
 .copy:hover{opacity:.85}
+
+/* --- EMBED MODE (в iframe) --- */
+{% if EMBED %}
+body{background:transparent !important}
+.container-xxl{padding-top:.5rem !important}
+header.navbar, .navbar, .site-header, .app-header, .app-navbar, .topbar, .brandbar{display:none !important}
+.embed-hide{display:none !important}
+{% endif %}
 </style>
 
 <div class="container-xxl py-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <!-- Верхняя панель скрывается в embed-режиме -->
+  <div class="d-flex justify-content-between align-items-center mb-3 embed-hide">
     <h3 class="m-0">Accounts</h3>
     <div class="d-flex align-items-center gap-2">
       <span id="count" class="text-secondary small">—</span>
       <a href="/admin/gameservers" class="btn btn-sm btn-outline-light">Game Servers</a>
     </div>
   </div>
+
+  <!-- В embed-режиме краткий счётчик выводим справа от поиска -->
+  {% if EMBED %}
+  <div class="text-end small text-secondary mb-1"><span id="count">—</span></div>
+  {% endif %}
 
   <div class="card glass mb-3">
     <div class="card-body">
@@ -86,7 +101,7 @@
     </div>
   </div>
 
-  <div class="mt-2 hint">Клик по строке — подробная карточка. Поиск поддерживает ник, uuid (с/без дефисов), email и ip.</div>
+  <div class="mt-2 hint embed-hide">Клик по строке — подробная карточка. Поиск поддерживает ник, uuid (с/без дефисов), email и ip.</div>
 </div>
 
 <!-- Modal -->
