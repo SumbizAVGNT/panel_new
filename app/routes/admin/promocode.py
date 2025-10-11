@@ -3,8 +3,7 @@ from __future__ import annotations
 import os
 import json
 import random
-import re
-from typing import Optional, Iterable
+from typing import Iterable
 
 from flask import Blueprint, render_template, request, jsonify, current_app
 
@@ -14,38 +13,34 @@ from . import admin_bp
 
 bp = Blueprint("promocode", __name__, url_prefix="/promocode")
 
-# --------- utils ----------
+# --------- helpers ----------
 def _rand_code(n: int = 10) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    import secrets
-    return "".join(secrets.choice(alphabet) for _ in range(max(4, n)))
-
-def _json(v):
-    try:
-        return json.dumps(v, ensure_ascii=False)
-    except Exception:
-        return "[]"
+    return "".join(random.choice(alphabet) for _ in range(max(4, n)))
 
 def _rows(conn: MySQLConnection, sql: str, params: Iterable = ()):
     return conn.query_all(sql, params)
 
-def _row(conn: MySQLConnection, sql: str, params: Iterable = ()):
-    return conn.query_one(sql, params)
-
-def _load_json_lenient(path: str):
-    """JSON с поддержкой // и /* */ комментариев и массивов-строк."""
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
-    # убрать комментарии
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    text = re.sub(r"//.*?$", "", text, flags=re.M)
-    return json.loads(text or "[]")
+def _safe_json_load(path: str) -> list[dict]:
+    """
+    Загружаем JSON-список предметов.
+    Без комментариев! Если файл сломан — возвращаем [] и пишем в лог.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            raise ValueError("items file must be a list")
+        return data
+    except Exception as e:
+        current_app.logger.warning("Items file load error at %s: %s", path, e)
+        return []
 
 # --------- HTML ----------
 @bp.get("/")
 @login_required
 def ui_index():
-    # Полная страница редактора (включает 2 partial’a)
+    # ВАЖНО: отрисовываем ИМЕННО этот шаблон (он включает partials и скрипты)
     return render_template("admin/gameservers/promocode/index.html")
 
 # --------- API: items catalog ----------
@@ -53,34 +48,22 @@ def ui_index():
 @login_required
 def api_items_vanilla():
     """
-    /static/data/vanilla-items-1.20.6.json
-    Допустимые форматы:
-      - [{"id":"diamond_sword","name":"Diamond Sword"}, ...]
-      - ["stone","dirt","oak_log", ...]
-    Комментарии // и /* */ допустимы.
+    Возвращает список ванильных предметов 1.20.6: [{id, name, icon, ns}]
+    Источник — /static/data/vanilla-items-1.20.6.json (без комментариев!)
     """
-    try:
-        fpath = os.path.join(current_app.root_path, "static", "data", "vanilla-items-1.20.6.json")
-        raw = _load_json_lenient(fpath)
-    except Exception as e:
-        current_app.logger.warning("vanilla items parse failed: %s", e)
-        raw = []
+    root = current_app.root_path
+    fpath = os.path.join(root, "static", "data", "vanilla-items-1.20.6.json")
+    items = _safe_json_load(fpath)
 
     base = "/static/mc/1.20.6/items"
     out = []
-    for it in raw:
-        if isinstance(it, str):
-            iid, name = it.strip(), None
-        elif isinstance(it, dict):
-            iid = (it.get("id") or "").strip()
-            name = (it.get("name") or "").strip() or None
-        else:
-            continue
+    for it in items:
+        iid = (it.get("id") or "").strip()
         if not iid:
             continue
         out.append({
             "id": iid,
-            "name": name or iid.replace("_", " ").title(),
+            "name": (it.get("name") or "").strip() or iid.replace("_", " ").title(),
             "icon": f"{base}/{iid}.png",
             "ns": "minecraft",
         })
@@ -90,30 +73,27 @@ def api_items_vanilla():
 @login_required
 def api_items_custom():
     """
-    /static/data/itemsadder-items.json
-    Формат: [{"id":"itemsadder:my_sword","name":"My Sword"}, ...]
+    Кастомные предметы из ItemsAdder (опционально).
+    Файл: /static/data/itemsadder-items.json (без комментариев!)
+    Элементы вида {"id":"itemsadder:my_sword","name":"My Sword"}
     """
-    try:
-        fpath = os.path.join(current_app.root_path, "static", "data", "itemsadder-items.json")
-        raw = _load_json_lenient(fpath)
-    except Exception:
-        raw = []
+    root = current_app.root_path
+    fpath = os.path.join(root, "static", "data", "itemsadder-items.json")
+    items = _safe_json_load(fpath)
 
     base = "/static/mc/itemsadder"
     out = []
-    for it in raw:
-        if isinstance(it, str):
-            full = it.strip()
-            name = None
-        else:
-            full = (it.get("id") or "").strip()
-            name = (it.get("name") or "").strip() or None
+    for it in items:
+        full = (it.get("id") or "").strip()
         if not full:
             continue
-        ns, iid = (full.split(":", 1) + ["itemsadder"])[:2] if ":" in full else ("itemsadder", full)
+        if ":" in full:
+            ns, iid = full.split(":", 1)
+        else:
+            ns, iid = "itemsadder", full
         out.append({
             "id": iid,
-            "name": name or iid.replace("_", " ").title(),
+            "name": (it.get("name") or "").strip() or iid.replace("_", " ").title(),
             "icon": f"{base}/{ns}.{iid}.png",
             "ns": ns,
             "full": f"{ns}:{iid}",
@@ -125,21 +105,28 @@ def api_items_custom():
 @login_required
 def api_kits_list():
     with get_db_connection() as conn:
-        kits = _rows(conn, "SELECT id, name, description, created_at FROM promo_kits ORDER BY id DESC")
+        kits = _rows(conn, """
+            SELECT id, name, description, created_at
+            FROM promo_kits
+            ORDER BY id DESC
+        """)
         for k in kits:
-            items = _rows(
-                conn,
-                "SELECT id, namespace, item_id, amount, display_name, enchants_json, nbt_json, slot "
-                "FROM promo_kit_items WHERE kit_id = ? ORDER BY COALESCE(slot, 999), id",
-                (k["id"],),
-            )
+            items = _rows(conn, """
+                SELECT id, namespace, item_id, amount, display_name, enchants_json, nbt_json, slot
+                FROM promo_kit_items
+                WHERE kit_id = ?
+                ORDER BY COALESCE(slot, 999), id
+            """, (k["id"],))
             for it in items:
-                # разворачиваем enchants/nbt в удобные поля
-                for src, dst in (("enchants_json", "enchants"), ("nbt_json", "nbt")):
-                    try:
-                        it[dst] = json.loads(it.get(src) or "[]")
-                    except Exception:
-                        it[dst] = []
+                # Безопасно преобразуем json-поля
+                try:
+                    it["enchants"] = json.loads(it.get("enchants_json") or "[]")
+                except Exception:
+                    it["enchants"] = []
+                try:
+                    it["nbt"] = json.loads(it.get("nbt_json") or "[]")
+                except Exception:
+                    it["nbt"] = []
             k["items"] = items
         return jsonify({"ok": True, "data": kits})
 
@@ -155,6 +142,7 @@ def api_kits_save():
     if not name:
         return jsonify({"ok": False, "error": "name is required"}), 400
 
+    from ...database import get_db_connection  # локальный импорт, чтобы избежать циклов
     with get_db_connection() as conn:
         if kit_id:
             conn.execute("UPDATE promo_kits SET name=?, description=? WHERE id=?", (name, desc, int(kit_id)))
@@ -174,8 +162,8 @@ def api_kits_save():
                 continue
             amount = int(it.get("amount") or 1)
             display_name = (it.get("display_name") or "").strip() or None
-            ench = _json(it.get("enchants") or [])
-            nbt = _json(it.get("nbt") or [])
+            ench = json.dumps(it.get("enchants") or [], ensure_ascii=False)
+            nbt = json.dumps(it.get("nbt") or [], ensure_ascii=False)
             slot = it.get("slot")
             try:
                 slot = int(slot) if slot is not None else None
@@ -212,17 +200,16 @@ def api_kits_delete():
 def api_promo_create():
     js = request.get_json(silent=True) or {}
     code = (js.get("code") or "").strip().upper() or _rand_code()
-    amount = float(js.get("amount") or 0)
+    try:
+        amount = float(js.get("amount") or 0)
+    except Exception:
+        amount = 0.0
     currency = (js.get("currency_key") or os.getenv("POINTS_KEY", "rubs")).strip()
     realm = (js.get("realm") or "").strip() or None
     kit_id = js.get("kit_id")
-    try:
-        kit_id = int(kit_id) if kit_id else None
-    except Exception:
-        kit_id = None
     uses = int(js.get("uses") or 1)
     expires_at = (js.get("expires_at") or "").strip() or None
-    created_by = "admin"
+    created_by = "admin"  # при желании подставь из сессии
 
     if amount <= 0 and not kit_id:
         return jsonify({"ok": False, "error": "amount > 0 or kit_id required"}), 400
@@ -236,7 +223,7 @@ def api_promo_create():
                 realm=VALUES(realm), kit_id=VALUES(kit_id), uses_total=VALUES(uses_total),
                 uses_left=VALUES(uses_left), expires_at=VALUES(expires_at), created_by=VALUES(created_by)
             """,
-            (code, amount, currency, realm, kit_id, uses, uses, expires_at, created_by),
+            (code, amount, currency, realm, int(kit_id) if kit_id else None, uses, uses, expires_at, created_by),
         )
         conn.commit()
     return jsonify({"ok": True, "data": {"code": code}})
@@ -255,5 +242,5 @@ def api_promo_list():
         """)
     return jsonify({"ok": True, "data": rows})
 
-# регистрируем под /admin
+# Регистрируем под /admin
 admin_bp.register_blueprint(bp)
