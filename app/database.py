@@ -343,6 +343,62 @@ CREATE TABLE IF NOT EXISTS post_targets (
     INDEX idx_pt_status (send_status),
     INDEX idx_pt_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    
+    -- ===== PROMO / KITS =====
+CREATE TABLE IF NOT EXISTS promo_kits (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(191) NOT NULL,
+    description TEXT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS promo_kit_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    kit_id INT NOT NULL,
+    namespace VARCHAR(64) NOT NULL DEFAULT 'minecraft',
+    item_id VARCHAR(191) NOT NULL,
+    amount INT NOT NULL DEFAULT 1,
+    display_name VARCHAR(255) NULL,
+    enchants_json MEDIUMTEXT NULL,
+    nbt_json MEDIUMTEXT NULL,
+    slot INT NULL,
+    CONSTRAINT fk_pkit_kit FOREIGN KEY (kit_id) REFERENCES promo_kits(id) ON DELETE CASCADE,
+    INDEX idx_pkit_kit (kit_id),
+    INDEX idx_pkit_slot (kit_id, slot)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS promo_codes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(64) NOT NULL UNIQUE,
+    amount DECIMAL(12,2) NULL,
+    currency_key VARCHAR(32) NULL,
+    realm VARCHAR(191) NULL,
+    kit_id INT NULL,
+    uses_total INT NOT NULL DEFAULT 1,
+    uses_left INT NOT NULL DEFAULT 1,
+    expires_at DATETIME NULL,
+    created_by VARCHAR(191) NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_promo_kit FOREIGN KEY (kit_id) REFERENCES promo_kits(id) ON DELETE SET NULL,
+    INDEX idx_promo_expires (expires_at),
+    INDEX idx_promo_uses (uses_left)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS promo_redemptions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    code_id INT NOT NULL,
+    uuid VARCHAR(36) NOT NULL,
+    username VARCHAR(191) NULL,
+    realm VARCHAR(191) NULL,
+    granted_amount DECIMAL(12,2) NULL,
+    kit_id INT NULL,
+    granted_items_json MEDIUMTEXT NULL,
+    ip VARCHAR(64) NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pred_code FOREIGN KEY (code_id) REFERENCES promo_codes(id) ON DELETE CASCADE,
+    INDEX idx_pred_uuid (uuid),
+    INDEX idx_pred_code (code_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
 def init_db(conn: MySQLConnection) -> None:

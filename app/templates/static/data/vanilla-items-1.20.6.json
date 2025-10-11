@@ -1,0 +1,7 @@
+[
+  {"id":"stone", "name":"Stone"},
+  {"id":"dirt", "name":"Dirt"},
+  {"id":"oak_log", "name":"Oak Log"},
+  {"id":"diamond_sword", "name":"Diamond Sword"}
+  // ... добавь полный список 1.20.6
+]

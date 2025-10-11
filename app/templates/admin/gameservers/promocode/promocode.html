@@ -1,0 +1,31 @@
+<div class="grid2">
+  <div class="glass p-3">
+    <h5 class="mb-3"><i class="bi bi-megaphone"></i> Создать промокод</h5>
+    <div class="row g-2">
+      <div class="col-sm-4"><input id="pc-code" class="form-control" placeholder="Код (AUTO если пусто)"></div>
+      <div class="col-sm-3"><input id="pc-amount" type="number" step="0.01" class="form-control" placeholder="Сумма"></div>
+      <div class="col-sm-2"><input id="pc-uses" type="number" class="form-control" value="1" min="1" placeholder="Исп"></div>
+      <div class="col-sm-3">
+        <select id="pc-currency" class="form-select">
+          <option value="rubs">rubs</option>
+        </select>
+      </div>
+      <div class="col-sm-4"><input id="pc-realm" class="form-control" placeholder="Realm (optional)"></div>
+      <div class="col-sm-4">
+        <select id="pc-kit" class="form-select">
+          <option value="">— без кита —</option>
+        </select>
+      </div>
+      <div class="col-sm-4"><input id="pc-exp" class="form-control" type="datetime-local" placeholder="Срок (опц.)"></div>
+      <div class="col-12 d-grid"><button id="pc-create" class="btn btn-outline-info">Создать</button></div>
+    </div>
+    <div id="pc-msg" class="small-dim mt-2"></div>
+  </div>
+
+  <div class="glass p-3">
+    <h5 class="mb-3"><i class="bi bi-graph-up-arrow"></i> Последние кампании</h5>
+    <ul id="pc-list" class="promo-list list-unstyled mb-0">
+      <li class="small-dim">Нет данных</li>
+    </ul>
+  </div>
+</div>

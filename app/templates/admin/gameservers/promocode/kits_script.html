@@ -1,0 +1,154 @@
+<script>
+(function KitsModule(){
+  const $ = (id)=>document.getElementById(id);
+  const grid = $('kit-grid'), list = $('cat-list'), count = $('kit-count');
+  let current = { id:null, name:'', description:'', items:[] };
+  const iconFor = (ns,id)=> ns==='minecraft'
+    ? `/static/mc/1.20.6/items/${id}.png`
+    : `/static/mc/itemsadder/${ns}.${id}.png`;
+
+  function renderCat(items){
+    if(!items || !items.length){ list.innerHTML = `<div class="small-dim">Нет данных</div>`; return; }
+    list.innerHTML = items.map(it=>`
+      <div class="item-row" data-ns="${it.ns||'minecraft'}" data-id="${it.id}">
+        <span class="item-icon" style="background-image:url('${it.icon}');background-size:cover"></span>
+        <div><div>${it.name||it.id}</div><div class="small-dim">${(it.ns||'minecraft')}:${it.id}</div></div>
+      </div>`).join('');
+    list.querySelectorAll('.item-row').forEach(r=>{
+      r.addEventListener('click', ()=>{
+        const ns = r.dataset.ns, id = r.dataset.id;
+        addItem({ns,id,name:r.querySelector('div>div').textContent});
+      });
+    });
+  }
+
+  async function loadCatalog(src){
+    try{
+      const url = src==='custom' ? '/admin/promocode/api/items/custom' : '/admin/promocode/api/items/vanilla';
+      const r = await fetch(url,{cache:'no-store'}); const j = await r.json(); if(!j.ok) throw new Error(j.error||'catalog');
+      renderCat(j.data||[]);
+    }catch(e){ list.innerHTML = `<div class="text-danger">${e.message||e}</div>`; }
+  }
+
+  function render(){
+    count.textContent = `${current.items.length} items`;
+    if(!current.items.length){ grid.innerHTML = `<div class="small-dim">Добавьте предметы из каталога слева.</div>`; return; }
+    grid.innerHTML = current.items.map((it,idx)=>`
+      <div class="kit-card" data-idx="${idx}">
+        <span class="icon" style="background-image:url('${iconFor(it.ns||'minecraft', it.id)}');background-size:cover"></span>
+        <div class="w-100">
+          <div class="d-flex gap-2 align-items-center">
+            <div class="badge-role">${(it.ns||'minecraft')}:${it.id}</div>
+            <input class="form-control form-control-sm" style="max-width:220px" placeholder="Отображаемое имя" value="${it.display_name||''}" data-k="display_name">
+            <input class="form-control form-control-sm" type="number" min="1" step="1" value="${it.amount||1}" data-k="amount" style="max-width:90px">
+            <button class="btn btn-sm btn-outline-danger ms-auto" data-act="del"><i class="bi bi-x-lg"></i></button>
+          </div>
+          <div class="mt-2">
+            <div class="small-dim mb-1">Зачарования</div>
+            <div class="d-flex gap-2 align-items-center mb-2">
+              <input class="form-control form-control-sm" placeholder="enchant id, напр. sharpness или itemsadder:fire" data-k="e_id">
+              <input class="form-control form-control-sm" type="number" min="1" step="1" value="1" style="max-width:90px" data-k="e_lvl">
+              <button class="btn btn-sm btn-outline-secondary" data-act="add-ench"><i class="bi bi-plus"></i></button>
+            </div>
+            <div class="ench-list">${(it.enchants||[]).map((e,i)=>`<span class="tag" data-ix="${i}">${e.id}@${e.lvl} <a href="#" data-act="del-ench" class="text-decoration-none text-light ms-1">×</a></span>`).join('')}</div>
+          </div>
+        </div>
+      </div>`).join('');
+
+    grid.querySelectorAll('.kit-card').forEach(card=>{
+      const idx = +card.dataset.idx;
+      card.querySelectorAll('input[data-k]').forEach(inp=>{
+        inp.addEventListener('input', ()=>{
+          const k = inp.dataset.k;
+          if(k==='amount'){ current.items[idx][k] = Math.max(1, parseInt(inp.value||'1',10)||1); }
+          else { current.items[idx][k] = inp.value; }
+        });
+      });
+      card.querySelector('[data-act="del"]')?.addEventListener('click', ()=>{
+        current.items.splice(idx,1); render();
+      });
+      card.querySelector('[data-act="add-ench"]')?.addEventListener('click', ()=>{
+        const eId = card.querySelector('input[data-k="e_id"]').value.trim();
+        const lvl = Math.max(1, parseInt(card.querySelector('input[data-k="e_lvl"]').value||'1',10)||1);
+        if(!eId) return;
+        current.items[idx].enchants = current.items[idx].enchants || [];
+        current.items[idx].enchants.push({id:eId, lvl});
+        render();
+      });
+      card.querySelectorAll('[data-act="del-ench"]').forEach(a=>{
+        a.addEventListener('click', (ev)=>{
+          ev.preventDefault();
+          const ix = +a.parentElement.dataset.ix;
+          current.items[idx].enchants.splice(ix,1);
+          render();
+        });
+      });
+    });
+  }
+
+  function addItem(it){
+    current.items.push({ns: it.ns||'minecraft', id: it.id, amount:1, display_name:'', enchants:[]});
+    render();
+    $('kit-save').disabled = false;
+  }
+
+  // controls
+  $('kit-new').addEventListener('click', ()=>{
+    current = {id:null, name:'', description:'', items:[]};
+    $('kit-name').value=''; $('kit-desc').value='';
+    $('kit-delete').classList.add('d-none');
+    $('kit-save').disabled=false;
+    render();
+  });
+  $('kit-name').addEventListener('input', ()=>{ current.name = $('kit-name').value; });
+  $('kit-desc').addEventListener('input', ()=>{ current.description = $('kit-desc').value; });
+
+  $('kit-save').addEventListener('click', async ()=>{
+    const body = { id: current.id, name: ($('kit-name').value||'').trim(), description: ($('kit-desc').value||'').trim(), items: current.items };
+    if(!body.name){ alert('Название кита обязательно'); return; }
+    const r = await fetch('/admin/promocode/api/kits/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j = await r.json(); if(!j.ok){ alert(j.error||'save failed'); return; }
+    current.id = j.data.id; $('kit-delete').classList.remove('d-none');
+    await refreshKitsSelect(); // для промокодов
+    alert('Сохранено');
+  });
+
+  $('kit-delete').addEventListener('click', async ()=>{
+    if(!current.id) return;
+    if(!confirm('Удалить кит и все его предметы?')) return;
+    const r = await fetch('/admin/promocode/api/kits/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id: current.id})});
+    const j = await r.json(); if(!j.ok){ alert(j.error||'delete failed'); return; }
+    current = {id:null,name:'',description:'',items:[]};
+    $('kit-name').value=''; $('kit-desc').value='';
+    $('kit-delete').classList.add('d-none');
+    render();
+    await refreshKitsSelect();
+  });
+
+  // каталог
+  $('cat-src').addEventListener('change', ()=> loadCatalog($('cat-src').value));
+  $('cat-q').addEventListener('input', ()=>{ // локальный фильтр
+    const q = $('cat-q').value.trim().toLowerCase();
+    list.querySelectorAll('.item-row').forEach(r=>{
+      const text = r.textContent.toLowerCase();
+      r.style.display = text.includes(q) ? '' : 'none';
+    });
+  });
+
+  async function refreshKitsSelect(){
+    try{
+      const r = await fetch('/admin/promocode/api/kits/list',{cache:'no-store'});
+      const j = await r.json(); if(!j.ok) return;
+      const sel = document.getElementById('pc-kit'); if(!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+      if(cur) sel.value = cur;
+    }catch(_){}
+  }
+
+  // init
+  loadCatalog('vanilla');
+  refreshKitsSelect();
+  render();
+})();
+</script>

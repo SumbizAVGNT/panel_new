@@ -1,0 +1,71 @@
+{% extends "layout/base.html" %}
+{% block title %}Promocode & Kits{% endblock %}
+{% block content %}
+<style>
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tabs .tab-btn{border-radius:10px;border:1px solid rgba(148,163,184,.22);background:rgba(13,17,23,.55);color:#e5e7eb;padding:.45rem .8rem;font-weight:600;letter-spacing:.015em}
+.tabs .tab-btn.active{background:#0f172a;border-color:rgba(148,163,184,.35)}
+.tab-pane{display:none}.tab-pane.active{display:block}
+
+/* glass */
+.glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px);border-radius:14px}
+.small-dim{color:#94a3b8}
+
+/* catalog */
+.catalog{display:grid;grid-template-columns:280px 1fr;gap:14px}
+.cat-left{border:1px solid rgba(148,163,184,.18);border-radius:14px;background:rgba(13,17,23,.4);padding:12px;height:640px;display:flex;flex-direction:column}
+.cat-search{display:flex;gap:8px}
+.cat-list{margin-top:10px;overflow:auto;border-top:1px dashed rgba(148,163,184,.25);padding-top:10px}
+.item-row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-radius:10px;cursor:pointer}
+.item-row:hover{background:rgba(148,163,184,.08)}
+.item-icon{width:28px;height:28px;border-radius:6px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220;display:inline-block}
+
+/* kit grid */
+.kit-head{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.kit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.kit-card{padding:12px;border-radius:12px;border:1px solid rgba(148,163,184,.18);background:rgba(13,17,23,.4);display:flex;gap:10px;align-items:flex-start}
+.kit-card .icon{width:40px;height:40px;border-radius:10px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220}
+.kit-card input[type="number"]{max-width:90px}
+.tag{border:1px solid rgba(148,163,184,.26);border-radius:999px;padding:.1rem .5rem;font-size:.8rem;margin-right:6px}
+.badge-role{background:#0b1220;border:1px solid rgba(148,163,184,.24);padding:.2rem .45rem;border-radius:999px}
+
+/* promo */
+.grid2{display:grid;grid-template-columns:1.3fr .7fr;gap:14px}
+.promo-list li{padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.25)}
+.promo-list .code{font-weight:700;letter-spacing:.05em}
+</style>
+
+<div class="container-xxl py-4">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h2 class="m-0">Promocode</h2>
+    <a class="btn btn-sm btn-outline-light" href="/admin"><i class="bi bi-house"></i></a>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="promo"><i class="bi bi-megaphone me-1"></i>Promocodes</button>
+    <button class="tab-btn" data-tab="kits"><i class="bi bi-box-seam me-1"></i>Kits</button>
+  </div>
+
+  <div id="tab-promo" class="tab-pane active">
+    {% include "admin/promocode/promocode.html" %}
+  </div>
+
+  <div id="tab-kits" class="tab-pane">
+    {% include "admin/promocode/kits.html" %}
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.tab-btn').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+    document.getElementById('tab-'+b.dataset.tab).classList.add('active');
+  });
+});
+</script>
+
+{% include "admin/promocode/promocode_script.html" %}
+{% include "admin/promocode/kits_script.html" %}
+{% endblock %}
