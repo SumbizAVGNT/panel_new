@@ -73,9 +73,9 @@
     {% include "admin/gameservers/accounts/accounts.html" %}
   </div>
 
-  <!-- Promocode (embedded lightweight UI) -->
+  <!-- Promocode -->
   <div id="tab-promocode" class="tab-pane">
-    {% include "admin/promocode/promocode.html" %}
+    {% include "admin/gameservers/promocode/promocode.html" %}
     <div class="mt-3">
       <a class="btn btn-sm btn-outline-light" href="/admin/promocode">
         <i class="bi bi-box-seam me-1"></i> Открыть полный редактор (Promocodes & Kits)
@@ -150,7 +150,6 @@ async function loadRealms(){
   if(!realms.length){ box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`; return; }
   box.innerHTML = '';
   realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
-  // lazy metrics
   for(const name of realms){
     try{
       const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
@@ -186,6 +185,6 @@ loadRealms();
 {# Accounts JS #}
 {% include "admin/gameservers/accounts/accounts_script.html" %}
 
-{# Promocode (легкий модуль создания/листа) #}
-{% include "admin/promocode/promocode_script.html" %}
+{# Promocode JS #}
+{% include "admin/gameservers/promocode/promocode_script.html" %}
 {% endblock %}
