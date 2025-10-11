@@ -1,3 +1,4 @@
+# app/routes/admin/promocode.py
 from __future__ import annotations
 
 import os
@@ -6,7 +7,7 @@ import random
 import string
 from typing import Optional, Iterable
 
-from flask import Blueprint, render_template, request, jsonify, current_app, send_from_directory
+from flask import Blueprint, render_template, request, jsonify, current_app
 
 from ...decorators import login_required
 from ...database import get_db_connection, MySQLConnection
@@ -35,7 +36,8 @@ def _row(conn: MySQLConnection, sql: str, params: Iterable = ()):
 @bp.get("/")
 @login_required
 def ui_index():
-    return render_template("admin/promocode/index.html")
+    # ВАЖНО: путь соответствует структуре templates/admin/gameservers/promocode/...
+    return render_template("admin/gameservers/promocode/index.html")
 
 # --------- API: items catalog ----------
 @bp.get("/api/items/vanilla")
@@ -203,7 +205,7 @@ def api_promo_create():
     kit_id = js.get("kit_id")
     uses = int(js.get("uses") or 1)
     expires_at = (js.get("expires_at") or "").strip() or None
-    created_by = "admin"  # возьми из сессии, если нужно
+    created_by = "admin"  # при необходимости возьми из сессии
 
     if amount <= 0 and not kit_id:
         return jsonify({"ok": False, "error": "amount > 0 or kit_id required"}), 400
