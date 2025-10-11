@@ -37,34 +37,52 @@ def _strip_json_comments(text: str) -> str:
 
 def _load_items_from_static(rel_path: str) -> list[dict]:
     """
-    Ищем файл в нескольких стандартных локациях и грузим JSON-список.
-    Возвращаем [] при проблемах, логируем предупреждение.
+    Пытаемся открыть файл:
+      1) через current_app.open_resource('static/...') — самый надёжный вариант
+      2) через current_app.static_folder / root_path (fallback)
+    Возвращаем [] при ошибке (и логируем причину).
     """
-    # 1) надёжнее всего — current_app.static_folder
-    candidates = [
+    # 1) Надёжный путь: открыть ресурс относительно корня приложения
+    # rel_path сюда передаём вида "data/vanilla-items-1.20.6.json"
+    resource_candidates = [
+        os.path.join("static", rel_path),   # "static/data/xxx.json"
+        rel_path,                           # "data/xxx.json" (на случай, если лежит рядом с app/)
+    ]
+    for res in resource_candidates:
+        try:
+            with current_app.open_resource(res, "r", encoding="utf-8") as f:
+                raw = f.read()
+            return json.loads(_strip_json_comments(raw)) or []
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            current_app.logger.warning("Items file load error via open_resource '%s': %s", res, e)
+            return []
+
+    # 2) Fallback: пробуем абсолютные пути
+    file_candidates = [
         os.path.join(current_app.static_folder or "", rel_path),
-        # 2) исторический способ через root_path/static
         os.path.join(current_app.root_path, "static", rel_path),
-        # 3) на всякий случай: /app/static/...
         os.path.join(os.path.dirname(current_app.root_path), "static", rel_path),
     ]
-    path = _first_existing(candidates)
-    if not path:
-        current_app.logger.warning(
-            "Items file not found. Tried: %s", ", ".join(candidates)
-        )
-        return []
+    for p in file_candidates:
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                raw = f.read()
+            return json.loads(_strip_json_comments(raw)) or []
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            current_app.logger.warning("Items file load error at %s: %s", p, e)
+            return []
 
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            raw = f.read()
-        data = json.loads(_strip_json_comments(raw))
-        if not isinstance(data, list):
-            raise ValueError("items file must be a list")
-        return data
-    except Exception as e:
-        current_app.logger.warning("Items file load error at %s: %s", path, e)
-        return []
+    current_app.logger.warning(
+        "Items file not found. Tried open_resource: %s; and files: %s",
+        ", ".join(resource_candidates),
+        ", ".join(file_candidates),
+    )
+    return []
+
 
 # --------- HTML ----------
 @bp.get("/")

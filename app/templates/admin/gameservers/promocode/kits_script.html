@@ -1,261 +1,369 @@
-{# Визуальная логика инвентаря. Используем HTML5 DnD + Bootstrap тултипы. #}
 <script>
-(function KitsUI(){
-  const $ = (id)=>document.getElementById(id);
-  const grid = $('inv-grid'), catGrid = $('cat-grid'), countLbl = $('kit-count'), slotLbl = $('edit-slot');
-
-  // bootstrap tooltips (для каталога)
-  function initTooltips(root=document){
-    [...root.querySelectorAll('[data-bs-toggle="tooltip"]')]
-      .forEach(el=> new bootstrap.Tooltip(el));
-  }
-
-  const iconFor = (ns,id)=> ns==='minecraft'
-    ? `/static/mc/1.20.6/items/${id}.png`
-    : `/static/mc/itemsadder/${ns}.${id}.png`;
-
-  let current = { id:null, name:'', description:'', items: Array(54).fill(null) };
-  let selectedSlot = null;
-  let catalog = [];
-
+(function KitsInventory(){
   // ---------- helpers ----------
-  function updateTitle(){ $('kit-title-lbl').textContent = ($('kit-name').value || '—'); }
-  function itemCount(){ return current.items.filter(Boolean).length; }
-  function setCount(){ countLbl.textContent = `${itemCount()} предметов`; }
+  const $ = (id)=>document.getElementById(id);
+  const el = (sel, root=document)=>root.querySelector(sel);
+  const els = (sel, root=document)=>[...root.querySelectorAll(sel)];
+  const fmtId = (ns,id)=>`${ns||'minecraft'}:${id}`;
+  const noop = ()=>{};
 
-  function renderSlot(i){
-    const slot = grid.querySelector(`.slot[data-slot="${i}"]`);
-    slot.innerHTML = '';
-    const it = current.items[i];
-    if(it){
-      const d = document.createElement('div'); d.className='item'; d.draggable=true; d.dataset.slot = i;
-      d.innerHTML = `<img alt="" src="${iconFor(it.ns||'minecraft',it.id)}"><span class="qty">${it.amount||1}</span>`;
-      // drag start
-      d.addEventListener('dragstart', (ev)=>{
-        ev.dataTransfer.setData('text/slot', String(i));
-        ev.dataTransfer.effectAllowed = 'move';
-      });
-      slot.appendChild(d);
-    }
+  // ---------- state ----------
+  const SLOTS_TOTAL = 54;
+  let current = {
+    id: null,
+    name: '',
+    description: '',
+    // inventory: Array(54).fill(null) // элементы либо null, либо {ns,id,amount,display_name,enchants,icon,orig_name}
+    inventory: Array.from({length:SLOTS_TOTAL}, ()=>null),
+  };
+  let selectedSlot = null;   // 0..53 | null
+  let catalog = [];          // [{id,name,icon,ns}]
+  let lastCatalogSrc = 'vanilla';
+
+  // ---------- nodes ----------
+  const grid = $('inv-grid');
+  const enchList = $('enchips');
+  const lblTitle = $('kit-title-lbl');
+  const lblCount = $('kit-count');
+
+  // ---------- ui: inventory drawing ----------
+  function renderInventory(){
+    // paint items
+    els('.slot', grid).forEach(slot=>{
+      const i = +slot.dataset.slot;
+      const item = current.inventory[i];
+      slot.innerHTML = '';
+      slot.classList.toggle('selected', selectedSlot===i);
+      if(item){
+        const wrap = document.createElement('div');
+        wrap.className = 'item';
+        wrap.title = `${item.display_name?.trim() || item.orig_name || item.id}\n${fmtId(item.ns,item.id)}${(item.enchants?.length? '\n' + item.enchants.map(e=>`${e.id}@${e.lvl}`).join(', ') : '')}`;
+        const img = document.createElement('img');
+        img.alt = item.id;
+        img.src = item.icon || iconFor(item);
+        wrap.appendChild(img);
+        const qty = document.createElement('span');
+        qty.className = 'qty';
+        qty.textContent = Math.max(1, item.amount|0);
+        wrap.appendChild(qty);
+        slot.appendChild(wrap);
+      }
+    });
+    // count
+    const n = current.inventory.filter(Boolean).length;
+    lblCount.textContent = `${n} предметов`;
   }
-  function renderAll(){ for(let i=0;i<54;i++) renderSlot(i); setCount(); updateTitle(); }
 
-  function selectSlot(i){
-    grid.querySelectorAll('.slot').forEach(s=> s.classList.remove('selected'));
-    const slot = grid.querySelector(`.slot[data-slot="${i}"]`);
-    if(!slot) return;
-    slot.classList.add('selected'); selectedSlot = i; slotLbl.textContent = i;
-    const it = current.items[i] || {display_name:'', amount:1, enchants:[]};
-    $('edit-name').value = it.display_name || '';
-    $('edit-amount').value = it.amount || 1;
-    renderEnchants(it.enchants||[]);
+  function iconFor(it){
+    if(it.icon) return it.icon;
+    const ns = it.ns || 'minecraft';
+    if(ns==='minecraft') return `/static/mc/1.20.6/items/${it.id}.png`;
+    return `/static/mc/itemsadder/${ns}.${it.id}.png`;
   }
 
-  function renderEnchants(list){
-    const box = $('enchips');
-    if(!list || !list.length){ box.innerHTML = `<span class="small text-secondary">Зачарований нет</span>`; return; }
-    box.innerHTML = list.map((e,ix)=>`<span class="chip">${e.id}@${e.lvl} <a href="#" data-ix="${ix}" class="ms-1">×</a></span>`).join('');
-    box.querySelectorAll('a[data-ix]').forEach(a=>{
-      a.addEventListener('click',(ev)=>{
+  function setSelected(idx){
+    selectedSlot = (idx==null? null : +idx);
+    els('.slot', grid).forEach(s=> s.classList.toggle('selected', +s.dataset.slot===selectedSlot));
+    fillEditorsFromSlot();
+  }
+
+  // ---------- editors ----------
+  function fillEditorsFromSlot(){
+    const it = (selectedSlot!=null ? current.inventory[selectedSlot] : null);
+    $('edit-slot').textContent = (selectedSlot!=null? selectedSlot+1 : '—');
+    $('edit-name').value   = it?.display_name || '';
+    $('edit-amount').value = it?.amount || 1;
+    // enchips
+    enchList.innerHTML = '';
+    (it?.enchants||[]).forEach((e,ix)=>{
+      const chip = document.createElement('span');
+      chip.className='chip';
+      chip.innerHTML = `${e.id}@${e.lvl} <a href="#" data-ix="${ix}">×</a>`;
+      chip.querySelector('a').addEventListener('click', ev=>{
         ev.preventDefault();
-        if(selectedSlot==null) return;
-        current.items[selectedSlot].enchants.splice(+a.dataset.ix,1);
-        renderEnchants(current.items[selectedSlot].enchants);
+        it.enchants.splice(ix,1);
+        renderInventory();
+        fillEditorsFromSlot();
+        markDirty();
       });
+      enchList.appendChild(chip);
     });
   }
 
-  function putIntoSlot(i, item){
-    current.items[i] = {...item};
-    renderSlot(i); setCount();
+  function updateSelectedFromEditors(){
+    if(selectedSlot==null) return;
+    const it = current.inventory[selectedSlot];
+    if(!it) return;
+    it.display_name = ($('edit-name').value || '').trim() || null;
+    let amt = parseInt($('edit-amount').value || '1', 10);
+    if(!Number.isFinite(amt) || amt<1) amt=1;
+    it.amount = amt;
+    renderInventory();
   }
-  function clearSlot(i){ current.items[i] = null; renderSlot(i); setCount(); }
 
   // ---------- catalog ----------
-  function renderCatalog(items){
-    if(!items || !items.length){ catGrid.innerHTML = `<div class="text-secondary small">Нет предметов</div>`; return; }
-    catGrid.innerHTML = '';
-    items.forEach(it=>{
-      const el = document.createElement('div');
-      el.className = 'cat-item'; el.draggable = true;
-      el.setAttribute('data-bs-toggle','tooltip');
-      el.setAttribute('data-bs-title', `${it.name || it.id} • ${(it.ns||'minecraft')}:${it.id}`);
-      el.innerHTML = `<img alt=""><span class="hint">↘</span>`;
-      el.querySelector('img').src = it.icon;
-
-      // drag from catalog
-      el.addEventListener('dragstart', (ev)=>{
-        const payload = JSON.stringify({ns: it.ns || 'minecraft', id: it.id, display_name: '', amount:1, enchants:[]});
-        ev.dataTransfer.setData('application/x-item', payload);
-        ev.dataTransfer.effectAllowed = 'copy';
-      });
-      // click to quick put
-      el.addEventListener('click', ()=>{
-        const item = {ns: it.ns || 'minecraft', id: it.id, display_name:'', amount:1, enchants:[]};
-        const slotIndex = (selectedSlot!=null) ? selectedSlot : current.items.findIndex(s=>!s);
-        if(slotIndex>=0) { putIntoSlot(slotIndex, item); selectSlot(slotIndex); }
-      });
-
-      catGrid.appendChild(el);
-    });
-    initTooltips(catGrid);
-  }
   async function loadCatalog(src){
-    catGrid.innerHTML = `<div class="text-secondary small">Загрузка…</div>`;
+    lastCatalogSrc = src;
+    const url = src==='custom' ? '/admin/promocode/api/items/custom'
+                               : '/admin/promocode/api/items/vanilla';
+    const box = $('cat-grid');
+    box.innerHTML = '<div class="small-dim">Загрузка…</div>';
     try{
-      const url = src==='custom' ? '/admin/promocode/api/items/custom' : '/admin/promocode/api/items/vanilla';
-      const r = await fetch(url, {cache:'no-store'}); const j = await r.json(); if(!j.ok) throw new Error(j.error||'catalog');
+      const r = await fetch(url, {cache:'no-store'});
+      const j = await r.json();
+      if(!j.ok) throw new Error(j.error || 'catalog error');
       catalog = j.data || [];
-      applySearch();
+      drawCatalog(catalog);
     }catch(e){
-      catGrid.innerHTML = `<div class="text-danger small">${e.message||e}</div>`;
+      box.innerHTML = `<div class="text-danger small">${e.message||e}</div>`;
+      catalog = [];
     }
   }
-  function applySearch(){
-    const q = ($('cat-q').value||'').trim().toLowerCase();
-    const filtered = !q ? catalog : catalog.filter(it=>{
-      const hay = `${it.id} ${(it.name||'')} ${(it.ns||'minecraft')}`.toLowerCase();
-      return hay.includes(q);
+
+  function drawCatalog(list){
+    const box = $('cat-grid');
+    if(!list.length){ box.innerHTML = '<div class="small-dim">Нет данных</div>'; return; }
+    // build HTML
+    const frag = document.createDocumentFragment();
+    list.forEach(it=>{
+      const cell = document.createElement('div');
+      cell.className = 'cat-item';
+      cell.title = `${it.name || it.id}\n${fmtId(it.ns||'minecraft', it.id)}`;
+      cell.draggable = true;
+      cell.dataset.ns = it.ns || 'minecraft';
+      cell.dataset.id = it.id;
+      const img = document.createElement('img');
+      img.src = it.icon || iconFor(it);
+      img.alt = it.id;
+      cell.appendChild(img);
+      const hint = document.createElement('span');
+      hint.className='hint';
+      hint.textContent='⠿';
+      cell.appendChild(hint);
+
+      // drag
+      cell.addEventListener('dragstart', ev=>{
+        ev.dataTransfer.setData('application/json', JSON.stringify(it));
+        ev.dataTransfer.effectAllowed = 'copy';
+      });
+      // click to place
+      cell.addEventListener('click', ()=>{
+        const slotIndex = (selectedSlot!=null? selectedSlot : current.inventory.findIndex(x=>!x));
+        if(slotIndex<0) return; // инвентарь заполнен
+        placeItem(slotIndex, {
+          ns: cell.dataset.ns,
+          id: cell.dataset.id,
+          amount: 1,
+          display_name: null,
+          enchants: [],
+          icon: it.icon || iconFor(it),
+          orig_name: it.name || it.id,
+        });
+        setSelected(slotIndex);
+        markDirty();
+      });
+
+      frag.appendChild(cell);
     });
-    renderCatalog(filtered);
+    box.innerHTML='';
+    box.appendChild(frag);
   }
 
-  // ---------- grid events ----------
-  grid.querySelectorAll('.slot').forEach(slot=>{
-    const i = +slot.dataset.slot;
+  // поиск по каталогу (локально)
+  $('cat-q').addEventListener('input', ()=>{
+    const q = $('cat-q').value.trim().toLowerCase();
+    const filtered = !q ? catalog : catalog.filter(it=>{
+      return (it.id||'').toLowerCase().includes(q) ||
+             (it.name||'').toLowerCase().includes(q) ||
+             (it.ns||'minecraft').toLowerCase().includes(q);
+    });
+    drawCatalog(filtered);
+  });
+  $('cat-src').addEventListener('change', ()=> loadCatalog($('cat-src').value));
+  $('cat-refresh').addEventListener('click', ()=> loadCatalog(lastCatalogSrc));
 
-    slot.addEventListener('click', ()=> selectSlot(i));
+  // ---------- inventory: interactions ----------
+  // build empty slots once
+  els('.slot', grid).forEach(slot=>{
+    const idx = +slot.dataset.slot;
 
-    // right-click clear
-    slot.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); clearSlot(i); });
+    // select
+    slot.addEventListener('click', ()=> setSelected(idx));
 
-    // drag over (from catalog or from another slot)
+    // clear on right click
+    slot.addEventListener('contextmenu', (ev)=>{
+      ev.preventDefault();
+      clearSlot(idx);
+      if(selectedSlot===idx) fillEditorsFromSlot();
+      markDirty();
+    });
+
+    // DnD target
     slot.addEventListener('dragover', (ev)=>{
-      if(ev.dataTransfer.types.includes('application/x-item') || ev.dataTransfer.types.includes('text/slot')){
-        ev.preventDefault(); slot.classList.add('drag-over');
-      }
+      ev.preventDefault();
+      slot.classList.add('drag-over');
+      ev.dataTransfer.dropEffect='copy';
     });
     slot.addEventListener('dragleave', ()=> slot.classList.remove('drag-over'));
-
     slot.addEventListener('drop', (ev)=>{
-      ev.preventDefault(); slot.classList.remove('drag-over');
-      // from catalog
-      if(ev.dataTransfer.types.includes('application/x-item')){
-        const data = JSON.parse(ev.dataTransfer.getData('application/x-item')||'{}');
-        putIntoSlot(i, {...data});
-        selectSlot(i);
-        return;
-      }
-      // from another slot (swap)
-      if(ev.dataTransfer.types.includes('text/slot')){
-        const from = parseInt(ev.dataTransfer.getData('text/slot')||'-1',10);
-        if(from>=0 && from!==i){
-          const a = current.items[from], b = current.items[i];
-          current.items[i] = a; current.items[from] = b;
-          renderSlot(from); renderSlot(i);
-          if(selectedSlot===from) selectSlot(i);
-        }
-      }
+      ev.preventDefault();
+      slot.classList.remove('drag-over');
+      let data=null;
+      try{ data = JSON.parse(ev.dataTransfer.getData('application/json')||'null'); }catch(_){}
+      if(!data || !data.id) return;
+      placeItem(idx, {
+        ns: data.ns || 'minecraft',
+        id: data.id,
+        amount: 1,
+        display_name: null,
+        enchants: [],
+        icon: data.icon || iconFor(data),
+        orig_name: data.name || data.id,
+      });
+      setSelected(idx);
+      markDirty();
     });
   });
 
-  // ---------- controls ----------
+  function placeItem(idx, it){
+    current.inventory[idx] = it;
+    renderInventory();
+  }
+  function clearSlot(idx){
+    current.inventory[idx] = null;
+    renderInventory();
+  }
+
+  // top actions
+  $('inv-clear').addEventListener('click', ()=>{
+    if(!confirm('Очистить все 54 слота?')) return;
+    current.inventory = Array.from({length:SLOTS_TOTAL}, ()=>null);
+    renderInventory();
+    fillEditorsFromSlot();
+    markDirty();
+  });
+  $('inv-fill').addEventListener('click', ()=> setSelected(null));
+  $('slot-clear').addEventListener('click', ()=>{
+    if(selectedSlot==null) return;
+    clearSlot(selectedSlot);
+    markDirty();
+  });
+
+  // editor change handlers
+  $('edit-name').addEventListener('input', ()=>{ updateSelectedFromEditors(); markDirty(); });
+  $('edit-amount').addEventListener('input', ()=>{ updateSelectedFromEditors(); markDirty(); });
+  $('edit-ench-add').addEventListener('click', ()=>{
+    if(selectedSlot==null) return;
+    const it = current.inventory[selectedSlot]; if(!it) return;
+    const id = ($('edit-ench-id').value||'').trim();
+    let lvl = parseInt($('edit-ench-lvl').value||'1', 10); if(!Number.isFinite(lvl) || lvl<1) lvl=1;
+    if(!id) return;
+    it.enchants = it.enchants || [];
+    it.enchants.push({id, lvl});
+    $('edit-ench-id').value = '';
+    $('edit-ench-lvl').value = '1';
+    renderInventory();
+    fillEditorsFromSlot();
+    markDirty();
+  });
+
+  // ---------- Kit header / CRUD ----------
+  function markDirty(){
+    // подсветим кнопку сохранения
+    $('kit-save').disabled = false;
+    lblTitle.textContent = (current.name || '—');
+  }
+
+  $('kit-name').addEventListener('input', ()=>{
+    current.name = $('kit-name').value.trim();
+    markDirty();
+  });
+  $('kit-desc').addEventListener('input', ()=>{
+    current.description = $('kit-desc').value.trim();
+    markDirty();
+  });
+
   $('kit-new').addEventListener('click', ()=>{
-    current = { id:null, name:'', description:'', items:Array(54).fill(null) };
+    if(!confirm('Создать новый кит? Текущие изменения будут потеряны.')) return;
+    current = { id:null, name:'', description:'', inventory: Array.from({length:SLOTS_TOTAL}, ()=>null) };
+    selectedSlot = null;
     $('kit-name').value=''; $('kit-desc').value='';
     $('kit-delete').classList.add('d-none');
     $('kit-save').disabled=false;
-    selectedSlot = null; slotLbl.textContent = '—';
-    renderAll();
-    exposeToPromos();
-  });
-  $('kit-name').addEventListener('input', ()=>{ current.name = $('kit-name').value; updateTitle(); });
-  $('kit-desc').addEventListener('input', ()=>{ current.description = $('kit-desc').value; });
-
-  $('inv-clear').addEventListener('click', ()=>{
-    if(!confirm('Очистить все 54 слота?')) return;
-    current.items = Array(54).fill(null); renderAll();
-  });
-  $('inv-fill').addEventListener('click', ()=>{
-    grid.querySelectorAll('.slot').forEach(s=> s.classList.remove('selected'));
-    selectedSlot = null; slotLbl.textContent = '—';
+    lblTitle.textContent='—';
+    renderInventory(); fillEditorsFromSlot();
   });
 
-  $('slot-clear').addEventListener('click', ()=>{ if(selectedSlot!=null) clearSlot(selectedSlot); });
-
-  // edit panel
-  $('edit-name').addEventListener('input', ()=>{
-    if(selectedSlot==null) return;
-    current.items[selectedSlot] = current.items[selectedSlot] || {ns:'minecraft',id:''};
-    current.items[selectedSlot].display_name = $('edit-name').value;
-  });
-  $('edit-amount').addEventListener('input', ()=>{
-    if(selectedSlot==null) return;
-    const v = Math.max(1, Math.min(64, parseInt($('edit-amount').value||'1',10)||1)); // лимит стека 64
-    current.items[selectedSlot] = current.items[selectedSlot] || {ns:'minecraft',id:''};
-    current.items[selectedSlot].amount = v; renderSlot(selectedSlot);
-  });
-  $('edit-ench-add').addEventListener('click', ()=>{
-    if(selectedSlot==null) return;
-    const id = ($('edit-ench-id').value||'').trim(); const lvl = Math.max(1, parseInt($('edit-ench-lvl').value||'1',10)||1);
-    if(!id) return;
-    const it = current.items[selectedSlot] = current.items[selectedSlot] || {ns:'minecraft',id:''};
-    it.enchants = it.enchants || []; it.enchants.push({id, lvl});
-    $('edit-ench-id').value=''; $('edit-ench-lvl').value='1';
-    renderEnchants(it.enchants);
-  });
-
-  // save / delete
   $('kit-save').addEventListener('click', async ()=>{
-    const body = {
-      id: current.id, name: ($('kit-name').value||'').trim(),
-      description: ($('kit-desc').value||'').trim(),
-      items: current.items
-        .map((it,slot)=> it ? ({...it, slot}) : null)
-        .filter(Boolean)
-    };
-    if(!body.name){ alert('Название кита обязательно'); return; }
+    const payload = kitPayload();
+    if(!payload.name){ alert('Название кита обязательно'); return; }
     try{
-      const r = await fetch('/admin/promocode/api/kits/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'save failed');
-      current.id = j.data.id; $('kit-delete').classList.remove('d-none');
-      exposeToPromos();
+      const r = await fetch('/admin/promocode/api/kits/save',{
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if(!j.ok) throw new Error(j.error||'save failed');
+      current.id = j.data.id;
+      $('kit-delete').classList.remove('d-none');
+      $('kit-save').disabled = true;
       alert('Сохранено');
-    }catch(e){ alert('Ошибка: '+(e.message||e)); }
+      // для блока промокодов (select кита)
+      if(window.refreshKitsSelect) window.refreshKitsSelect();
+    }catch(e){
+      alert('Ошибка: '+(e.message||e));
+    }
   });
 
   $('kit-delete').addEventListener('click', async ()=>{
     if(!current.id) return;
-    if(!confirm('Удалить кит целиком?')) return;
+    if(!confirm('Удалить этот кит?')) return;
     try{
-      const r = await fetch('/admin/promocode/api/kits/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id: current.id})});
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'delete failed');
+      const r = await fetch('/admin/promocode/api/kits/delete',{
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: current.id})
+      });
+      const j = await r.json();
+      if(!j.ok) throw new Error(j.error||'delete failed');
       $('kit-new').click();
-      exposeToPromos();
-    }catch(e){ alert('Ошибка: '+(e.message||e)); }
+      if(window.refreshKitsSelect) window.refreshKitsSelect();
+    }catch(e){
+      alert('Ошибка: '+(e.message||e));
+    }
   });
 
-  // catalog events
-  $('cat-src').addEventListener('change', ()=> loadCatalog($('cat-src').value));
-  $('cat-refresh').addEventListener('click', ()=> loadCatalog($('cat-src').value));
-  $('cat-q').addEventListener('input', applySearch);
-
-  // ---------- expose kits to promocode select ----------
-  async function exposeToPromos(){
-    try{
-      const r = await fetch('/admin/promocode/api/kits/list',{cache:'no-store'});
-      const j = await r.json(); if(!j.ok) return;
-      const sel = document.getElementById('pc-kit'); if(!sel) return;
-      const cur = sel.value;
-      sel.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
-      if(current.id) sel.value = current.id;
-      else if(cur) sel.value = cur;
-    }catch(_){}
+  // ---------- payload ----------
+  function kitPayload(){
+    // превращаем 54 слота в упорядоченный список items
+    const items = [];
+    current.inventory.forEach((it, idx)=>{
+      if(!it) return;
+      items.push({
+        ns: it.ns || 'minecraft',
+        id: it.id,
+        amount: Math.max(1, it.amount|0),
+        display_name: (it.display_name || '').trim() || null,
+        enchants: (it.enchants||[]).map(e=>({id: e.id, lvl: Math.max(1, e.lvl|0)})),
+        slot: idx
+      });
+    });
+    return {
+      id: current.id,
+      name: (current.name||'').trim(),
+      description: (current.description||'').trim(),
+      items
+    };
   }
-  window.refreshKitsSelect = exposeToPromos;
 
-  // ---------- init ----------
-  loadCatalog('vanilla');
-  renderAll();
+  // Экспорт наружу (если понадобится)
+  window.kitGetPayload = kitPayload;
+
+  // ---------- boot ----------
+  async function boot(){
+    // первичная отрисовка
+    renderInventory();
+    fillEditorsFromSlot();
+    // каталог
+    await loadCatalog('vanilla');
+  }
+  boot();
 })();
 </script>
