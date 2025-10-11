@@ -1,9 +1,11 @@
+# app/routes/admin/promocode.py
 from __future__ import annotations
 
 import os
+import re
 import json
 import random
-from typing import Iterable
+from typing import Iterable, List
 
 from flask import Blueprint, render_template, request, jsonify, current_app
 
@@ -13,7 +15,7 @@ from . import admin_bp
 
 bp = Blueprint("promocode", __name__, url_prefix="/promocode")
 
-# --------- helpers ----------
+# --------- utils ----------
 def _rand_code(n: int = 10) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return "".join(random.choice(alphabet) for _ in range(max(4, n)))
@@ -21,14 +23,42 @@ def _rand_code(n: int = 10) -> str:
 def _rows(conn: MySQLConnection, sql: str, params: Iterable = ()):
     return conn.query_all(sql, params)
 
-def _safe_json_load(path: str) -> list[dict]:
+def _first_existing(paths: List[str]) -> str | None:
+    for p in paths:
+        if p and os.path.isfile(p):
+            return p
+    return None
+
+def _strip_json_comments(text: str) -> str:
+    # Убираем // ... и /* ... */ для “человеческих” списков
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"^\s*//.*?$", "", text, flags=re.M)
+    return text
+
+def _load_items_from_static(rel_path: str) -> list[dict]:
     """
-    Загружаем JSON-список предметов.
-    Без комментариев! Если файл сломан — возвращаем [] и пишем в лог.
+    Ищем файл в нескольких стандартных локациях и грузим JSON-список.
+    Возвращаем [] при проблемах, логируем предупреждение.
     """
+    # 1) надёжнее всего — current_app.static_folder
+    candidates = [
+        os.path.join(current_app.static_folder or "", rel_path),
+        # 2) исторический способ через root_path/static
+        os.path.join(current_app.root_path, "static", rel_path),
+        # 3) на всякий случай: /app/static/...
+        os.path.join(os.path.dirname(current_app.root_path), "static", rel_path),
+    ]
+    path = _first_existing(candidates)
+    if not path:
+        current_app.logger.warning(
+            "Items file not found. Tried: %s", ", ".join(candidates)
+        )
+        return []
+
     try:
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            raw = f.read()
+        data = json.loads(_strip_json_comments(raw))
         if not isinstance(data, list):
             raise ValueError("items file must be a list")
         return data
@@ -40,7 +70,7 @@ def _safe_json_load(path: str) -> list[dict]:
 @bp.get("/")
 @login_required
 def ui_index():
-    # ВАЖНО: отрисовываем ИМЕННО этот шаблон (он включает partials и скрипты)
+    # корректный путь шаблона (включает partials и скрипты)
     return render_template("admin/gameservers/promocode/index.html")
 
 # --------- API: items catalog ----------
@@ -48,12 +78,10 @@ def ui_index():
 @login_required
 def api_items_vanilla():
     """
-    Возвращает список ванильных предметов 1.20.6: [{id, name, icon, ns}]
-    Источник — /static/data/vanilla-items-1.20.6.json (без комментариев!)
+    Список ванильных предметов 1.20.6: [{id, name, icon, ns}]
+    Берётся из static/data/vanilla-items-1.20.6.json
     """
-    root = current_app.root_path
-    fpath = os.path.join(root, "static", "data", "vanilla-items-1.20.6.json")
-    items = _safe_json_load(fpath)
+    items = _load_items_from_static(os.path.join("data", "vanilla-items-1.20.6.json"))
 
     base = "/static/mc/1.20.6/items"
     out = []
@@ -73,13 +101,11 @@ def api_items_vanilla():
 @login_required
 def api_items_custom():
     """
-    Кастомные предметы из ItemsAdder (опционально).
-    Файл: /static/data/itemsadder-items.json (без комментариев!)
+    Кастомные предметы из ItemsAdder.
+    Файл: static/data/itemsadder-items.json
     Элементы вида {"id":"itemsadder:my_sword","name":"My Sword"}
     """
-    root = current_app.root_path
-    fpath = os.path.join(root, "static", "data", "itemsadder-items.json")
-    items = _safe_json_load(fpath)
+    items = _load_items_from_static(os.path.join("data", "itemsadder-items.json"))
 
     base = "/static/mc/itemsadder"
     out = []
@@ -118,7 +144,6 @@ def api_kits_list():
                 ORDER BY COALESCE(slot, 999), id
             """, (k["id"],))
             for it in items:
-                # Безопасно преобразуем json-поля
                 try:
                     it["enchants"] = json.loads(it.get("enchants_json") or "[]")
                 except Exception:
@@ -142,7 +167,6 @@ def api_kits_save():
     if not name:
         return jsonify({"ok": False, "error": "name is required"}), 400
 
-    from ...database import get_db_connection  # локальный импорт, чтобы избежать циклов
     with get_db_connection() as conn:
         if kit_id:
             conn.execute("UPDATE promo_kits SET name=?, description=? WHERE id=?", (name, desc, int(kit_id)))
