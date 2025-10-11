@@ -2,39 +2,41 @@
 {% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
-/* ---------- Tabs & layout ---------- */
-.tabs{display:flex;gap:6px;margin-bottom:14px}
+/* ---------- Tabs & layout (soft) ---------- */
+.tabs{display:flex;gap:8px;margin:8px 0 14px}
 .tabs .tab-btn{
-  border-radius:10px;border:1px solid rgba(148,163,184,.22);
-  background:rgba(13,17,23,.55);color:#e5e7eb;padding:.45rem .8rem;
-  font-weight:600;letter-spacing:.015em
+  border-radius:12px;border:1px solid rgba(148,163,184,.22);
+  background:rgba(13,17,23,.55);color:#e5e7eb;padding:.55rem 1rem;
+  font-weight:600;letter-spacing:.015em;transition:.2s ease;
+  box-shadow:0 6px 18px rgba(0,0,0,.18)
 }
+.tabs .tab-btn:hover{transform:translateY(-1px)}
 .tabs .tab-btn.active{background:#0f172a;border-color:rgba(148,163,184,.35)}
-.tab-pane{display:none}
-.tab-pane.active{display:block}
+.tab-pane{display:none;opacity:0;transform:translateY(8px);transition:opacity .22s ease, transform .22s ease}
+.tab-pane.active{display:block;opacity:1;transform:none}
 
-/* ---------- Realms grid ---------- */
-.grid-realms{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+/* ---------- Realms grid (soft) ---------- */
+.grid-realms{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
 .tile{
-  position:relative;border-radius:14px;border:1px solid rgba(148,163,184,.18);
-  background:rgba(13,17,23,.55);backdrop-filter:blur(8px);
-  padding:14px;display:flex;flex-direction:column;gap:8px;transition:.15s
+  position:relative;border-radius:16px;border:1px solid rgba(148,163,184,.18);
+  background:rgba(13,17,23,.58);backdrop-filter:blur(10px);
+  padding:16px;display:flex;flex-direction:column;gap:10px;transition:transform .18s ease, box-shadow .18s ease
 }
-.tile:hover{box-shadow:0 10px 26px rgba(0,0,0,.24),0 0 0 1px rgba(148,163,184,.22)}
+.tile:hover{box-shadow:0 16px 34px rgba(0,0,0,.35),0 0 0 1px rgba(148,163,184,.22);transform:translateY(-2px)}
 .tile .cap{font-size:.78rem;color:#94a3b8;letter-spacing:.04em;text-transform:uppercase}
 .tile .row2{display:flex;align-items:center;justify-content:space-between}
 .badge-cap{padding:.35rem .6rem;border-radius:999px}
 .meta{display:flex;flex-wrap:wrap;gap:8px}
 .meta .pill{
   font-size:.78rem;border:1px solid rgba(148,163,184,.25);border-radius:999px;
-  padding:.15rem .55rem;color:#cbd5e1
+  padding:.2rem .6rem;color:#cbd5e1;background:rgba(2,6,23,.35)
 }
 .small-dim{color:#94a3b8}
 .tile .footer{display:flex;align-items:center;gap:8px;margin-top:6px}
-.tile .footer .go{margin-left:auto;opacity:.75;transition:.15s}
+.tile .footer .go{margin-left:auto;opacity:.7;transition:.15s}
 .tile:hover .footer .go{opacity:1;transform:translateX(2px)}
-.skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:6px}
-.skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:shimmer 1.1s infinite}
+.skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
+.skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:shimmer 1.05s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
 
 /* ---------- Accounts (scoped) ---------- */

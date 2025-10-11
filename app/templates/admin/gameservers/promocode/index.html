@@ -1,88 +1,19 @@
-{# templates/admin/gameservers/promocode/index.html #}
 {% extends "layout/base.html" %}
 {% block title %}Promocode & Kits{% endblock %}
 {% block content %}
-
-{# ---- External libs (lazy inject if not present) ---- #}
-<script>
-(function addCDNs(){
-  // CSS loader
-  function addCss(id, href){
-    if(document.getElementById(id)) return;
-    const l = document.createElement('link');
-    l.id = id; l.rel = 'stylesheet'; l.href = href; l.crossOrigin = 'anonymous';
-    document.head.appendChild(l);
-  }
-  // JS loader
-  function addJs(id, src){
-    if(document.getElementById(id)) return;
-    const s = document.createElement('script');
-    s.id = id; s.src = src; s.defer = true; s.crossOrigin = 'anonymous';
-    document.body.appendChild(s);
-  }
-  // Bootstrap CSS & Icons, если ещё не подключены
-  if(!document.querySelector('link[href*="bootstrap.min.css"]')){
-    addCss('cdn-bootstrap-css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css');
-  }
-  if(!document.querySelector('link[href*="bootstrap-icons"]')){
-    addCss('cdn-bootstrap-icons', 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css');
-  }
-  // Bootstrap Bundle (включает Popper)
-  if(typeof window.bootstrap === 'undefined'){
-    addJs('cdn-bootstrap-js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js');
-  }
-})();
-</script>
-
 <style>
-/* ---- Page chrome ---- */
-.tabs{display:flex;gap:6px;margin-bottom:14px}
-.tabs .tab-btn{
-  border-radius:10px;border:1px solid rgba(148,163,184,.22);
-  background:linear-gradient(180deg,rgba(13,17,23,.65),rgba(13,17,23,.45));
-  color:#e5e7eb;padding:.45rem .8rem;font-weight:600;letter-spacing:.015em;transition:.15s;
-}
-.tabs .tab-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.25)}
+/* tabs */
+.tabs{display:flex;gap:8px;margin:8px 0 14px}
+.tabs .tab-btn{border-radius:12px;border:1px solid rgba(148,163,184,.22);
+  background:rgba(13,17,23,.55);color:#e5e7eb;padding:.5rem .9rem;font-weight:600;letter-spacing:.015em;
+  transition:.2s}
+.tabs .tab-btn:hover{transform:translateY(-1px)}
 .tabs .tab-btn.active{background:#0f172a;border-color:rgba(148,163,184,.35)}
-.tab-pane{display:none}.tab-pane.active{display:block}
-
-/* ---- Glass / cards ---- */
-.glass{
-  background:rgba(13,17,23,.55);
-  border:1px solid rgba(148,163,184,.18);
-  backdrop-filter:blur(8px);
-  border-radius:14px;
-  box-shadow:0 8px 26px rgba(0,0,0,.25);
-}
-.small-dim{color:#94a3b8}
-
-/* ---- Catalog panel (for kits.html) ---- */
-.catalog{display:grid;grid-template-columns:280px 1fr;gap:14px}
-.cat-left{border:1px solid rgba(148,163,184,.18);border-radius:14px;background:rgba(13,17,23,.4);padding:12px;height:640px;display:flex;flex-direction:column}
-.cat-search{display:flex;gap:8px}
-.cat-list{margin-top:10px;overflow:auto;border-top:1px dashed rgba(148,163,184,.25);padding-top:10px}
-.item-row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-radius:10px;cursor:pointer;transition:.12s}
-.item-row:hover{background:rgba(148,163,184,.08)}
-.item-icon{width:28px;height:28px;border-radius:6px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220;display:inline-block}
-
-/* ---- Kit grid cards (legacy card list; inv-grid стили лежат внутри kits.css из include) ---- */
-.kit-head{display:flex;gap:8px;align-items:center;margin-bottom:10px}
-.kit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-.kit-card{padding:12px;border-radius:12px;border:1px solid rgba(148,163,184,.18);background:rgba(13,17,23,.4);display:flex;gap:10px;align-items:flex-start;transition:.12s}
-.kit-card:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(0,0,0,.25)}
-.kit-card .icon{width:40px;height:40px;border-radius:10px;border:1px solid rgba(148,163,184,.25);image-rendering:pixelated;background:#0b1220}
-.kit-card input[type="number"]{max-width:90px}
-.tag{border:1px solid rgba(148,163,184,.26);border-radius:999px;padding:.1rem .5rem;font-size:.8rem;margin-right:6px}
-.badge-role{background:#0b1220;border:1px solid rgba(148,163,184,.24);padding:.2rem .45rem;border-radius:999px}
-
-/* ---- Promo list ---- */
-.grid2{display:grid;grid-template-columns:1.3fr .7fr;gap:14px}
-.promo-list li{padding:8px 0;border-bottom:1px dashed rgba(148,163,184,.25)}
-.promo-list .code{font-weight:700;letter-spacing:.05em}
-@media (max-width: 992px){ .catalog, .grid2{grid-template-columns:1fr} }
+.tab-pane{display:none;opacity:0;transform:translateY(6px);transition:.2s}
+.tab-pane.active{display:block;opacity:1;transform:none}
 </style>
 
-<div class="container-xxl py-4">
+<div class="container-xxl py-3">
   <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="m-0">Promocode</h2>
     <a class="btn btn-sm btn-outline-light" href="/admin"><i class="bi bi-house"></i></a>
@@ -94,31 +25,25 @@
   </div>
 
   <div id="tab-promo" class="tab-pane active">
-    {# Блок промокодов #}
     {% include "admin/gameservers/promocode/promocode.html" %}
   </div>
 
   <div id="tab-kits" class="tab-pane">
-    {# Конструктор китов (инвентарь, поиск, d&d) #}
     {% include "admin/gameservers/promocode/kits.html" %}
   </div>
 </div>
 
 <script>
-/* Tabs */
 document.querySelectorAll('.tab-btn').forEach(b=>{
   b.addEventListener('click', ()=>{
     document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
     document.getElementById('tab-'+b.dataset.tab).classList.add('active');
-    // Для мобильных — автоскролл к верху контента
-    window.scrollTo({top:0, behavior:'smooth'});
   });
 });
 </script>
 
-{# Скрипты модулей снизу (promocode + kits) #}
 {% include "admin/gameservers/promocode/promocode_script.html" %}
 {% include "admin/gameservers/promocode/kits_script.html" %}
 {% endblock %}
