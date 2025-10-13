@@ -4,6 +4,10 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
   const $ = id => document.getElementById(id);
   const rows = $('acc-rows'), countEl = $('acc-count');
 
+  // CSRF
+  const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
+  const xheaders = (h={}) => CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
+
   // Bootstrap fallback
   const BS = (()=> {
     const has = !!(window.bootstrap && window.bootstrap.Modal && window.bootstrap.Toast);
@@ -26,12 +30,31 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
   const skin = (name, uuid) => { const u=(uuid||'').replaceAll('-',''); const qs = u?`uuid=${u}`:`name=${encodeURIComponent(name||'')}`; return `/admin/gameservers/api/player-head?${qs}`; };
   const setCount = n => { countEl.textContent = Number.isFinite(n) ? `${n} результатов` : '—'; };
 
+  // sorting
+  let data = [];              // текущий набор
+  let sortBy = 'lastlogin';   // ключ
+  let sortDir = 'desc';       // asc/desc
+
+  function applySort(){
+    const key = sortBy;
+    const cmp = (a,b)=>{
+      const av = a?.[key], bv = b?.[key];
+      // даты/числа
+      if (['regdate','lastlogin'].includes(key)) return (Number(av)||0) - (Number(bv)||0);
+      return String(av ?? '').localeCompare(String(bv ?? ''), 'ru', {numeric:true, sensitivity:'base'});
+    };
+    data.sort(cmp);
+    if (sortDir==='desc') data.reverse();
+  }
+
   function render(list){
-    setCount(Array.isArray(list)? list.length : 0);
-    if(!list || !list.length){
+    data = Array.isArray(list) ? list.slice(0) : [];
+    applySort();
+    setCount(data.length);
+    if(!data.length){
       rows.innerHTML = `<tr><td colspan="8" class="text-secondary">ничего не найдено</td></tr>`; return;
     }
-    rows.innerHTML = list.map(r=>{
+    rows.innerHTML = data.map(r=>{
       const nm=r.name||r.player_name||'—', uid=r.uuid||r.unique_id||'', em=r.email??'—', ip=r.ip||r.lastip||'—',
             reg=fmtTime(r.regdate), last=fmtTime(r.lastlogin), prem=(r.premium===1||r.premium===true)?'yes':'—', role=r.role||'default';
       return `<tr class="cursor-pointer" data-uuid="${uid}" data-name="${nm}">
@@ -59,10 +82,21 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
     }
   }
 
+  // поиск
   const onInputDebounce = (fn, ms=400)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms);} };
   $('acc-btnSearch').addEventListener('click', ()=> fetchData(($('acc-q').value||'').trim()));
   $('acc-q').addEventListener('keydown', e=>{ if(e.key==='Enter') $('acc-btnSearch').click(); });
   $('acc-q').addEventListener('input', onInputDebounce(()=>$('acc-btnSearch').click(), 450));
+
+  // сортировка по клику на заголовок
+  document.querySelectorAll('#acc-scope [data-sort]').forEach(th=>{
+    th.style.cursor='pointer';
+    th.addEventListener('click', ()=>{
+      const k = th.getAttribute('data-sort');
+      if(sortBy===k){ sortDir = (sortDir==='asc'?'desc':'asc'); } else { sortBy=k; sortDir='asc'; }
+      render(data); // перерисуем с новым порядком
+    });
+  });
 
   // Modal state (scoped)
   const m = {
@@ -165,7 +199,11 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
     const uuid=(m.uuid.textContent||'').trim(), key=(m.key.textContent||'rubs').trim(), points=parseFloat(m.points.value);
     if(!uuid || Number.isNaN(points)) return; m.save.disabled=true;
     try{
-      const res = await fetch('/admin/accounts/api/points',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid,key,points})});
+      const res = await fetch('/admin/accounts/api/points',{
+        method:'POST',
+        headers:xheaders({'Content-Type':'application/json'}),
+        body:JSON.stringify({uuid,key,points})
+      });
       const j = await res.json(); if(!j.ok) throw new Error(j.error||'error');
       const newVal=j.data?.points ?? points; setPointsValue(newVal); toastMsg('Баланс сохранён');
     }catch(e){ toastMsg('Ошибка: '+(e.message||'save failed')); } finally{ m.save.disabled=false; }
@@ -173,21 +211,21 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
   m.btnBan.addEventListener('click', async ()=>{
     const body={uuid:(m.uuid.textContent||'').trim(),reason:m.banReason.value||undefined,duration_seconds:parseInt(m.banDuration.value||'0',10)||0,silent:!!m.banSilent.checked,ipban:false};
     try{
-      const r=await fetch('/admin/accounts/api/ban',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const r=await fetch('/admin/accounts/api/ban',{method:'POST',headers:xheaders({'Content-Type':'application/json'}),body:JSON.stringify(body)});
       const j=await r.json(); if(!j.ok) throw new Error(j.error||'ban failed'); toastMsg('Пользователь забанен');
       openModal({uuid:(m.uuid.textContent||'').trim(),name:(m.name.textContent||'').trim()});
     }catch(e){ m.alert.textContent=e.message||'Ошибка'; m.alert.classList.remove('d-none'); }
   });
   m.btnUnban.addEventListener('click', async ()=>{
     try{
-      const r=await fetch('/admin/accounts/api/unban',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid:(m.uuid.textContent||'').trim()})});
+      const r=await fetch('/admin/accounts/api/unban',{method:'POST',headers:xheaders({'Content-Type':'application/json'}),body:JSON.stringify({uuid:(m.uuid.textContent||'').trim()})});
       const j=await r.json(); if(!j.ok) throw new Error(j.error||'unban failed'); toastMsg('Бан снят');
       openModal({uuid:(m.uuid.textContent||'').trim(),name:(m.name.textContent||'').trim()});
-    }catch(e){ m.alert.textContent=e.message||'Ошибка'; m.alert.classList.remove('д-none'); }
+    }catch(e){ m.alert.textContent=e.message||'Ошибка'; m.alert.classList.remove('d-none'); }  // <-- фикс: 'd-none' (не 'д-none')
   });
 
-  m.uuid.addEventListener('click', ()=> navigator.clipboard?.writeText(m.uuid.textContent.replace(/\s+/g,'').replace(/^📋/,'')));
-  m.ip.addEventListener('click',   ()=> navigator.clipboard?.writeText(m.ip.textContent.replace(/^📋/,'')));
+  m.uuid.addEventListener('click', ()=> copyText(m.uuid.textContent.replace(/\s+/g,'').replace(/^📋/,'')));
+  m.ip.addEventListener('click',   ()=> copyText(m.ip.textContent.replace(/^📋/,'')));
 
   // первичная загрузка
   fetchData();
