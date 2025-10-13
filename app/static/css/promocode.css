@@ -1,0 +1,6 @@
+/* Promocode UI */
+.promo-table{--bs-table-bg: transparent}
+.table-head-sticky{position:sticky;top:0;background:#0b1220;border-bottom:1px solid rgba(148,163,184,.18);z-index:1}
+.promo-table td, .promo-table th{vertical-align:middle;white-space:nowrap}
+
+.badge{border:1px solid rgba(148,163,184,.28)}

@@ -1,0 +1,51 @@
+/* Kits UI — чистый CSS. Без шаблонных тегов. */
+:root{
+  --ui-surface: var(--mr-surface, rgba(12,16,24,.60));
+  --ui-border : var(--mr-border, rgba(148,163,184,.22));
+  --ui-accent : #60a5fa;
+}
+
+.inv-wrap{display:grid;grid-template-columns:340px 1fr;gap:16px}
+@media (max-width: 992px){ .inv-wrap{grid-template-columns:1fr} }
+
+.catalog-card.glass{height:min(72vh,760px);display:flex;flex-direction:column}
+.cat-toolbar{display:flex;gap:.5rem;align-items:center}
+.cat-grid{margin-top:.6rem;display:grid;grid-template-columns:repeat(6, 44px);gap:8px;overflow:auto;padding-right:4px;contain:content}
+.cat-item{width:44px;height:44px;border-radius:10px;border:1px solid var(--ui-border);
+  background:linear-gradient(180deg,#0b1220,#0d1526); display:flex;align-items:center;justify-content:center;
+  cursor:grab; transition:transform .12s ease; position:relative; will-change:transform}
+.cat-item:hover{transform:translateY(-1px)}
+.cat-item img{image-rendering:pixelated; width:32px; height:32px}
+.cat-item img[loading="lazy"]{content-visibility:auto}
+.cat-item .hint{position:absolute;bottom:2px;right:4px;font-size:.7rem;color:#9aa4b2}
+
+.inv-card.glass{padding:0}
+.inv-top{padding:12px;border-bottom:1px dashed var(--ui-border)}
+.inv-fields{display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem}
+@media (max-width: 768px){ .inv-fields{grid-template-columns:1fr} }
+
+.inv-grid{padding:14px;display:grid;grid-template-columns:repeat(9, 64px);gap:10px;justify-content:center;content-visibility:auto;contain:content}
+.slot{
+  width:64px;height:64px;border-radius:12px;position:relative;
+  background:linear-gradient(180deg,#0b1220,#0e1422);
+  border:1px solid var(--ui-border);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+  display:flex;align-items:center;justify-content:center;user-select:none
+}
+.slot.selected{outline:2px solid var(--ui-accent)}
+.slot.drag-over{box-shadow:0 0 0 2px #38bdf8}
+
+.item{width:48px;height:48px;border-radius:10px;display:flex;align-items:center;justify-content:center;position:relative}
+.item img{image-rendering:pixelated;width:40px;height:40px}
+.item .qty{position:absolute;right:4px;bottom:2px;background:rgba(0,0,0,.55);border-radius:6px;padding:0 .25rem;font-size:.75rem;line-height:1}
+
+.inv-footer{padding:12px;border-top:1px dashed var(--ui-border)}
+.edit-grid{display:grid;grid-template-columns:1fr .35fr .35fr auto;gap:.5rem}
+@media (max-width: 992px){ .edit-grid{grid-template-columns:1fr 1fr} }
+
+.chips{display:flex;gap:.4rem;flex-wrap:wrap}
+.chip{border:1px solid rgba(148,163,184,.28);border-radius:999px;padding:.15rem .5rem;font-size:.85rem}
+.chip a{color:#e5e7eb;text-decoration:none;margin-left:.3rem}
+
+.badge-scope{background:#0b1220;border:1px solid var(--ui-border);padding:.2rem .45rem;border-radius:999px}
+.small-dim{color:#94a3b8}

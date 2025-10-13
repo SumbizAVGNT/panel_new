@@ -1,243 +1,57 @@
-<!DOCTYPE html>
-<html lang="ru" data-bs-theme="dark">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+{# Промокоды — обновлённый UI + компактные поля #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/promocode.css') }}">
 
-  <title>{% block title %}MoonRein{% endblock %}</title>
-  <meta name="csrf-token" content="{{ csrf_token }}" />
-
-  <!-- Bootstrap 5.3 -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-
-  <!-- Ваши стили -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-
-  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-
-  <style>
-    :root{
-      --mr-surface: rgba(13,17,23,.55);
-      --mr-border : rgba(148,163,184,.18);
-      --mr-glow   : 0 10px 30px rgba(0,0,0,.35);
-    }
-
-    /* ===== Фон (DOM-контейнер, не canvas) ===== */
-    body.bg-layered{background:#070b12;color:#e5e7eb;min-height:100dvh;overflow-x:hidden}
-    #bg-root{position:fixed;inset:0;z-index:-1;pointer-events:none}
-
-    /* ===== Topbar ===== */
-    .topbar{
-      position:sticky;top:0;z-index:1040;
-      border-bottom:1px solid var(--mr-border);
-      background:linear-gradient(180deg,rgba(6,10,18,.75),rgba(6,10,18,.55));
-      backdrop-filter:blur(10px)
-    }
-    .topbar .brand{font-weight:800;letter-spacing:.2px;text-decoration:none;color:#e5e7eb}
-    .topbar .nav-center .nav-link{
-      border:1px solid var(--mr-border);border-radius:12px;
-      padding:.45rem .9rem;background:rgba(13,17,23,.65);color:#e5e7eb
-    }
-    .topbar .nav-center .nav-link:hover{border-color:#3b4453}
-    .topbar .nav-center .nav-link.active{background:#0f172a;border-color:#3b4453}
-
-    .user-menu .user-btn{
-      display:flex;align-items:center;gap:.6rem;padding:.35rem .6rem;border-radius:14px;
-      border:1px solid var(--mr-border);background:rgba(13,17,23,.65);color:#e5e7eb
-    }
-    .user-menu .avatar{width:28px;height:28px;border-radius:50%;object-fit:cover}
-    .user-menu .dropdown-menu{border:1px solid var(--mr-border);background:#0b1220}
-
-    /* ===== Кнопка темы ===== */
-    .theme-btn{
-      border:1px solid var(--mr-border);background:rgba(13,17,23,.65);
-      color:#e5e7eb;border-radius:12px;padding:.4rem .65rem;display:flex;gap:.4rem;align-items:center
-    }
-    .theme-btn:hover{border-color:#3b82f6;color:#dbeafe}
-
-    /* ===== Layout ===== */
-    .page-wrap{max-width:1200px;margin:0 auto;padding:22px 16px 40px;}
-    .page-wrap--tight{padding-top:8px !important;}
-
-    .glass{
-      background:var(--mr-surface);
-      backdrop-filter:blur(10px);
-      border:1px solid var(--mr-border);
-      border-radius:16px;
-      box-shadow:var(--mr-glow)
-    }
-
-    /* Flash */
-    .flash-stack{position:fixed;top:76px;right:16px;z-index:1080;display:grid;gap:.5rem}
-    .flash{padding:.6rem .9rem;border-radius:12px}
-    .flash-success{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.25)}
-    .flash-error{background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.25)}
-    .flash-warning{background:rgba(251,191,36,.15);border:1px solid rgba(251,191,36,.25)}
-    .flash-info{background:rgba(96,165,250,.15);border:1px solid rgba(96,165,250,.25)}
-
-    /* === GLOBAL TOP-TIGHTEN FIX === */
-    .page-wrap > *:first-child { margin-top: 8px !important; }
-    .page-wrap > .container,
-    .page-wrap > .container-fluid,
-    .page-wrap > .container-xxl,
-    .page-wrap > .container-xl,
-    .page-wrap > .container-lg,
-    .page-wrap > .container-md,
-    .page-wrap > .container-sm {
-      margin-top: 8px !important;
-      padding-top: 8px;
-    }
-    .page-wrap h1:first-child,
-    .page-wrap .h1:first-child,
-    .page-wrap h2:first-child,
-    .page-wrap .h2:first-child { margin-top: 0 !important; }
-    .page-wrap > .card:first-child,
-    .page-wrap > .glass:first-child { margin-top: 8px !important; }
-    .page-wrap > section:first-child { margin-top: 8px !important; }
-  </style>
-</head>
-<body class="bg-layered">
-  <!-- Единый DOM-контейнер для фоновых тем -->
-  <div id="bg-root" aria-hidden="true"></div>
-
-  {% set ep   = request.endpoint or '' %}
-  {% set role = session.get('role') %}
-
-  {% if session.get('user_id') and not ep.startswith('auth.') %}
-  <header class="topbar py-2">
-    <div class="container-xxl d-flex align-items-center gap-3">
-      <!-- Лого -->
-      <a class="brand me-1" href="{{ url_for('dashboard.dashboard') }}">MoonRein</a>
-
-      <!-- Центр-меню -->
-        <nav class="nav-center d-flex gap-2 flex-grow-1 justify-content-center">
-          <a class="nav-link {{ 'active' if 'dashboard.dashboard' in ep else '' }}"
-             href="{{ url_for('dashboard.dashboard') }}">Overview</a>
-
-          <a class="nav-link {{ 'active' if ep.startswith('news.') else '' }}"
-             href="{{ url_for('news.index') }}">News</a>
-
-          {% if role in ['admin','superadmin'] %}
-            <!-- NEW: Game Servers -->
-            <a class="nav-link {{ 'active' if ep.startswith('admin.gameservers') or ep.startswith('admin.game_console') else '' }}"
-               href="{{ url_for('admin.gameservers_index') }}">Game&nbsp;Servers</a>
-
-            <a class="nav-link {{ 'active' if 'admin.admin_users' in ep else '' }}"
-               href="{{ url_for('admin.admin_users') }}">Users</a>
-            <a class="nav-link {{ 'active' if ep.startswith('logs.') else '' }}" href="#">Logs</a>
-          {% endif %}
-
-          {% if role == 'superadmin' %}
-            <a class="nav-link {{ 'active' if 'admin.settings' in ep else '' }}"
-               href="{{ url_for('admin.settings') }}">Settings</a>
-          {% endif %}
-        </nav>
-
-      <!-- Переключатель темы -->
-      <button id="openTheme" class="theme-btn" type="button" title="Background theme">
-        <i class="bi bi-palette2"></i><span class="d-none d-sm-inline">Theme</span>
-      </button>
-
-      <!-- Пользователь -->
-      {% set user = current_user or {'username':'user','discord_id':None} %}
-      {% if user.discord_id %}
-        {% set avatar_url = (
-          'https://cdn.discordapp.com/avatars/%s/%s.png?size=64' % (user.discord_id, user.discord_avatar)
-          if user.discord_avatar else 'https://cdn.discordapp.com/embed/avatars/0.png'
-        ) %}
-      {% else %}
-        {% set avatar_url = 'https://api.dicebear.com/7.x/initials/svg?radius=50&seed=' ~ (user.username|e) %}
-      {% endif %}
-
-      <div class="user-menu dropdown">
-        <button class="user-btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-          <img class="avatar" src="{{ avatar_url }}" alt="" referrerpolicy="no-referrer">
-          <div class="d-none d-sm-block lh-sm">
-            <div class="fw-semibold small">{{ user.username }}</div>
-            <div class="text-secondary small">{{ role }}</div>
-          </div>
-        </button>
-        <ul class="dropdown-menu dropdown-menu-end shadow">
-          <li><a class="dropdown-item" href="#">Profile</a></li>
-          {% if role in ['admin','superadmin'] %}
-          <li><a class="dropdown-item" href="{{ url_for('admin.admin_users') }}">Manage Users</a></li>
-          {% endif %}
-          <li><hr class="dropdown-divider"></li>
-          <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">Logout</a></li>
-        </ul>
-      </div>
+<div class="glass p-3 mb-3">
+  <div class="d-flex align-items-center justify-content-between">
+    <h5 class="m-0"><i class="bi bi-megaphone me-1"></i> Промокоды</h5>
+    <div class="d-flex gap-2">
+      <button id="pc-refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
     </div>
-  </header>
-  {% endif %}
+  </div>
 
-  <!-- Контент -->
-  <main class="page-wrap">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-stack">
-          {% for category, message in messages %}
-            <div class="flash flash-{{ category|lower }}">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+  <div class="row g-2 mt-2 align-items-end">
+    <div class="col-6 col-md-2"><input id="pc-code" class="form-control form-control-sm" placeholder="CODE"></div>
+    <div class="col-6 col-md-2"><input id="pc-amount" type="number" step="0.01" class="form-control form-control-sm" placeholder="Сумма"></div>
+    <div class="col-6 col-md-2">
+      <select id="pc-currency" class="form-select form-select-sm">
+        <option value="rubs" selected>RUB</option>
+        <option value="coins">coins</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2"><input id="pc-realm" class="form-control form-control-sm" placeholder="Realm (опц.)"></div>
+    <div class="col-6 col-md-2">
+      <select id="pc-kit" class="form-select form-select-sm">
+        <option value="">— без кита —</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-1"><input id="pc-uses" type="number" min="1" value="1" class="form-control form-control-sm" placeholder="Uses"></div>
+    <div class="col-6 col-md-2"><input id="pc-exp" type="datetime-local" class="form-control form-control-sm"></div>
+    <div class="col-6 col-md-auto">
+      <button id="pc-create" class="btn btn-sm btn-success"><i class="bi bi-plus-lg me-1"></i>Создать</button>
+    </div>
+  </div>
 
-    {% block content %}{% endblock %}
-  </main>
+  <div id="pc-msg" class="small mt-2 text-secondary"></div>
+</div>
 
-  <!-- Bootstrap bundle -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-
-  <!-- Реестр и переключатель фоновых DOM-тем -->
-  <script>
-    (function(){
-      const KEY='mr_bg_theme';
-      const root=document.getElementById('bg-root');
-      const registry={};  // name -> mount(root) => unmount()
-
-      // API для файлов тем
-      window.__BG_MOUNT__ = function(name, mountFn){
-        registry[name] = mountFn;
-      };
-
-      let current=null;       // имя
-      let unmountFn=null;     // функция размонтирования
-
-      function highlight(name){
-        document.querySelectorAll('[data-theme-card]').forEach(c=>{
-          c.classList.toggle('active', c.dataset.themeCard===name);
-          const ic=c.querySelector('.theme-name .bi'); if(ic) ic.classList.toggle('d-none', c.dataset.themeCard!==name);
-        });
-      }
-
-      window.__BG_SWITCH__ = function(name){
-        if(!registry[name]) return;
-        if(unmountFn) { try{unmountFn();}catch{} unmountFn=null; }
-        current=name;
-        try{ unmountFn = registry[name](root) || null; }catch(e){ console.error('Theme mount error', e); }
-        localStorage.setItem(KEY, name);
-        highlight(name);
-      };
-
-      // Запуск после загрузки панелей/тем
-      function start(){
-        const saved = localStorage.getItem(KEY) || 'stars';
-        if(registry[saved]) { window.__BG_SWITCH__(saved); }
-        else {
-          // если тема ещё не зарегистрирована — подождём один кадр
-          requestAnimationFrame(start);
-        }
-      }
-      requestAnimationFrame(start);
-    })();
-  </script>
-
-  <!-- Подключаем ВСЕ темы и панель выбора -->
-  {% include "themes/loader.html" %}
-  {% include "themes/panel.html" %}
-
-  {% block body_extra %}{% endblock %}
-</body>
-</html>
+<div class="glass p-0">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover align-middle mb-0 promo-table">
+      <thead class="table-head-sticky">
+        <tr>
+          <th>Код</th>
+          <th class="text-end">Сумма</th>
+          <th>Валюта</th>
+          <th>Realm</th>
+          <th>Kit</th>
+          <th class="text-end">Исп.</th>
+          <th>Истекает</th>
+          <th>Создан</th>
+        </tr>
+      </thead>
+      <tbody id="pc-list">
+        <tr><td colspan="8" class="text-secondary small">Загрузка…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
