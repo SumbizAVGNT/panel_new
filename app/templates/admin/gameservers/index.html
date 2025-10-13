@@ -2,6 +2,9 @@
 {% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
+/* ==== MUST-BE-FIRST: подключаем стили аккаунтов (иначе браузер игнорирует) ==== */
+@import url("{{ url_for('static', filename='css/accounts.css') }}");
+
 /* ---------- Tabs & layout (modern) ---------- */
 :root{
   --ui-surface: rgba(12,16,24,.60);
@@ -43,11 +46,6 @@
 .skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
 .skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:shimmer 1.05s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
-
-/* ---------- Accounts (SCOPED) ----------
-   ВНИМАНИЕ: удалили Jinja-include во избежание TemplateSyntaxError.
-   Подключаем CSS аккаунтов через @import из static. */
-@import url("{{ url_for('static', filename='css/accounts.css') }}");
 
 /* Reduce motion preference */
 @media (prefers-reduced-motion: reduce){
