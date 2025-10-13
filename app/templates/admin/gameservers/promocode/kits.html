@@ -1,13 +1,20 @@
-{# Конструктор китов — ЧИСТАЯ разметка, без встроенного <style> #}
+{# Конструктор китов — чистая разметка + отдельный CSS/JS #}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/kits.css') }}">
 
 <div class="glass p-3 mb-3">
   <div class="d-flex align-items-center justify-content-between">
     <h5 class="m-0"><i class="bi bi-box-seam me-1"></i> Конструктор китов</h5>
     <div class="d-flex gap-2">
-      <button id="kit-new" class="btn btn-sm btn-success-subtle"><i class="bi bi-plus-lg me-1"></i>Новый</button>
-      <button id="kit-save" class="btn btn-sm btn-primary-subtle" disabled><i class="bi bi-save me-1"></i>Сохранить</button>
-      <button id="kit-delete" class="btn btn-sm btn-danger-subtle d-none"><i class="bi bi-trash me-1"></i>Удалить</button>
+      <input id="kit-import-input" type="file" accept="application/json" class="d-none">
+      <button id="kit-import" class="btn btn-sm btn-outline-secondary" title="Импорт из JSON">
+        <i class="bi bi-upload me-1"></i>Импорт
+      </button>
+      <button id="kit-export" class="btn btn-sm btn-outline-secondary" title="Экспорт в JSON">
+        <i class="bi bi-download me-1"></i>Экспорт
+      </button>
+      <button id="kit-new" class="btn btn-sm btn-outline-success"><i class="bi bi-plus-lg me-1"></i>Новый</button>
+      <button id="kit-save" class="btn btn-sm btn-outline-primary" disabled><i class="bi bi-save me-1"></i>Сохранить</button>
+      <button id="kit-delete" class="btn btn-sm btn-outline-danger d-none"><i class="bi bi-trash me-1"></i>Удалить</button>
     </div>
   </div>
   <div class="mt-2 inv-fields">
@@ -41,7 +48,7 @@
       <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
         <div class="small-dim">Кит: <span id="kit-title-lbl" class="fw-semibold">—</span></div>
         <div class="d-flex align-items-center gap-2">
-          <button id="inv-clear" class="btn btn-sm btn-warning-subtle"><i class="bi bi-eraser me-1"></i>Очистить</button>
+          <button id="inv-clear" class="btn btn-sm btn-outline-warning"><i class="bi bi-eraser me-1"></i>Очистить</button>
           <button id="inv-fill" class="btn btn-sm btn-outline-light"><i class="bi bi-grid-3x3-gap me-1"></i>Снять выделение</button>
         </div>
       </div>

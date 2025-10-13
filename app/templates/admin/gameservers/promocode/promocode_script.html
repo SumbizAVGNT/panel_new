@@ -1,66 +1,99 @@
 <script>
 (async function PromoModule(){
-const $ = (id)=>document.getElementById(id);
-const listBody = $('pc-list'), kitSel = $('pc-kit'), msg = $('pc-msg');
-const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
-const xheaders = (h={}) => CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
+  const $ = (id)=>document.getElementById(id);
+  const listBody = $('pc-list'), kitSel = $('pc-kit'), msg = $('pc-msg');
+  const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
+  const xheaders = (h={}) => CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
+  const flash = (text,type='info',ms=2200)=>{
+    const host = document.querySelector('.flash-stack') || (()=>{const d=document.createElement('div');d.className='flash-stack';document.body.appendChild(d);return d})();
+    const n = document.createElement('div'); n.className = `flash flash-${type}`; n.textContent = text; host.appendChild(n);
+    setTimeout(()=> n.remove(), ms);
+  };
 
+  let rows = [];
+  let sortBy = 'created_at';
+  let sortDir = 'desc';
 
-async function loadKitsToSelect(){
-try{
-const r = await fetch('/admin/promocode/api/kits/list',{cache:'no-store'});
-const j = await r.json(); if(!j.ok) throw new Error(j.error||'kits');
-kitSel.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
-}catch(e){ /* silent */ }
-}
+  async function loadKitsToSelect(){
+    try{
+      const r = await fetch('/admin/promocode/api/kits/list',{cache:'no-store'});
+      const j = await r.json(); if(!j.ok) throw new Error(j.error||'kits');
+      kitSel.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+    }catch(e){ /* silent */ }
+  }
 
+  function renderTable(){
+    if(!rows.length){ listBody.innerHTML = `<tr><td colspan="8" class="text-secondary small">Нет данных</td></tr>`; return; }
+    const out = rows.map(x=>{
+      const expired = x.expires_at ? (Date.parse(x.expires_at) < Date.now()) : false;
+      return `
+        <tr class="${expired?'expired':''}">
+          <td class="fw-semibold">${x.code}</td>
+          <td class="text-end">${x.amount!=null? (+x.amount).toFixed(2) : ''}</td>
+          <td>${x.currency_key||''}</td>
+          <td>${x.realm||'<span class="text-secondary">all</span>'}</td>
+          <td>${x.kit_name? `<span class="badge text-bg-secondary">${x.kit_name}</span>` : ''}</td>
+          <td class="text-end">${x.uses_left}/${x.uses_total}</td>
+          <td>${x.expires_at||''}</td>
+          <td class="text-secondary">${x.created_at||''}</td>
+        </tr>`;
+    }).join('');
+    listBody.innerHTML = out;
+  }
 
-async function loadPromos(){
-listBody.innerHTML = `<tr><td colspan="8" class="text-secondary small">Загрузка…</td></tr>`;
-try{
-const r = await fetch('/admin/promocode/api/promo/list',{cache:'no-store'});
-const j = await r.json(); if(!j.ok) throw new Error(j.error||'list');
-const rows = j.data||[];
-if(!rows.length){ listBody.innerHTML = `<tr><td colspan="8" class="text-secondary small">Нет данных</td></tr>`; return; }
-listBody.innerHTML = rows.map(x=>`
-<tr>
-<td class="fw-semibold">${x.code}</td>
-<td class="text-end">${x.amount!=null? (+x.amount).toFixed(2) : ''}</td>
-<td>${x.currency_key||''}</td>
-<td>${x.realm||'<span class="text-secondary">all</span>'}</td>
-<td>${x.kit_name? `<span class="badge text-bg-secondary">${x.kit_name}</span>` : ''}</td>
-<td class="text-end">${x.uses_left}/${x.uses_total}</td>
-<td>${x.expires_at||''}</td>
-<td class="text-secondary">${x.created_at||''}</td>
-</tr>`).join('');
-}catch(e){ listBody.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message||e}</td></tr>`; }
-}
+  function resort(){
+    const cmp = (a,b)=>{
+      const aa = (a[sortBy] ?? ''), bb = (b[sortBy] ?? '');
+      if(sortBy==='amount' || sortBy==='uses_left'){ return (Number(aa)||0) - (Number(bb)||0); }
+      return String(aa).localeCompare(String(bb));
+    };
+    rows.sort(cmp);
+    if(sortDir==='desc') rows.reverse();
+    renderTable();
+  }
 
+  async function loadPromos(){
+    listBody.innerHTML = `<tr><td colspan="8" class="text-secondary small">Загрузка…</td></tr>`;
+    try{
+      const r = await fetch('/admin/promocode/api/promo/list',{cache:'no-store'});
+      const j = await r.json(); if(!j.ok) throw new Error(j.error||'list');
+      rows = j.data||[];
+      resort();
+    }catch(e){ listBody.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message||e}</td></tr>`; }
+  }
 
-$('pc-create').addEventListener('click', async ()=>{
-const body = {
-code: ($('pc-code').value||'').trim().toUpperCase(),
-amount: parseFloat($('pc-amount').value||'0'),
-uses: parseInt($('pc-uses').value||'1',10)||1,
-currency_key: $('pc-currency').value||'rubs',
-realm: ($('pc-realm').value||'').trim()||null,
-kit_id: $('pc-kit').value || null,
-expires_at: $('pc-exp').value || null,
-};
-try{
-const r = await fetch('/admin/promocode/api/promo/create',{
-method:'POST',headers:xheaders({'Content-Type':'application/json'}),body:JSON.stringify(body)});
-const j = await r.json(); if(!j.ok) throw new Error(j.error||'create failed');
-msg.textContent = `Создан промокод: ${j.data.code}`; msg.className='small text-success';
-await loadPromos();
-}catch(e){ msg.textContent = 'Ошибка: '+(e.message||e); msg.className='small text-danger'; }
-});
+  $('pc-create').addEventListener('click', async ()=>{
+    const body = {
+      code: ($('pc-code').value||'').trim().toUpperCase(),
+      amount: parseFloat($('pc-amount').value||'0'),
+      uses: parseInt($('pc-uses').value||'1',10)||1,
+      currency_key: $('pc-currency').value||'rubs',
+      realm: ($('pc-realm').value||'').trim()||null,
+      kit_id: $('pc-kit').value || null,
+      expires_at: $('pc-exp').value || null,
+    };
+    try{
+      const r = await fetch('/admin/promocode/api/promo/create',{
+        method:'POST',headers:xheaders({'Content-Type':'application/json'}),body:JSON.stringify(body)});
+      const j = await r.json(); if(!j.ok) throw new Error(j.error||'create failed');
+      flash(`Создан промокод: ${j.data.code}`,'success');
+      await loadPromos();
+    }catch(e){ flash('Ошибка: '+(e.message||e),'error',3200); }
+  });
 
+  $('pc-refresh')?.addEventListener('click', loadPromos);
 
-$('pc-refresh')?.addEventListener('click', loadPromos);
+  // сортировка по клику на заголовок
+  document.querySelectorAll('[data-sort]').forEach(th=>{
+    th.style.cursor='pointer';
+    th.addEventListener('click', ()=>{
+      const k = th.getAttribute('data-sort');
+      if(sortBy===k){ sortDir = (sortDir==='asc'?'desc':'asc'); } else { sortBy=k; sortDir='asc'; }
+      resort();
+    });
+  });
 
-
-await loadKitsToSelect();
-await loadPromos();
+  await loadKitsToSelect();
+  await loadPromos();
 })();
 </script>

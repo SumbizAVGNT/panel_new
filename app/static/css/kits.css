@@ -1,4 +1,4 @@
-/* Kits UI — чистый CSS. Без шаблонных тегов. */
+/* Kits UI — чистый CSS. */
 :root{
   --ui-surface: var(--mr-surface, rgba(12,16,24,.60));
   --ui-border : var(--mr-border, rgba(148,163,184,.22));

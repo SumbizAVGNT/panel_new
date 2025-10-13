@@ -1,102 +1,284 @@
 <script>
-);
-drawCatalogChunked(filtered);
-}, 120);
-});
-$('cat-src').addEventListener('change', ()=> loadCatalog($('cat-src').value));
-$('cat-refresh').addEventListener('click', ()=> loadCatalog(lastCatalogSrc));
+(function KitsInventory(){
+  // ---------- helpers ----------
+  const $ = (id)=>document.getElementById(id);
+  const el = (sel, root=document)=>root.querySelector(sel);
+  const els = (sel, root=document)=>[...root.querySelectorAll(sel)];
+  const fmtId = (ns,id)=>`${ns||'minecraft'}:${id}`;
+  const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
+  const xheaders = (h={}) => CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
+  const flash = (text,type='info',ms=2200)=>{
+    const host = document.querySelector('.flash-stack') || (()=>{const d=document.createElement('div');d.className='flash-stack';document.body.appendChild(d);return d})();
+    const n = document.createElement('div'); n.className = `flash flash-${type}`; n.textContent = text; host.appendChild(n);
+    setTimeout(()=> n.remove(), ms);
+  };
 
+  // ---------- state ----------
+  const SLOTS_TOTAL = 54;
+  let current = { id:null, name:'', description:'', inventory: Array.from({length:SLOTS_TOTAL}, ()=>null) };
+  let selectedSlot = null;
+  let catalog = [];
+  let lastCatalogSrc = 'vanilla';
 
-// ---------- inventory: interactions ----------
-els('.slot', grid).forEach(slot=>{
-const idx = +slot.dataset.slot;
-slot.addEventListener('click', ()=> setSelected(idx));
-slot.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); clearSlot(idx); if(selectedSlot===idx) fillEditorsFromSlot(); markDirty(); });
-slot.addEventListener('dragover', (ev)=>{ ev.preventDefault(); slot.classList.add('drag-over'); ev.dataTransfer.dropEffect='copy'; });
-slot.addEventListener('dragleave', ()=> slot.classList.remove('drag-over'));
-slot.addEventListener('drop', (ev)=>{
-ev.preventDefault(); slot.classList.remove('drag-over');
-let data=null; try{ data = JSON.parse(ev.dataTransfer.getData('application/json')||'null'); }catch(_){ }
-if(!data || !data.id) return;
-placeItem(idx, { ns: data.ns || 'minecraft', id: data.id, amount: 1, display_name: null, enchants: [], icon: data.icon || iconFor(data), orig_name: data.name || data.id });
-setSelected(idx); markDirty();
-});
-});
+  // ---------- nodes ----------
+  const grid = $('inv-grid');
+  const enchList = $('enchips');
+  const lblTitle = $('kit-title-lbl');
+  const lblCount = $('kit-count');
+  const catBox = $('cat-grid');
 
+  // ---------- ui: inventory drawing ----------
+  function renderInventory(){
+    els('.slot', grid).forEach(slot=>{
+      const i = +slot.dataset.slot;
+      const item = current.inventory[i];
+      slot.innerHTML = '';
+      slot.classList.toggle('selected', selectedSlot===i);
+      if(item){
+        const wrap = document.createElement('div');
+        wrap.className = 'item';
+        wrap.title = `${item.display_name?.trim() || item.orig_name || item.id}\n${fmtId(item.ns,item.id)}${(item.enchants?.length? '\n' + item.enchants.map(e=>`${e.id}@${e.lvl}`).join(', ') : '')}`;
+        const img = document.createElement('img');
+        img.alt = item.id; img.loading='lazy'; img.decoding='async';
+        img.src = item.icon || iconFor(item);
+        wrap.appendChild(img);
+        const qty = document.createElement('span');
+        qty.className = 'qty'; qty.textContent = Math.max(1, item.amount|0);
+        wrap.appendChild(qty);
+        slot.appendChild(wrap);
+      }
+    });
+    const n = current.inventory.filter(Boolean).length;
+    lblCount.textContent = `${n} предметов`;
+  }
 
-function placeItem(idx, it){ current.inventory[idx] = it; renderInventory(); }
-function clearSlot(idx){ current.inventory[idx] = null; renderInventory(); }
+  function iconFor(it){
+    if(it.icon) return it.icon;
+    const ns = it.ns || 'minecraft';
+    if(ns==='minecraft') return `/static/mc/1.20.6/items/${it.id}.png`;
+    return `/static/mc/itemsadder/${ns}.${it.id}.png`;
+  }
 
+  function setSelected(idx){
+    selectedSlot = (idx==null? null : +idx);
+    els('.slot', grid).forEach(s=> s.classList.toggle('selected', +s.dataset.slot===selectedSlot));
+    fillEditorsFromSlot();
+  }
 
-// top actions
-$('inv-clear').addEventListener('click', ()=>{
-if(!confirm('Очистить все 54 слота?')) return;
-current.inventory = Array.from({length:SLOTS_TOTAL}, ()=>null);
-renderInventory(); fillEditorsFromSlot(); markDirty();
-});
-$('inv-fill').addEventListener('click', ()=> setSelected(null));
-$('slot-clear').addEventListener('click', ()=>{ if(selectedSlot==null) return; clearSlot(selectedSlot); markDirty(); });
+  // ---------- editors ----------
+  function fillEditorsFromSlot(){
+    const it = (selectedSlot!=null ? current.inventory[selectedSlot] : null);
+    $('edit-slot').textContent = (selectedSlot!=null? selectedSlot+1 : '—');
+    $('edit-name').value   = it?.display_name || '';
+    $('edit-amount').value = it?.amount || 1;
+    enchList.innerHTML = '';
+    (it?.enchants||[]).forEach((e,ix)=>{
+      const chip = document.createElement('span');
+      chip.className='chip';
+      chip.innerHTML = `${e.id}@${e.lvl} <a href="#" data-ix="${ix}">×</a>`;
+      chip.querySelector('a').addEventListener('click', ev=>{
+        ev.preventDefault();
+        it.enchants.splice(ix,1);
+        renderInventory(); fillEditorsFromSlot(); markDirty();
+      });
+      enchList.appendChild(chip);
+    });
+  }
 
+  function updateSelectedFromEditors(){
+    if(selectedSlot==null) return;
+    const it = current.inventory[selectedSlot]; if(!it) return;
+    it.display_name = ($('edit-name').value || '').trim() || null;
+    let amt = parseInt($('edit-amount').value || '1', 10); if(!Number.isFinite(amt) || amt<1) amt=1;
+    it.amount = amt;
+    renderInventory();
+  }
 
-// editor change handlers
-$('edit-name').addEventListener('input', ()=>{ updateSelectedFromEditors(); markDirty(); });
-$('edit-amount').addEventListener('input', ()=>{ updateSelectedFromEditors(); markDirty(); });
-$('edit-ench-add').addEventListener('click', ()=>{
-if(selectedSlot==null) return; const it = current.inventory[selectedSlot]; if(!it) return;
-const id = ($('edit-ench-id').value||'').trim(); let lvl = parseInt($('edit-ench-lvl').value||'1', 10); if(!Number.isFinite(lvl) || lvl<1) lvl=1;
-if(!id) return; it.enchants = it.enchants || []; it.enchants.push({id, lvl}); $('edit-ench-id').value=''; $('edit-ench-lvl').value='1';
-renderInventory(); fillEditorsFromSlot(); markDirty();
-});
+  // ---------- catalog (chunked render + debounce) ----------
+  async function loadCatalog(src){
+    lastCatalogSrc = src;
+    const url = src==='custom' ? '/admin/promocode/api/items/custom' : '/admin/promocode/api/items/vanilla';
+    catBox.innerHTML = '<div class="small-dim">Загрузка…</div>';
+    try{
+      const r = await fetch(url, {cache:'no-store'});
+      const j = await r.json(); if(!j.ok) throw new Error(j.error || 'catalog error');
+      catalog = j.data || [];
+      drawCatalogChunked(catalog);
+    }catch(e){ catBox.innerHTML = `<div class="text-danger small">${e.message||e}</div>`; catalog = []; }
+  }
 
+  function makeCell(it){
+    const cell = document.createElement('div');
+    cell.className = 'cat-item';
+    cell.title = `${it.name || it.id}\n${fmtId(it.ns||'minecraft', it.id)}`;
+    cell.draggable = true; cell.dataset.ns = it.ns || 'minecraft'; cell.dataset.id = it.id;
+    const img = document.createElement('img');
+    img.src = it.icon || iconFor(it); img.alt = it.id; img.loading='lazy'; img.decoding='async';
+    cell.appendChild(img);
+    const hint = document.createElement('span'); hint.className='hint'; hint.textContent='⠿'; cell.appendChild(hint);
+    return cell;
+  }
 
-// ---------- Kit header / CRUD ----------
-function markDirty(){ $('kit-save').disabled = false; lblTitle.textContent = (current.name || '—'); }
-$('kit-name').addEventListener('input', ()=>{ current.name = $('kit-name').value.trim(); markDirty(); });
-$('kit-desc').addEventListener('input', ()=>{ current.description = $('kit-desc').value.trim(); markDirty(); });
+  function drawCatalogChunked(list){
+    catBox.innerHTML='';
+    if(!list.length){ catBox.innerHTML = '<div class="small-dim">Нет данных</div>'; return; }
+    let i = 0;
+    const pump = (deadline)=>{
+      const frag = document.createDocumentFragment();
+      let n = 0;
+      while(i<list.length && (deadline?.timeRemaining?.() > 1 || n < 60)){
+        frag.appendChild(makeCell(list[i++])); n++;
+      }
+      catBox.appendChild(frag);
+      if(i<list.length){ (window.requestIdleCallback||window.requestAnimationFrame)(pump); }
+    };
+    (window.requestIdleCallback||window.requestAnimationFrame)(pump);
+  }
 
+  // делегирование: click + dragstart
+  catBox.addEventListener('click', (ev)=>{
+    const cell = ev.target.closest('.cat-item'); if(!cell) return;
+    const slotIndex = (selectedSlot!=null? selectedSlot : current.inventory.findIndex(x=>!x));
+    if(slotIndex<0) return;
+    placeItem(slotIndex, {
+      ns: cell.dataset.ns, id: cell.dataset.id, amount: 1, display_name: null,
+      enchants: [], icon: el('img', cell)?.src, orig_name: cell.title?.split('\n')?.[0] || cell.dataset.id,
+    });
+    setSelected(slotIndex); markDirty();
+  });
+  catBox.addEventListener('dragstart', (ev)=>{
+    const cell = ev.target.closest('.cat-item'); if(!cell) return;
+    const it = { id: cell.dataset.id, ns: cell.dataset.ns, icon: el('img', cell)?.src };
+    ev.dataTransfer.setData('application/json', JSON.stringify(it));
+    ev.dataTransfer.effectAllowed = 'copy';
+  }, true);
 
-$('kit-new').addEventListener('click', ()=>{
-if(!confirm('Создать новый кит? Текущие изменения будут потеряны.')) return;
-current = { id:null, name:'', description:'', inventory: Array.from({length:SLOTS_TOTAL}, ()=>null) };
-selectedSlot = null; $('kit-name').value=''; $('kit-desc').value=''; $('kit-delete').classList.add('d-none'); $('kit-save').disabled=false; lblTitle.textContent='—'; renderInventory(); fillEditorsFromSlot();
-});
+  // поиск (debounce)
+  let qTimer=null;
+  $('cat-q').addEventListener('input', ()=>{
+    clearTimeout(qTimer);
+    qTimer = setTimeout(()=>{
+      const q = $('cat-q').value.trim().toLowerCase();
+      const filtered = !q ? catalog : catalog.filter(it=>
+        (it.id||'').toLowerCase().includes(q) || (it.name||'').toLowerCase().includes(q) || (it.ns||'minecraft').toLowerCase().includes(q)
+      );
+      drawCatalogChunked(filtered);
+    }, 120);
+  });
+  $('cat-src').addEventListener('change', ()=> loadCatalog($('cat-src').value));
+  $('cat-refresh').addEventListener('click', ()=> loadCatalog(lastCatalogSrc));
 
+  // ---------- inventory: interactions ----------
+  els('.slot', grid).forEach(slot=>{
+    const idx = +slot.dataset.slot;
+    slot.addEventListener('click', ()=> setSelected(idx));
+    slot.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); clearSlot(idx); if(selectedSlot===idx) fillEditorsFromSlot(); markDirty(); });
+    slot.addEventListener('dragover', (ev)=>{ ev.preventDefault(); slot.classList.add('drag-over'); ev.dataTransfer.dropEffect='copy'; });
+    slot.addEventListener('dragleave', ()=> slot.classList.remove('drag-over'));
+    slot.addEventListener('drop', (ev)=>{
+      ev.preventDefault(); slot.classList.remove('drag-over');
+      let data=null; try{ data = JSON.parse(ev.dataTransfer.getData('application/json')||'null'); }catch(_){ }
+      if(!data || !data.id) return;
+      placeItem(idx, { ns: data.ns || 'minecraft', id: data.id, amount: 1, display_name: null, enchants: [], icon: data.icon || iconFor(data), orig_name: data.name || data.id });
+      setSelected(idx); markDirty();
+    });
+  });
 
-$('kit-save').addEventListener('click', async ()=>{
-const payload = kitPayload(); if(!payload.name){ alert('Название кита обязательно'); return; }
-try{
-const r = await fetch('/admin/promocode/api/kits/save',{
-method:'POST', headers:xheaders({'Content-Type':'application/json'}), body: JSON.stringify(payload)
-});
-const j = await r.json(); if(!j.ok) throw new Error(j.error||'save failed');
-current.id = j.data.id; $('kit-delete').classList.remove('d-none'); $('kit-save').disabled = true; alert('Сохранено');
-if(window.refreshKitsSelect) window.refreshKitsSelect();
-}catch(e){ alert('Ошибка: '+(e.message||e)); }
-});
+  function placeItem(idx, it){ current.inventory[idx] = it; renderInventory(); }
+  function clearSlot(idx){ current.inventory[idx] = null; renderInventory(); }
 
+  // top actions
+  $('inv-clear').addEventListener('click', ()=>{
+    if(!confirm('Очистить все 54 слота?')) return;
+    current.inventory = Array.from({length:SLOTS_TOTAL}, ()=>null);
+    renderInventory(); fillEditorsFromSlot(); markDirty();
+  });
+  $('inv-fill').addEventListener('click', ()=> setSelected(null));
+  $('slot-clear').addEventListener('click', ()=>{ if(selectedSlot==null) return; clearSlot(selectedSlot); markDirty(); });
 
-$('kit-delete').addEventListener('click', async ()=>{
-if(!current.id) return; if(!confirm('Удалить этот кит?')) return;
-try{
-const r = await fetch('/admin/promocode/api/kits/delete',{
-method:'POST', headers:xheaders({'Content-Type':'application/json'}), body: JSON.stringify({id: current.id})
-});
-const j = await r.json(); if(!j.ok) throw new Error(j.error||'delete failed');
-$('kit-new').click(); if(window.refreshKitsSelect) window.refreshKitsSelect();
-}catch(e){ alert('Ошибка: '+(e.message||e)); }
-});
+  // editor change handlers
+  $('edit-name').addEventListener('input', ()=>{ updateSelectedFromEditors(); markDirty(); });
+  $('edit-amount').addEventListener('input', ()=>{ updateSelectedFromEditors(); markDirty(); });
+  $('edit-ench-add').addEventListener('click', ()=>{
+    if(selectedSlot==null) return; const it = current.inventory[selectedSlot]; if(!it) return;
+    const id = ($('edit-ench-id').value||'').trim(); let lvl = parseInt($('edit-ench-lvl').value||'1', 10); if(!Number.isFinite(lvl) || lvl<1) lvl=1;
+    if(!id) return; it.enchants = it.enchants || []; it.enchants.push({id, lvl}); $('edit-ench-id').value=''; $('edit-ench-lvl').value='1';
+    renderInventory(); fillEditorsFromSlot(); markDirty();
+  });
 
+  // ---------- Kit header / CRUD ----------
+  function markDirty(){ $('kit-save').disabled = false; lblTitle.textContent = (current.name || '—'); }
+  $('kit-name').addEventListener('input', ()=>{ current.name = $('kit-name').value.trim(); markDirty(); });
+  $('kit-desc').addEventListener('input', ()=>{ current.description = $('kit-desc').value.trim(); markDirty(); });
 
-function kitPayload(){
-const items = [];
-current.inventory.forEach((it, idx)=>{ if(!it) return; items.push({ ns: it.ns || 'minecraft', id: it.id, amount: Math.max(1, it.amount|0), display_name: (it.display_name || '').trim() || null, enchants: (it.enchants||[]).map(e=>({id: e.id, lvl: Math.max(1, e.lvl|0)})), slot: idx }); });
-return { id: current.id, name: (current.name||'').trim(), description: (current.description||'').trim(), items };
-}
-window.kitGetPayload = kitPayload;
+  $('kit-new').addEventListener('click', ()=>{
+    if(!confirm('Создать новый кит? Текущие изменения будут потеряны.')) return;
+    current = { id:null, name:'', description:'', inventory: Array.from({length:SLOTS_TOTAL}, ()=>null) };
+    selectedSlot = null; $('kit-name').value=''; $('kit-desc').value=''; $('kit-delete').classList.add('d-none'); $('kit-save').disabled=false; lblTitle.textContent='—'; renderInventory(); fillEditorsFromSlot();
+  });
 
+  $('kit-save').addEventListener('click', async ()=>{
+    const payload = kitPayload(); if(!payload.name){ alert('Название кита обязательно'); return; }
+    try{
+      const r = await fetch('/admin/promocode/api/kits/save',{
+        method:'POST', headers:xheaders({'Content-Type':'application/json'}), body: JSON.stringify(payload)
+      });
+      const j = await r.json(); if(!j.ok) throw new Error(j.error||'save failed');
+      current.id = j.data.id; $('kit-delete').classList.remove('d-none'); $('kit-save').disabled = true; flash('Кит сохранён','success');
+      if(window.refreshKitsSelect) window.refreshKitsSelect();
+    }catch(e){ flash('Ошибка: '+(e.message||e),'error',3200); }
+  });
 
-// ---------- boot ----------
-async function boot(){ renderInventory(); fillEditorsFromSlot(); await loadCatalog('vanilla'); }
-boot();
+  $('kit-delete').addEventListener('click', async ()=>{
+    if(!current.id) return; if(!confirm('Удалить этот кит?')) return;
+    try{
+      const r = await fetch('/admin/promocode/api/kits/delete',{
+        method:'POST', headers:xheaders({'Content-Type':'application/json'}), body: JSON.stringify({id: current.id})
+      });
+      const j = await r.json(); if(!j.ok) throw new Error(j.error||'delete failed');
+      $('kit-new').click(); if(window.refreshKitsSelect) window.refreshKitsSelect(); flash('Кит удалён','success');
+    }catch(e){ flash('Ошибка: '+(e.message||e),'error',3200); }
+  });
+
+  function kitPayload(){
+    const items = [];
+    current.inventory.forEach((it, idx)=>{ if(!it) return; items.push({ ns: it.ns || 'minecraft', id: it.id, amount: Math.max(1, it.amount|0), display_name: (it.display_name || '').trim() || null, enchants: (it.enchants||[]).map(e=>({id: e.id, lvl: Math.max(1, e.lvl|0)})), slot: idx }); });
+    return { id: current.id, name: (current.name||'').trim(), description: (current.description||'').trim(), items };
+  }
+  window.kitGetPayload = kitPayload;
+
+  // ---------- Import / Export ----------
+  $('kit-export').addEventListener('click', ()=>{
+    const data = kitPayload();
+    const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = (data.name ? `kit_${data.name}` : 'kit') + '.json'; a.click();
+    setTimeout(()=> URL.revokeObjectURL(a.href), 0);
+  });
+  $('kit-import').addEventListener('click', ()=> $('kit-import-input').click());
+  $('kit-import-input').addEventListener('change', async (ev)=>{
+    const f = ev.target.files?.[0]; if(!f) return;
+    try{
+      const text = await f.text();
+      const obj = JSON.parse(text);
+      // мягкая валидация
+      current.id = obj.id || null;
+      current.name = obj.name || '';
+      current.description = obj.description || '';
+      const inv = Array.from({length:SLOTS_TOTAL}, ()=>null);
+      (obj.items||[]).forEach(x=>{
+        if(typeof x.slot !== 'number' || x.slot<0 || x.slot>=SLOTS_TOTAL) return;
+        inv[x.slot] = { ns:x.ns||'minecraft', id:x.id, amount:Math.max(1, x.amount|0), display_name:x.display_name||null, enchants:(x.enchants||[]).map(e=>({id:e.id, lvl:Math.max(1, e.lvl|0)})) };
+      });
+      current.inventory = inv;
+      $('kit-name').value = current.name; $('kit-desc').value = current.description;
+      renderInventory(); setSelected(null); fillEditorsFromSlot(); markDirty(); flash('Кит импортирован','success');
+      $('kit-import-input').value='';
+    }catch(e){ flash('Не удалось импортировать JSON','error',3200); }
+  });
+
+  // ---------- boot ----------
+  async function boot(){ renderInventory(); fillEditorsFromSlot(); await loadCatalog('vanilla'); }
+  boot();
 })();
 </script>

@@ -1,4 +1,4 @@
-{# Промокоды — обновлённый UI + компактные поля #}
+{# Промокоды — обновлённый UI: сортировка + подсветка истёкших #}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/promocode.css') }}">
 
 <div class="glass p-3 mb-3">
@@ -27,7 +27,7 @@
     <div class="col-6 col-md-1"><input id="pc-uses" type="number" min="1" value="1" class="form-control form-control-sm" placeholder="Uses"></div>
     <div class="col-6 col-md-2"><input id="pc-exp" type="datetime-local" class="form-control form-control-sm"></div>
     <div class="col-6 col-md-auto">
-      <button id="pc-create" class="btn btn-sm btn-success"><i class="bi bi-plus-lg me-1"></i>Создать</button>
+      <button id="pc-create" class="btn btn-sm btn-outline-success"><i class="bi bi-plus-lg me-1"></i>Создать</button>
     </div>
   </div>
 
@@ -39,14 +39,14 @@
     <table class="table table-dark table-hover align-middle mb-0 promo-table">
       <thead class="table-head-sticky">
         <tr>
-          <th>Код</th>
-          <th class="text-end">Сумма</th>
-          <th>Валюта</th>
-          <th>Realm</th>
-          <th>Kit</th>
-          <th class="text-end">Исп.</th>
-          <th>Истекает</th>
-          <th>Создан</th>
+          <th data-sort="code">Код</th>
+          <th data-sort="amount" class="text-end">Сумма</th>
+          <th data-sort="currency_key">Валюта</th>
+          <th data-sort="realm">Realm</th>
+          <th data-sort="kit_name">Kit</th>
+          <th data-sort="uses_left" class="text-end">Исп.</th>
+          <th data-sort="expires_at">Истекает</th>
+          <th data-sort="created_at">Создан</th>
         </tr>
       </thead>
       <tbody id="pc-list">
