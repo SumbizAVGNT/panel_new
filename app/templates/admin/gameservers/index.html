@@ -57,6 +57,8 @@
     <button class="tab-btn active" data-tab="servers"><i class="bi bi-hdd-network me-1"></i>Servers</button>
     <button class="tab-btn" data-tab="accounts"><i class="bi bi-people me-1"></i>Accounts</button>
     <button class="tab-btn" data-tab="promocode"><i class="bi bi-megaphone me-1"></i>Promocode</button>
+    <!-- ⬇️ Новая вкладка с конструктором китов -->
+    <button class="tab-btn" data-tab="kits"><i class="bi bi-box-seam me-1"></i>Kits</button>
   </div>
 
   <!-- Servers -->
@@ -84,6 +86,11 @@
       </a>
     </div>
   </div>
+
+  <!-- ⬇️ Kits — сам редактор внутри nav -->
+  <div id="tab-kits" class="tab-pane">
+    {% include "admin/gameservers/promocode/kits.html" %}
+  </div>
 </div>
 
 <script>
@@ -95,7 +102,10 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     const k = b.dataset.tab;
     document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
     document.getElementById('tab-'+k)?.classList.add('active');
-    if(k==='accounts' && window.accInit) window.accInit(); // ленивый старт модуля Accounts
+
+    // Ленивые инициализации под вкладки
+    if(k==='accounts' && window.accInit) window.accInit();
+    // Для Kits ничего вызывать не нужно — его скрипт в виде IIFE инициализируется, когда DOM уже содержит разметку.
   });
 });
 
@@ -189,4 +199,7 @@ loadRealms();
 
 {# Promocode JS #}
 {% include "admin/gameservers/promocode/promocode_script.html" %}
+
+{# ⬇️ Kits JS (подключаем скрипт конструктора) #}
+{% include "admin/gameservers/promocode/kits_script.html" %}
 {% endblock %}
