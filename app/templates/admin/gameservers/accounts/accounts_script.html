@@ -31,35 +31,26 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
   const setCount = n => { countEl.textContent = Number.isFinite(n) ? `${n} результатов` : '—'; };
 
   // sorting
-  let data = [];              // текущий набор
-  let sortBy = 'lastlogin';   // ключ
-  let sortDir = 'desc';       // asc/desc
-
+  let data = []; let sortBy = 'lastlogin'; let sortDir = 'desc';
   function applySort(){
     const key = sortBy;
     const cmp = (a,b)=>{
       const av = a?.[key], bv = b?.[key];
-      // даты/числа
       if (['regdate','lastlogin'].includes(key)) return (Number(av)||0) - (Number(bv)||0);
       return String(av ?? '').localeCompare(String(bv ?? ''), 'ru', {numeric:true, sensitivity:'base'});
     };
-    data.sort(cmp);
-    if (sortDir==='desc') data.reverse();
+    data.sort(cmp); if (sortDir==='desc') data.reverse();
   }
 
   function render(list){
-    data = Array.isArray(list) ? list.slice(0) : [];
-    applySort();
-    setCount(data.length);
-    if(!data.length){
-      rows.innerHTML = `<tr><td colspan="8" class="text-secondary">ничего не найдено</td></tr>`; return;
-    }
+    data = Array.isArray(list) ? list.slice(0) : []; applySort(); setCount(data.length);
+    if(!data.length){ rows.innerHTML = `<tr><td colspan="8" class="text-secondary">ничего не найдено</td></tr>`; return; }
     rows.innerHTML = data.map(r=>{
       const nm=r.name||r.player_name||'—', uid=r.uuid||r.unique_id||'', em=r.email??'—', ip=r.ip||r.lastip||'—',
-            reg=fmtTime(r.regdate), last=fmtTime(r.lastlogin), prem=(r.premium===1||r.premium===true)?'yes':'—', role=r.role||'default';
+            reg=fmtTime(r.regdate), last=fmtTime(r.lastlogin), prem=(r.premium===1||r.premium===true)?'yes':'—', role=(r.role||'default');
       return `<tr class="cursor-pointer" data-uuid="${uid}" data-name="${nm}">
         <td><img class="player-head me-2" src="${skin(nm,uid)}" alt=""> <a href="#" class="link-light text-decoration-none fw-semibold">${nm}</a></td>
-        <td><span class="badge-role">${role}</span></td>
+        <td><span class="badge-role" data-role="${role}">${role}</span></td>
         <td class="small">${uid||'—'}</td><td>${em}</td><td>${ip}</td><td>${reg}</td><td>${last}</td><td>${prem}</td>
       </tr>`;
     }).join('');
@@ -69,36 +60,26 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
   }
 
   async function fetchData(q=""){
-    const url = new URL("/admin/accounts/api/search", location.origin);
-    if(q) url.searchParams.set("q", q);
+    const url = new URL("/admin/accounts/api/search", location.origin); if(q) url.searchParams.set("q", q);
     rows.innerHTML = `<tr><td colspan="8"><div class="skeleton p-3">Загрузка…</div></td></tr>`;
-    try{
-      const res = await fetch(url,{cache:"no-store"});
-      const j = await res.json(); if(!j.ok) throw new Error(j.error||"error");
-      render(j.data||[]);
-    }catch(e){
-      rows.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message}</td></tr>`;
-      setCount(0);
-    }
+    try{ const res = await fetch(url,{cache:"no-store"}); const j = await res.json(); if(!j.ok) throw new Error(j.error||"error"); render(j.data||[]); }
+    catch(e){ rows.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message}</td></tr>`; setCount(0); }
   }
 
-  // поиск
   const onInputDebounce = (fn, ms=400)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms);} };
   $('acc-btnSearch').addEventListener('click', ()=> fetchData(($('acc-q').value||'').trim()));
   $('acc-q').addEventListener('keydown', e=>{ if(e.key==='Enter') $('acc-btnSearch').click(); });
   $('acc-q').addEventListener('input', onInputDebounce(()=>$('acc-btnSearch').click(), 450));
 
-  // сортировка по клику на заголовок
   document.querySelectorAll('#acc-scope [data-sort]').forEach(th=>{
     th.style.cursor='pointer';
     th.addEventListener('click', ()=>{
-      const k = th.getAttribute('data-sort');
-      if(sortBy===k){ sortDir = (sortDir==='asc'?'desc':'asc'); } else { sortBy=k; sortDir='asc'; }
-      render(data); // перерисуем с новым порядком
+      const k = th.getAttribute('data-sort'); if(sortBy===k){ sortDir = (sortDir==='asc'?'desc':'asc'); } else { sortBy=k; sortDir='asc'; }
+      render(data);
     });
   });
 
-  // Modal state (scoped)
+  // Modal state
   const m = {
     root:$('acc-accountModal'), head:$('acc-mHead'), name:$('acc-mName'),
     uuid:$('acc-mUuid'), email:$('acc-mEmail'), ip:$('acc-mIp'),
@@ -117,7 +98,7 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
   document.querySelectorAll('#acc-scope [data-bs-dismiss="modal"]').forEach(btn=> btn.addEventListener('click', ()=> modal.hide()));
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') modal.hide(); });
 
-  function setBadge(node, text, danger){ node.textContent=text; node.className='badge '+(danger?'bg-danger':'bg-secondary'); }
+  function setBadge(node, text, danger){ node.textContent=text; node.className='badge badge-status '+(danger?'bg-danger-subtle':'text-bg-secondary'); }
   function setOnline(o){
     const dot = m.online.querySelector('.status-dot'), text = m.online.querySelector('span.align-middle');
     dot.className = 'status-dot ' + (o===true?'status-online':o===false?'status-offline':'status-unknown');
@@ -144,7 +125,9 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
     m.loading.style.display=''; m.alert.classList.add('d-none'); m.alert.textContent='';
     m.head.src = skin(name,uuid); m.name.textContent=name||'—';
     m.uuid.textContent='—'; m.email.textContent='—'; m.ip.textContent='—';
-    m.reg.textContent='—'; m.last.textContent='—'; m.role.textContent='default'; m.role2.textContent='default';
+    m.reg.textContent='—'; m.last.textContent='—';
+    m.role.textContent='default'; m.role.dataset.role='default';
+    m.role2.textContent='default'; m.role2.dataset.role='default';
     m.premium.textContent='—'; setOnline(null); setPointsValue(0); m.save.disabled=true; m.note.textContent='';
     m.key.textContent='rubs'; m.keyBig.textContent='(rubs)'; setBadge(m.banStatus,'—',false);
     m.banBox.classList.add('d-none'); m.banBox.innerHTML=''; m.btnBan.disabled=true; m.btnUnban.classList.add('d-none');
@@ -155,7 +138,8 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
       const res = await fetch(u,{cache:'no-store'}); const j = await res.json(); if(!j.ok) throw new Error(j.error||'error');
       const d = j.data||{};
       m.name.textContent=d.name||name||'—'; m.uuid.textContent=d.uuid||uuid||'—'; m.email.textContent=d.email||'—'; m.ip.textContent=d.ip||'—';
-      m.reg.textContent=fmtTime(d.regdate); m.last.textContent=fmtTime(d.lastlogin); m.role.textContent=d.role||'default'; m.role2.textContent=d.role||'default';
+      m.reg.textContent=fmtTime(d.regdate); m.last.textContent=fmtTime(d.lastlogin);
+      const role=d.role||'default'; m.role.textContent=role; m.role.dataset.role=role; m.role2.textContent=role; m.role2.dataset.role=role;
       m.premium.textContent=d.premium?'yes':'—'; m.head.src=skin(d.name,d.uuid); setOnline(d.online);
       const key=(d.points_key||'rubs').trim(); m.key.textContent=key; m.keyBig.textContent=`(${key})`;
       setPointsValue(typeof d.points==='number'? d.points:0); m.save.disabled=!d.can_edit_points; m.note.textContent=d.can_edit_points?'':'У вас нет прав изменять баланс.';
@@ -221,7 +205,7 @@ window.accInit = function(){ if(accReady) return; accReady = true; (function(){
       const r=await fetch('/admin/accounts/api/unban',{method:'POST',headers:xheaders({'Content-Type':'application/json'}),body:JSON.stringify({uuid:(m.uuid.textContent||'').trim()})});
       const j=await r.json(); if(!j.ok) throw new Error(j.error||'unban failed'); toastMsg('Бан снят');
       openModal({uuid:(m.uuid.textContent||'').trim(),name:(m.name.textContent||'').trim()});
-    }catch(e){ m.alert.textContent=e.message||'Ошибка'; m.alert.classList.remove('d-none'); }  // <-- фикс: 'd-none' (не 'д-none')
+    }catch(e){ m.alert.textContent=e.message||'Ошибка'; m.alert.classList.remove('d-none'); }
   });
 
   m.uuid.addEventListener('click', ()=> copyText(m.uuid.textContent.replace(/\s+/g,'').replace(/^📋/,'')));

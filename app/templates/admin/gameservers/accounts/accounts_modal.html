@@ -14,7 +14,8 @@
               </span>
             </div>
             <div class="m-sub">
-              <span id="acc-mRole" class="badge-role">default</span>
+              <!-- data-role подхватит градиентом в CSS -->
+              <span id="acc-mRole" class="badge-role" data-role="default">default</span>
             </div>
           </div>
         </div>
@@ -40,7 +41,7 @@
           <div class="row g-3">
             <!-- LEFT: info -->
             <div class="col-lg-8">
-              <div class="card glass">
+              <div class="card glass aurora-card">
                 <div class="card-body">
                   <div class="kv-grid">
                     <div class="kv2">
@@ -67,7 +68,7 @@
                     </div>
                     <div class="kv2">
                       <span class="k">Текущая роль</span>
-                      <span class="v"><span id="acc-mRole2" class="badge-role">default</span></span>
+                      <span class="v"><span id="acc-mRole2" class="badge-role" data-role="default">default</span></span>
                     </div>
 
                     <div class="kv2">
@@ -84,7 +85,7 @@
 
                     <div class="kv2 span2">
                       <span class="k">Статус бана</span>
-                      <span class="v"><span class="badge" id="acc-banStatus">—</span></span>
+                      <span class="v"><span class="badge badge-status" id="acc-banStatus">—</span></span>
                     </div>
                   </div>
                 </div>
@@ -93,7 +94,7 @@
 
             <!-- RIGHT: quick actions -->
             <div class="col-lg-4">
-              <div class="card glass h-100">
+              <div class="card glass aurora-card h-100">
                 <div class="card-body">
                   <div class="fw-semibold mb-2"><i class="bi bi-shield-lock me-1"></i>Быстрые действия</div>
                   <div class="d-flex flex-column gap-2">
@@ -117,7 +118,7 @@
 
         <!-- BALANCE -->
         <section id="acc-tab-balance" class="d-none">
-          <div class="card glass">
+          <div class="card glass aurora-card">
             <div class="card-body">
               <div class="row g-3 align-items-end">
                 <div class="col-md-3">
@@ -147,14 +148,14 @@
 
         <!-- DONATIONS -->
         <section id="acc-tab-donations" class="d-none">
-          <div class="card glass">
+          <div class="card glass aurora-card">
             <div class="card-body">
               <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="fw-semibold"><i class="bi bi-bag-heart me-1"></i>История донатов</div>
                 <span class="small-muted">последние 200</span>
               </div>
               <div class="table-responsive">
-                <table class="table table-dark table-hover table-xs">
+                <table class="table table-dark table-hover table-xs nice-table">
                   <thead><tr>
                     <th>#Платёж</th><th>#Покупка</th><th>Продукт</th><th>Кол-во</th><th>Стоимость</th><th>Создано</th>
                   </tr></thead>
@@ -170,11 +171,11 @@
           <div id="acc-punishSpinner" class="small-muted mb-2">Загрузка…</div>
           <div class="row g-3">
             <div class="col-md-6">
-              <div class="card glass">
+              <div class="card glass aurora-card">
                 <div class="card-body">
                   <div class="fw-semibold mb-2">Баны</div>
                   <div class="table-responsive">
-                    <table class="table table-dark table-xs">
+                    <table class="table table-dark table-xs nice-table">
                       <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
                       <tbody id="acc-banRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
                     </table>
@@ -182,11 +183,11 @@
                 </div>
               </div>
 
-              <div class="card glass mt-3">
+              <div class="card glass aurora-card mt-3">
                 <div class="card-body">
                   <div class="fw-semibold mb-2">Варны</div>
                   <div class="table-responsive">
-                    <table class="table table-dark table-xs">
+                    <table class="table table-dark table-xs nice-table">
                       <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
                       <tbody id="acc-warnRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
                     </table>
@@ -196,11 +197,11 @@
             </div>
 
             <div class="col-md-6">
-              <div class="card glass">
+              <div class="card glass aurora-card">
                 <div class="card-body">
                   <div class="fw-semibold mb-2">Муты</div>
                   <div class="table-responsive">
-                    <table class="table table-dark table-xs">
+                    <table class="table table-dark table-xs nice-table">
                       <thead><tr><th>ID</th><th>Причина</th><th>От</th><th>С</th><th>До</th><th>Активен</th></tr></thead>
                       <tbody id="acc-muteRows"><tr><td colspan="6" class="text-secondary">—</td></tr></tbody>
                     </table>
@@ -208,11 +209,11 @@
                 </div>
               </div>
 
-              <div class="card glass mt-3">
+              <div class="card glass aurora-card mt-3">
                 <div class="card-body">
                   <div class="fw-semibold mb-2">История заходов</div>
                   <div class="table-responsive">
-                    <table class="table table-dark table-xs">
+                    <table class="table table-dark table-xs nice-table">
                       <thead><tr><th>ID</th><th>Дата</th><th>Ник</th><th>IP</th></tr></thead>
                       <tbody id="acc-histRows"><tr><td colspan="4" class="text-secondary">—</td></tr></tbody>
                     </table>
