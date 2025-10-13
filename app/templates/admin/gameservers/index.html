@@ -2,27 +2,32 @@
 {% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
-/* ==== MUST-BE-FIRST: подключаем стили аккаунтов (иначе браузер игнорирует) ==== */
+/* ==== FIRST: обязательно первыми — стили аккаунтов ==== */
 @import url("{{ url_for('static', filename='css/accounts.css') }}");
 
-/* ---------- Tabs & layout (modern) ---------- */
+/* ---------- Tokens ---------- */
 :root{
-  --ui-surface: rgba(12,16,24,.60);
+  --ui-surface: rgba(12,16,24,.62);
   --ui-border : rgba(148,163,184,.22);
   --ui-accent : #60a5fa; /* sky-400 */
-  --ui-accent-2: #38bdf8; /* sky-300 */
+  --ok: #22c55e; --warn:#f59e0b; --bad:#ef4444; --muted:#94a3b8;
 }
+
+/* ---------- Tabs (neon) ---------- */
 .tabs{display:flex;gap:10px;margin:8px 0 14px;flex-wrap:wrap}
 .tabs .tab-btn{
   border-radius:14px;border:1px solid var(--ui-border);
   background:linear-gradient(180deg,rgba(13,17,23,.85),rgba(13,17,23,.55));
-  color:#e5e7eb;padding:.55rem 1rem;font-weight:700;letter-spacing:.02em;transition:.18s ease;
-  box-shadow:0 10px 24px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.03);
-  will-change:transform, box-shadow
+  color:#e5e7eb;padding:.55rem 1rem;font-weight:800;letter-spacing:.02em;transition:.18s ease;
+  box-shadow:0 10px 24px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.03)
 }
-.tabs .tab-btn:focus-visible{outline:2px solid var(--ui-accent)}
 .tabs .tab-btn:hover{transform:translateY(-1px)}
-.tabs .tab-btn.active{background:linear-gradient(180deg,#0e172a,#0a1221);border-color:rgba(148,163,184,.35)}
+.tabs .tab-btn:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.tabs .tab-btn.active{
+  background:linear-gradient(180deg,#0e172a,#0a1221);
+  border-color:rgba(148,163,184,.34);
+  box-shadow:0 0 0 1px rgba(96,165,250,.25) inset, 0 8px 26px rgba(2,132,199,.18)
+}
 .tab-pane{display:none;opacity:0;transform:translateY(8px);transition:opacity .2s ease, transform .2s ease}
 .tab-pane.active{display:block;opacity:1;transform:none}
 
@@ -31,23 +36,52 @@
 .tile{
   position:relative;border-radius:16px;border:1px solid var(--ui-border);
   background:var(--ui-surface);backdrop-filter:saturate(120%) blur(8px);
-  padding:16px;display:flex;flex-direction:column;gap:10px;transition:transform .18s ease, box-shadow .18s ease;
+  padding:16px;display:flex;flex-direction:column;gap:12px;transition:transform .18s ease, box-shadow .18s ease
 }
-.tile:hover{box-shadow:0 14px 26px rgba(0,0,0,.28),0 0 0 1px rgba(148,163,184,.22);transform:translateY(-2px)}
-.tile .cap{font-size:.78rem;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase}
+.tile:hover{box-shadow:0 16px 30px rgba(0,0,0,.30),0 0 0 1px rgba(148,163,184,.22);transform:translateY(-2px)}
+.tile .cap{font-size:.78rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
 .tile .row2{display:flex;align-items:center;justify-content:space-between}
 .badge-cap{padding:.35rem .6rem;border-radius:999px}
+
+/* meta pills */
 .meta{display:flex;flex-wrap:wrap;gap:8px}
 .meta .pill{font-size:.78rem;border:1px solid rgba(148,163,184,.25);border-radius:999px;padding:.2rem .6rem;color:#cbd5e1;background:rgba(2,6,23,.35)}
-.small-dim{color:#94a3b8}
+.small-dim{color:var(--muted)}
 .tile .footer{display:flex;align-items:center;gap:8px;margin-top:6px}
 .tile .footer .go{margin-left:auto;opacity:.7;transition:.15s}
 .tile:hover .footer .go{opacity:1;transform:translateX(2px)}
+
+/* ---------- Gauge (TPS ring) ---------- */
+.gauge{
+  --v: 0;          /* 0..100 (%) */
+  --c: var(--ok);  /* ring color */
+  inline-size:44px; block-size:44px; border-radius:50%;
+  background:conic-gradient(var(--c) calc(var(--v)*1%), rgba(255,255,255,.08) 0);
+  display:grid;place-items:center; position:relative; flex:0 0 auto
+}
+.gauge::before{
+  content:""; position:absolute; inset:4px; border-radius:50%;
+  background:rgba(12,16,24,.9); box-shadow:inset 0 0 0 1px var(--ui-border)
+}
+.gauge__label{position:relative;font-weight:800;font-size:.74rem;letter-spacing:.02em}
+
+/* tps/mspt badges */
+.kv{display:flex;align-items:center;gap:8px}
+.kv .b{font-size:.78rem;border-radius:8px;padding:.2rem .5rem;border:1px solid var(--ui-border);background:rgba(2,6,23,.35)}
+.b.ok{border-color:rgba(34,197,94,.35)} .b.ok strong{color:var(--ok)}
+.b.warn{border-color:rgba(245,158,11,.35)} .b.warn strong{color:var(--warn)}
+.b.bad{border-color:rgba(239,68,68,.35)} .b.bad strong{color:var(--bad)}
+
+/* skeleton */
 .skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
 .skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:shimmer 1.05s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
 
-/* Reduce motion preference */
+/* refresh spin */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin .8s linear infinite}
+
+/* Reduce motion */
 @media (prefers-reduced-motion: reduce){
   .tabs .tab-btn, .tab-pane{transition:none}
 }
@@ -57,7 +91,9 @@
   <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="m-0">Game Servers</h2>
     <div class="d-flex align-items-center gap-2">
-      <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
+      <button id="refresh" class="btn btn-sm btn-outline-secondary">
+        <i id="refreshIco" class="bi bi-arrow-repeat me-1"></i>Обновить
+      </button>
       <a class="btn btn-sm btn-outline-light" href="/admin"><i class="bi bi-house"></i></a>
     </div>
   </div>
@@ -75,13 +111,24 @@
     <div id="realms" class="grid-realms">
       <div class="tile">
         <div class="cap">Loading</div>
-        <div class="h5 m-0">Fetching realms…</div>
-        <div class="skel" style="height:18px;width:60%"></div>
+        <div class="row2">
+          <div class="h5 m-0 skel" style="height:22px;width:120px"></div>
+          <span class="badge badge-cap bg-secondary">—</span>
+        </div>
+        <div class="kv">
+          <div class="gauge"><span class="gauge__label">--</span></div>
+          <div class="b"><strong>TPS1m:</strong> —</div>
+          <div class="b"><strong>MSPT:</strong> —</div>
+        </div>
+        <div class="footer small-dim">
+          <span class="skel" style="height:16px;width:120px"></span>
+          <i class="bi bi-arrow-right-short go"></i>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Accounts (embedded) -->
+  <!-- Accounts -->
   <div id="tab-accounts" class="tab-pane">
     {% include "admin/gameservers/accounts/accounts.html" %}
   </div>
@@ -91,7 +138,7 @@
     {% include "admin/gameservers/promocode/promocode.html" %}
   </div>
 
-  <!-- Kits (embedded) -->
+  <!-- Kits -->
   <div id="tab-kits" class="tab-pane">
     {% include "admin/gameservers/promocode/kits.html" %}
   </div>
@@ -106,22 +153,46 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     const k = b.dataset.tab;
     document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
     document.getElementById('tab-'+k)?.classList.add('active');
-    if(k==='accounts' && window.accInit) window.accInit(); // ленивый старт модуля Accounts
+    if(k==='accounts' && window.accInit) window.accInit();
   });
 });
 
-/* --- Servers --- */
+/* --- Helpers --- */
 function badge(isOnline, text){
   return `<span class="badge badge-cap ${isOnline?'bg-success':'bg-secondary'}">${text || (isOnline?'online':'offline')}</span>`;
 }
+function kvClass(val, goodHigh=true){ // returns ok/warn/bad by thresholds
+  if(val==null) return '';
+  if(goodHigh){ // TPS
+    if(val >= 18) return 'ok';
+    if(val >= 12) return 'warn';
+    return 'bad';
+  }else{        // MSPT (меньше — лучше)
+    if(val < 30) return 'ok';
+    if(val < 50) return 'warn';
+    return 'bad';
+  }
+}
+function gaugeSet(el, value=0, max=20){
+  if(!el) return;
+  const perc = Math.max(0, Math.min(100, (value/max)*100));
+  let color = getComputedStyle(document.documentElement).getPropertyValue('--ok') || '#22c55e';
+  if(value < 12) color = getComputedStyle(document.documentElement).getPropertyValue('--bad') || '#ef4444';
+  else if(value < 18) color = getComputedStyle(document.documentElement).getPropertyValue('--warn') || '#f59e0b';
+  el.style.setProperty('--v', perc.toFixed(1));
+  el.style.setProperty('--c', color.trim());
+  const label = el.querySelector('.gauge__label'); if(label) label.textContent = (value!=null? value.toFixed(1) : '--');
+}
+
+/* --- Servers grid --- */
 function tileSkeleton(){
   return `<div class="tile">
     <div class="cap">Realm</div>
     <div class="row2"><div class="h5 m-0 skel" style="height:22px;width:120px"></div>${badge(false,'—')}</div>
-    <div class="meta">
-      <span class="pill skel" style="width:70px;height:22px"></span>
-      <span class="pill skel" style="width:80px;height:22px"></span>
-      <span class="pill skel" style="width:90px;height:22px"></span>
+    <div class="kv">
+      <div class="gauge"><span class="gauge__label">--</span></div>
+      <div class="b"><strong>TPS1m:</strong> —</div>
+      <div class="b"><strong>MSPT:</strong> —</div>
     </div>
     <div class="footer small-dim">
       <span class="skel" style="height:16px;width:120px"></span>
@@ -134,11 +205,14 @@ function realmTileHtml(name, plugins){
   return `<a class="tile text-decoration-none text-reset" href="${href}" data-realm="${name}">
     <div class="cap">Realm</div>
     <div class="row2"><div class="h5 m-0">${name}</div>${badge((plugins|0)>0)}</div>
+    <div class="kv">
+      <div class="gauge" data-gauge="tps-${name}"><span class="gauge__label">--</span></div>
+      <div class="b" data-k="tps"><strong>TPS1m:</strong> —</div>
+      <div class="b" data-k="mspt"><strong>MSPT:</strong> —</div>
+    </div>
     <div class="meta" id="m-${name}">
       <span class="pill">plugins: ${(plugins|0)}</span>
       <span class="pill" data-k="online">online: —</span>
-      <span class="pill" data-k="tps">TPS1m: —</span>
-      <span class="pill" data-k="mspt">MSPT: —</span>
     </div>
     <div class="footer small-dim">
       <span data-k="uptime">uptime: —</span>
@@ -149,6 +223,7 @@ function realmTileHtml(name, plugins){
 }
 async function loadRealms(){
   const box = document.getElementById('realms');
+  document.getElementById('refreshIco')?.classList.add('spin');
   box.innerHTML = tileSkeleton();
   let data = {};
   try{
@@ -157,18 +232,25 @@ async function loadRealms(){
     data = j.data || {};
   }catch(e){
     box.innerHTML = `<div class="tile"><div class="cap">Error</div><div class="small small-dim">${e.message||e}</div></div>`;
+    document.getElementById('refreshIco')?.classList.remove('spin');
     return;
   }
   const realms = Object.keys(data).sort((a,b)=>a.localeCompare(b));
-  if(!realms.length){ box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`; return; }
+  if(!realms.length){
+    box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`;
+    document.getElementById('refreshIco')?.classList.remove('spin');
+    return;
+  }
   box.innerHTML = '';
   realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
+
   for(const name of realms){
     try{
       const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
       const j = await r.json(); if(!j.ok || !j.data) continue; fillTile(name, normalize(j.data));
     }catch(_){}
   }
+  document.getElementById('refreshIco')?.classList.remove('spin');
 }
 function normalize(d){
   d=d||{}; const t=d.tps||{}, p=d.players||{}, j=d.jvm||{};
@@ -180,11 +262,20 @@ function fillTile(name, p){
   const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`); if(!root) return;
   const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta.querySelector(`[data-k="${k}"]`);
   if(q('online')) q('online').textContent = `online: ${p.online ?? '—'}`;
-  if(q('tps'))    q('tps').textContent    = `TPS1m: ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`;
-  if(q('mspt'))   q('mspt').textContent   = `MSPT: ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`;
+
+  // tps/mspt text + classes
+  const tpsB = root.querySelector('[data-k="tps"]');
+  if(tpsB){ const cls = kvClass(p.tps1, true); tpsB.className = `b ${cls}`; tpsB.innerHTML = `<strong>TPS1m:</strong> ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`; }
+  const msptB = root.querySelector('[data-k="mspt"]');
+  if(msptB){ const cls = kvClass(p.mspt, false); msptB.className = `b ${cls}`; msptB.innerHTML = `<strong>MSPT:</strong> ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`; }
+
+  // gauge
+  const g = root.querySelector(`[data-gauge="tps-${CSS.escape(name)}"]`); gaugeSet(g, p.tps1 ?? 0, 20);
+
+  // uptime + updated
   const up = root.querySelector('[data-k="uptime"]'); if(up) up.textContent = `uptime: ${humanMs(p.uptime_ms)}`;
   const upd = root.querySelector('[data-k="updated"]');
-  if(upd){ const ago = Math.max(0, Math.floor(Date.now()/1000 - (p.ts||Math.floor(Date.now()/1000)))); upd.textContent = `· обновлено: ${ago}s ago`; }
+  if(upd){ const now = Math.floor(Date.now()/1000), ts = p.ts || now; const ago = Math.max(0, now - ts); upd.textContent = `· обновлено: ${ago}s ago`; }
 }
 function humanMs(ms){
   if(!ms || ms<0) return '—'; let s=Math.floor(ms/1000);
