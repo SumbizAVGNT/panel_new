@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
 
   <title>{% block title %}MoonRein{% endblock %}</title>
   <meta name="csrf-token" content="{{ csrf_token }}" />
@@ -20,6 +21,8 @@
     :root{
       --mr-surface: rgba(13,17,23,.55);
       --mr-border : rgba(148,163,184,.18);
+      --mr-accent : #60a5fa; /* sky-400 */
+      --mr-accent-2:#38bdf8; /* sky-300 */
       --mr-glow   : 0 10px 30px rgba(0,0,0,.35);
     }
 
@@ -31,16 +34,27 @@
     .topbar{
       position:sticky;top:0;z-index:1040;
       border-bottom:1px solid var(--mr-border);
-      background:linear-gradient(180deg,rgba(6,10,18,.75),rgba(6,10,18,.55));
-      backdrop-filter:blur(10px)
+      /* Fallback без blur — нативно и без лагов */
+      background:linear-gradient(180deg,rgba(6,10,18,.88),rgba(6,10,18,.65));
+    }
+    @supports (backdrop-filter: blur(8px)){
+      .topbar{backdrop-filter:blur(10px);background:linear-gradient(180deg,rgba(6,10,18,.75),rgba(6,10,18,.55))}
     }
     .topbar .brand{font-weight:800;letter-spacing:.2px;text-decoration:none;color:#e5e7eb}
+    .topbar .nav-center{gap:.5rem}
     .topbar .nav-center .nav-link{
       border:1px solid var(--mr-border);border-radius:12px;
-      padding:.45rem .9rem;background:rgba(13,17,23,.65);color:#e5e7eb
+      padding:.45rem .9rem;background:rgba(13,17,23,.65);color:#e5e7eb;
+      transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03)
     }
-    .topbar .nav-center .nav-link:hover{border-color:#3b4453}
-    .topbar .nav-center .nav-link.active{background:#0f172a;border-color:#3b4453}
+    .topbar .nav-center .nav-link:hover{transform:translateY(-1px);border-color:rgba(148,163,184,.32)}
+    .topbar .nav-center .nav-link.active{
+      background:linear-gradient(180deg,#0f172a,#0a1221);
+      border-color:rgba(148,163,184,.35);
+      box-shadow:0 8px 22px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.03)
+    }
+    .topbar .nav-center .nav-link:focus-visible{outline:2px solid var(--mr-accent)}
 
     .user-menu .user-btn{
       display:flex;align-items:center;gap:.6rem;padding:.35rem .6rem;border-radius:14px;
@@ -54,7 +68,8 @@
       border:1px solid var(--mr-border);background:rgba(13,17,23,.65);
       color:#e5e7eb;border-radius:12px;padding:.4rem .65rem;display:flex;gap:.4rem;align-items:center
     }
-    .theme-btn:hover{border-color:#3b82f6;color:#dbeafe}
+    .theme-btn:hover{border-color:var(--mr-accent);color:#dbeafe}
+    .theme-btn:focus-visible{outline:2px solid var(--mr-accent)}
 
     /* ===== Layout ===== */
     .page-wrap{max-width:1200px;margin:0 auto;padding:22px 16px 40px;}
@@ -62,11 +77,11 @@
 
     .glass{
       background:var(--mr-surface);
-      backdrop-filter:blur(10px);
       border:1px solid var(--mr-border);
       border-radius:16px;
       box-shadow:var(--mr-glow)
     }
+    @supports (backdrop-filter: blur(8px)) {.glass{backdrop-filter:blur(10px)}}
 
     /* Flash */
     .flash-stack{position:fixed;top:76px;right:16px;z-index:1080;display:grid;gap:.5rem}
@@ -95,6 +110,12 @@
     .page-wrap > .card:first-child,
     .page-wrap > .glass:first-child { margin-top: 8px !important; }
     .page-wrap > section:first-child { margin-top: 8px !important; }
+
+    /* ===== Оптимизация для reduce-motion ===== */
+    @media (prefers-reduced-motion: reduce){
+      *,*::before,*::after{transition:none !important; animation:none !important}
+      .topbar,.glass{backdrop-filter:none !important}
+    }
   </style>
 </head>
 <body class="bg-layered">
@@ -111,7 +132,7 @@
       <a class="brand me-1" href="{{ url_for('dashboard.dashboard') }}">MoonRein</a>
 
       <!-- Центр-меню -->
-      <nav class="nav-center d-flex gap-2 flex-grow-1 justify-content-center">
+      <nav class="nav-center d-flex flex-wrap gap-2 flex-grow-1 justify-content-center">
         <a class="nav-link {{ 'active' if 'dashboard.dashboard' in ep else '' }}"
            href="{{ url_for('dashboard.dashboard') }}">Overview</a>
 
@@ -119,7 +140,7 @@
            href="{{ url_for('news.index') }}">News</a>
 
         {% if role in ['admin','superadmin'] %}
-          <!-- NEW: Game Servers -->
+          <!-- Game Servers -->
           <a class="nav-link {{ 'active' if ep.startswith('admin.gameservers') or ep.startswith('admin.game_console') else '' }}"
              href="{{ url_for('admin.gameservers_index') }}">Game&nbsp;Servers</a>
 
@@ -152,7 +173,7 @@
 
       <div class="user-menu dropdown">
         <button class="user-btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-          <img class="avatar" src="{{ avatar_url }}" alt="" referrerpolicy="no-referrer">
+          <img class="avatar" src="{{ avatar_url }}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async">
           <div class="d-none d-sm-block lh-sm">
             <div class="fw-semibold small">{{ user.username }}</div>
             <div class="text-secondary small">{{ role }}</div>
@@ -188,7 +209,8 @@
 
   <!-- Bootstrap bundle -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+  <!-- Скрипт приложения: отложенная инициализация -->
+  <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
 
   <!-- Реестр и переключатель фоновых DOM-тем -->
   <script>
@@ -198,11 +220,8 @@
       const registry={};  // name -> mount(root) => unmount()
 
       // API для файлов тем
-      window.__BG_MOUNT__ = function(name, mountFn){
-        registry[name] = mountFn;
-      };
+      window.__BG_MOUNT__ = function(name, mountFn){ registry[name] = mountFn; };
 
-      let current=null;       // имя
       let unmountFn=null;     // функция размонтирования
 
       function highlight(name){
@@ -214,8 +233,7 @@
 
       window.__BG_SWITCH__ = function(name){
         if(!registry[name]) return;
-        if(unmountFn) { try{unmountFn();}catch{} unmountFn=null; }
-        current=name;
+        try{ if(unmountFn) unmountFn(); }catch{}
         try{ unmountFn = registry[name](root) || null; }catch(e){ console.error('Theme mount error', e); }
         localStorage.setItem(KEY, name);
         highlight(name);
@@ -225,12 +243,16 @@
       function start(){
         const saved = localStorage.getItem(KEY) || 'stars';
         if(registry[saved]) { window.__BG_SWITCH__(saved); }
-        else {
-          // если тема ещё не зарегистрирована — подождём один кадр
-          requestAnimationFrame(start);
-        }
+        else { requestAnimationFrame(start); } // ждём пока темы зарегистрируются
       }
       requestAnimationFrame(start);
+
+      // Уважение к reduce-motion (если хочешь — можешь использовать класс в своих темах)
+      try{
+        if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+          document.documentElement.classList.add('no-anim');
+        }
+      }catch{}
     })();
   </script>
 

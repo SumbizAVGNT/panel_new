@@ -1,205 +1,90 @@
 {% extends "layout/base.html" %}
-{% block title %}Game Servers{% endblock %}
-{% block content %}
-<style>
-/* ---------- Tabs & layout (soft) ---------- */
-.tabs{display:flex;gap:8px;margin:8px 0 14px}
-.tabs .tab-btn{
-  border-radius:12px;border:1px solid rgba(148,163,184,.22);
-  background:rgba(13,17,23,.55);color:#e5e7eb;padding:.55rem 1rem;
-  font-weight:600;letter-spacing:.015em;transition:.2s ease;
-  box-shadow:0 6px 18px rgba(0,0,0,.18)
-}
-.tabs .tab-btn:hover{transform:translateY(-1px)}
-.tabs .tab-btn.active{background:#0f172a;border-color:rgba(148,163,184,.35)}
-.tab-pane{display:none;opacity:0;transform:translateY(8px);transition:opacity .22s ease, transform .22s ease}
-.tab-pane.active{display:block;opacity:1;transform:none}
-
-/* ---------- Realms grid (soft) ---------- */
-.grid-realms{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
-.tile{
-  position:relative;border-radius:16px;border:1px solid rgba(148,163,184,.18);
-  background:rgba(13,17,23,.58);backdrop-filter:blur(10px);
-  padding:16px;display:flex;flex-direction:column;gap:10px;transition:transform .18s ease, box-shadow .18s ease
-}
-.tile:hover{box-shadow:0 16px 34px rgba(0,0,0,.35),0 0 0 1px rgba(148,163,184,.22);transform:translateY(-2px)}
-.tile .cap{font-size:.78rem;color:#94a3b8;letter-spacing:.04em;text-transform:uppercase}
-.tile .row2{display:flex;align-items:center;justify-content:space-between}
-.badge-cap{padding:.35rem .6rem;border-radius:999px}
-.meta{display:flex;flex-wrap:wrap;gap:8px}
-.meta .pill{
-  font-size:.78rem;border:1px solid rgba(148,163,184,.25);border-radius:999px;
-  padding:.2rem .6rem;color:#cbd5e1;background:rgba(2,6,23,.35)
-}
-.small-dim{color:#94a3b8}
-.tile .footer{display:flex;align-items:center;gap:8px;margin-top:6px}
-.tile .footer .go{margin-left:auto;opacity:.7;transition:.15s}
-.tile:hover .footer .go{opacity:1;transform:translateX(2px)}
-.skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
-.skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:shimmer 1.05s infinite}
-@keyframes shimmer{100%{transform:translateX(100%)}}
-
-/* ---------- Accounts (scoped) ---------- */
-{% include "admin/gameservers/accounts/accounts_styles.html" %}
-</style>
-
-<div class="container-xxl py-4">
-  <div class="d-flex align-items-center justify-content-between mb-2">
-    <h2 class="m-0">Game Servers</h2>
-    <div class="d-flex align-items-center gap-2">
-      <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
-      <a class="btn btn-sm btn-outline-light" href="/admin"><i class="bi bi-house"></i></a>
-    </div>
-  </div>
-
-  <!-- Tabs -->
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="servers"><i class="bi bi-hdd-network me-1"></i>Servers</button>
-    <button class="tab-btn" data-tab="accounts"><i class="bi bi-people me-1"></i>Accounts</button>
-    <button class="tab-btn" data-tab="promocode"><i class="bi bi-megaphone me-1"></i>Promocode</button>
-    <!-- ⬇️ Новая вкладка с конструктором китов -->
-    <button class="tab-btn" data-tab="kits"><i class="bi bi-box-seam me-1"></i>Kits</button>
-  </div>
-
-  <!-- Servers -->
-  <div id="tab-servers" class="tab-pane active">
-    <div id="realms" class="grid-realms">
-      <div class="tile">
-        <div class="cap">Loading</div>
-        <div class="h5 m-0">Fetching realms…</div>
-        <div class="skel" style="height:18px;width:60%"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Accounts (embedded) -->
-  <div id="tab-accounts" class="tab-pane">
-    {% include "admin/gameservers/accounts/accounts.html" %}
-  </div>
-
-  <!-- Promocode -->
-  <div id="tab-promocode" class="tab-pane">
-    {% include "admin/gameservers/promocode/promocode.html" %}
-    <div class="mt-3">
-      <a class="btn btn-sm btn-outline-light" href="/admin/promocode">
-        <i class="bi bi-box-seam me-1"></i> Открыть полный редактор (Promocodes & Kits)
-      </a>
-    </div>
-  </div>
-
-  <!-- ⬇️ Kits — сам редактор внутри nav -->
-  <div id="tab-kits" class="tab-pane">
-    {% include "admin/gameservers/promocode/kits.html" %}
-  </div>
+<div class="row2"><div class="h5 m-0 skel" style="height:22px;width:120px"></div>${badge(false,'—')}</div>
+<div class="meta">
+<span class="pill skel" style="width:70px;height:22px"></span>
+<span class="pill skel" style="width:80px;height:22px"></span>
+<span class="pill skel" style="width:90px;height:22px"></span>
 </div>
-
-<script>
-/* --- Tabs --- */
-document.querySelectorAll('.tab-btn').forEach(b=>{
-  b.addEventListener('click', ()=>{
-    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    const k = b.dataset.tab;
-    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-    document.getElementById('tab-'+k)?.classList.add('active');
-
-    // Ленивые инициализации под вкладки
-    if(k==='accounts' && window.accInit) window.accInit();
-    // Для Kits ничего вызывать не нужно — его скрипт в виде IIFE инициализируется, когда DOM уже содержит разметку.
-  });
-});
-
-/* --- Servers --- */
-function badge(isOnline, text){
-  return `<span class="badge badge-cap ${isOnline?'bg-success':'bg-secondary'}">${text || (isOnline?'online':'offline')}</span>`;
-}
-function tileSkeleton(){
-  return `<div class="tile">
-    <div class="cap">Realm</div>
-    <div class="row2"><div class="h5 m-0 skel" style="height:22px;width:120px"></div>${badge(false,'—')}</div>
-    <div class="meta">
-      <span class="pill skel" style="width:70px;height:22px"></span>
-      <span class="pill skel" style="width:80px;height:22px"></span>
-      <span class="pill skel" style="width:90px;height:22px"></span>
-    </div>
-    <div class="footer small-dim">
-      <span class="skel" style="height:16px;width:120px"></span>
-      <i class="bi bi-arrow-right-short go"></i>
-    </div>
-  </div>`;
+<div class="footer small-dim">
+<span class="skel" style="height:16px;width:120px"></span>
+<i class="bi bi-arrow-right-short go"></i>
+</div>
+</div>`;
 }
 function realmTileHtml(name, plugins){
-  const href = `/admin/gameservers/${encodeURIComponent(name)}`;
-  return `<a class="tile text-decoration-none text-reset" href="${href}" data-realm="${name}">
-    <div class="cap">Realm</div>
-    <div class="row2"><div class="h5 m-0">${name}</div>${badge((plugins|0)>0)}</div>
-    <div class="meta" id="m-${name}">
-      <span class="pill">plugins: ${(plugins|0)}</span>
-      <span class="pill" data-k="online">online: —</span>
-      <span class="pill" data-k="tps">TPS1m: —</span>
-      <span class="pill" data-k="mspt">MSPT: —</span>
-    </div>
-    <div class="footer small-dim">
-      <span data-k="uptime">uptime: —</span>
-      <span class="small-dim" data-k="updated">· обновлено: —</span>
-      <i class="bi bi-arrow-right-short go"></i>
-    </div>
-  </a>`;
+const href = `/admin/gameservers/${encodeURIComponent(name)}`;
+return `<a class="tile text-decoration-none text-reset" href="${href}" data-realm="${name}">
+<div class="cap">Realm</div>
+<div class="row2"><div class="h5 m-0">${name}</div>${badge((plugins|0)>0)}</div>
+<div class="meta" id="m-${name}">
+<span class="pill">plugins: ${(plugins|0)}</span>
+<span class="pill" data-k="online">online: —</span>
+<span class="pill" data-k="tps">TPS1m: —</span>
+<span class="pill" data-k="mspt">MSPT: —</span>
+</div>
+<div class="footer small-dim">
+<span data-k="uptime">uptime: —</span>
+<span class="small-dim" data-k="updated">· обновлено: —</span>
+<i class="bi bi-arrow-right-short go"></i>
+</div>
+</a>`;
 }
 async function loadRealms(){
-  const box = document.getElementById('realms');
-  box.innerHTML = tileSkeleton();
-  let data = {};
-  try{
-    const r = await fetch('/admin/gameservers/api/list',{cache:'no-store'});
-    const j = await r.json(); if(!j.ok) throw new Error(j.error||'bridge error');
-    data = j.data || {};
-  }catch(e){
-    box.innerHTML = `<div class="tile"><div class="cap">Error</div><div class="small small-dim">${e.message||e}</div></div>`;
-    return;
-  }
-  const realms = Object.keys(data).sort((a,b)=>a.localeCompare(b));
-  if(!realms.length){ box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`; return; }
-  box.innerHTML = '';
-  realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
-  for(const name of realms){
-    try{
-      const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
-      const j = await r.json(); if(!j.ok || !j.data) continue; fillTile(name, normalize(j.data));
-    }catch(_){}
-  }
+const box = document.getElementById('realms');
+box.innerHTML = tileSkeleton();
+let data = {};
+try{
+const r = await fetch('/admin/gameservers/api/list',{cache:'no-store'});
+const j = await r.json(); if(!j.ok) throw new Error(j.error||'bridge error');
+data = j.data || {};
+}catch(e){
+box.innerHTML = `<div class="tile"><div class="cap">Error</div><div class="small small-dim">${e.message||e}</div></div>`;
+return;
+}
+const realms = Object.keys(data).sort((a,b)=>a.localeCompare(b));
+if(!realms.length){ box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`; return; }
+box.innerHTML = '';
+realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
+for(const name of realms){
+try{
+const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
+const j = await r.json(); if(!j.ok || !j.data) continue; fillTile(name, normalize(j.data));
+}catch(_){}}
 }
 function normalize(d){
-  d=d||{}; const t=d.tps||{}, p=d.players||{}, j=d.jvm||{};
-  return { tps1: t["1m"] ?? d.tps_1m ?? null, mspt: t.mspt ?? d.mspt ?? null,
-           online: p.online ?? d.players_online ?? null, uptime_ms: j.uptime_ms ?? d.uptime_ms ?? null,
-           ts: d.ts || Math.floor(Date.now()/1000) };
+d=d||{}; const t=d.tps||{}, p=d.players||{}, j=d.jvm||{};
+return { tps1: t["1m"] ?? d.tps_1m ?? null, mspt: t.mspt ?? d.mspt ?? null,
+online: p.online ?? d.players_online ?? null, uptime_ms: j.uptime_ms ?? d.uptime_ms ?? null,
+ts: d.ts || Math.floor(Date.now()/1000) };
 }
 function fillTile(name, p){
-  const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`); if(!root) return;
-  const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta.querySelector(`[data-k="${k}"]`);
-  if(q('online')) q('online').textContent = `online: ${p.online ?? '—'}`;
-  if(q('tps'))    q('tps').textContent    = `TPS1m: ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`;
-  if(q('mspt'))   q('mspt').textContent   = `MSPT: ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`;
-  const up = root.querySelector('[data-k="uptime"]'); if(up) up.textContent = `uptime: ${humanMs(p.uptime_ms)}`;
-  const upd = root.querySelector('[data-k="updated"]');
-  if(upd){ const ago = Math.max(0, Math.floor(Date.now()/1000 - (p.ts||Math.floor(Date.now()/1000)))); upd.textContent = `· обновлено: ${ago}s ago`; }
+const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`); if(!root) return;
+const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta.querySelector(`[data-k="${k}"]`);
+if(q('online')) q('online').textContent = `online: ${p.online ?? '—'}`;
+if(q('tps')) q('tps').textContent = `TPS1m: ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`;
+if(q('mspt')) q('mspt').textContent = `MSPT: ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`;
+const up = root.querySelector('[data-k="uptime"]'); if(up) up.textContent = `uptime: ${humanMs(p.uptime_ms)}`;
+const upd = root.querySelector('[data-k="updated"]');
+if(upd){ const ago = Math.max(0, Math.floor(Date.now()/1000 - (p.ts||Math.floor(Date.now()/1000)))); upd.textContent = `· обновлено: ${ago}s ago`; }
 }
 function humanMs(ms){
-  if(!ms || ms<0) return '—'; let s=Math.floor(ms/1000);
-  const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
-  const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
+if(!ms || ms<0) return '—'; let s=Math.floor(ms/1000);
+const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
+const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
 }
 document.getElementById('refresh').addEventListener('click', loadRealms);
 loadRealms();
 </script>
 
+
 {# Accounts JS #}
 {% include "admin/gameservers/accounts/accounts_script.html" %}
+
 
 {# Promocode JS #}
 {% include "admin/gameservers/promocode/promocode_script.html" %}
 
-{# ⬇️ Kits JS (подключаем скрипт конструктора) #}
+
+{# Kits JS #}
 {% include "admin/gameservers/promocode/kits_script.html" %}
 {% endblock %}
