@@ -2,48 +2,102 @@
 {% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
-/* ==== FIRST: обязательно первыми — стили аккаунтов ==== */
+/* === 1) Стили аккаунтов должны быть первыми === */
 @import url("{{ url_for('static', filename='css/accounts.css') }}");
 
-/* ---------- Tokens ---------- */
+/* === 2) Токены / палитра === */
 :root{
-  --ui-surface: rgba(12,16,24,.62);
-  --ui-border : rgba(148,163,184,.22);
-  --ui-accent : #60a5fa; /* sky-400 */
-  --ok: #22c55e; --warn:#f59e0b; --bad:#ef4444; --muted:#94a3b8;
+  --ui-surface : rgba(12,16,24,.62);
+  --ui-surface-2: rgba(10,14,22,.85);
+  --ui-border  : rgba(148,163,184,.22);
+  --ui-border-2: rgba(148,163,184,.32);
+  --ui-accent  : #60a5fa;  /* sky-400 */
+  --ui-accent2 : #38bdf8;  /* sky-300 */
+  --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --muted:#94a3b8;
 }
 
-/* ---------- Tabs (neon) ---------- */
+/* === 3) Табы (неоновая кромка) === */
 .tabs{display:flex;gap:10px;margin:8px 0 14px;flex-wrap:wrap}
 .tabs .tab-btn{
+  position:relative;
   border-radius:14px;border:1px solid var(--ui-border);
-  background:linear-gradient(180deg,rgba(13,17,23,.85),rgba(13,17,23,.55));
-  color:#e5e7eb;padding:.55rem 1rem;font-weight:800;letter-spacing:.02em;transition:.18s ease;
-  box-shadow:0 10px 24px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.03)
+  background:linear-gradient(180deg,rgba(13,17,23,.9),rgba(13,17,23,.55));
+  color:#e5e7eb;padding:.56rem 1rem;font-weight:800;letter-spacing:.02em;
+  transition:.18s ease; box-shadow:0 10px 24px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.03)
 }
 .tabs .tab-btn:hover{transform:translateY(-1px)}
 .tabs .tab-btn:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
 .tabs .tab-btn.active{
   background:linear-gradient(180deg,#0e172a,#0a1221);
-  border-color:rgba(148,163,184,.34);
+  border-color:var(--ui-border-2);
   box-shadow:0 0 0 1px rgba(96,165,250,.25) inset, 0 8px 26px rgba(2,132,199,.18)
 }
-.tab-pane{display:none;opacity:0;transform:translateY(8px);transition:opacity .2s ease, transform .2s ease}
+.tabs .tab-btn.active::after{
+  content:""; position:absolute; left:10px; right:10px; bottom:-2px; height:2px; border-radius:2px;
+  background:linear-gradient(90deg, #60a5fa, #38bdf8, #8b5cf6); filter:drop-shadow(0 0 6px rgba(96,165,250,.6))
+}
+.tab-pane{display:none;opacity:0;transform:translateY(8px);transition:opacity .25s ease, transform .25s ease}
 .tab-pane.active{display:block;opacity:1;transform:none}
 
-/* ---------- Realms grid ---------- */
-.grid-realms{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+/* === 4) Сетка реалмов === */
+.grid-realms{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:18px}
 .tile{
-  position:relative;border-radius:16px;border:1px solid var(--ui-border);
-  background:var(--ui-surface);backdrop-filter:saturate(120%) blur(8px);
-  padding:16px;display:flex;flex-direction:column;gap:12px;transition:transform .18s ease, box-shadow .18s ease
+  position:relative; isolation:isolate;
+  border-radius:18px; border:1px solid var(--ui-border);
+  background:var(--ui-surface); backdrop-filter:saturate(120%) blur(8px);
+  padding:16px; display:flex; flex-direction:column; gap:12px;
+  transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
-.tile:hover{box-shadow:0 16px 30px rgba(0,0,0,.30),0 0 0 1px rgba(148,163,184,.22);transform:translateY(-2px)}
+.tile::before{ /* тонкая «аура» рамки */
+  content:""; position:absolute; inset:-1px; border-radius:inherit; z-index:-1;
+  background:linear-gradient(140deg, #60a5fa33, #38bdf833 45%, #8b5cf633 80%);
+  filter:blur(10px); opacity:.7; transition:opacity .25s ease;
+}
+.tile::after{ /* лёгкая засветка в углу */
+  content:""; position:absolute; right:-12px; top:-12px; width:120px; height:120px; pointer-events:none;
+  background:radial-gradient(50% 50% at 70% 30%, #60a5fa3a 0%, transparent 60%),
+             radial-gradient(45% 45% at 60% 60%, #38bdf836 0%, transparent 60%);
+  filter:blur(18px); opacity:.55; border-radius:50%;
+}
+.tile:hover{
+  transform:translateY(-2px);
+  border-color:var(--ui-border-2);
+  box-shadow:0 18px 34px rgba(0,0,0,.32), 0 0 0 1px rgba(148,163,184,.22)
+}
 .tile .cap{font-size:.78rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
 .tile .row2{display:flex;align-items:center;justify-content:space-between}
 .badge-cap{padding:.35rem .6rem;border-radius:999px}
 
-/* meta pills */
+.realm-name{display:flex;align-items:center;gap:.55rem}
+.realm-dot{width:8px;height:8px;border-radius:999px;background:#64748b;box-shadow:0 0 0 3px #64748b24}
+.realm-dot.on{background:#22c55e; box-shadow:0 0 0 3px #22c55e28, 0 0 12px #22c55e7a}
+.realm-dot.off{background:#ef4444; box-shadow:0 0 0 3px #ef444428}
+
+/* === 5) Блок ключевых метрик === */
+.kstrip{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+.gauge{
+  --v: 0; --c: var(--ok);
+  inline-size:48px; block-size:48px; border-radius:50%;
+  background:conic-gradient(var(--c) calc(var(--v)*1%), rgba(255,255,255,.09) 0);
+  display:grid;place-items:center; position:relative; flex:0 0 auto;
+  box-shadow:inset 0 0 0 1px var(--ui-border)
+}
+.gauge::before{
+  content:""; position:absolute; inset:4px; border-radius:50%;
+  background:var(--ui-surface-2); box-shadow:inset 0 0 0 1px var(--ui-border)
+}
+.gauge__label{position:relative;font-weight:800;font-size:.82rem;letter-spacing:.02em}
+
+.kv{display:flex;align-items:center;gap:8px}
+.kv .b{
+  font-size:.8rem;border-radius:10px;padding:.28rem .55rem;
+  border:1px solid var(--ui-border); background:rgba(2,6,23,.42);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03)
+}
+.b.ok{border-color:rgba(34,197,94,.35)} .b.ok strong{color:var(--ok)}
+.b.warn{border-color:rgba(245,158,11,.35)} .b.warn strong{color:var(--warn)}
+.b.bad{border-color:rgba(239,68,68,.35)} .b.bad strong{color:var(--bad)}
+
 .meta{display:flex;flex-wrap:wrap;gap:8px}
 .meta .pill{font-size:.78rem;border:1px solid rgba(148,163,184,.25);border-radius:999px;padding:.2rem .6rem;color:#cbd5e1;background:rgba(2,6,23,.35)}
 .small-dim{color:var(--muted)}
@@ -51,29 +105,16 @@
 .tile .footer .go{margin-left:auto;opacity:.7;transition:.15s}
 .tile:hover .footer .go{opacity:1;transform:translateX(2px)}
 
-/* ---------- Gauge (TPS ring) ---------- */
-.gauge{
-  --v: 0;          /* 0..100 (%) */
-  --c: var(--ok);  /* ring color */
-  inline-size:44px; block-size:44px; border-radius:50%;
-  background:conic-gradient(var(--c) calc(var(--v)*1%), rgba(255,255,255,.08) 0);
-  display:grid;place-items:center; position:relative; flex:0 0 auto
+/* flash-подсветка при обновлении значения */
+.flash{animation:flash 700ms ease}
+@keyframes flash{
+  0%{box-shadow:0 0 0 0 rgba(96,165,250,.0), inset 0 0 0 0 rgba(96,165,250,.0)}
+  20%{box-shadow:0 0 0 6px rgba(96,165,250,.2), inset 0 0 0 1px rgba(96,165,250,.25)}
+  100%{box-shadow:inset 0 0 0 1px var(--ui-border)}
 }
-.gauge::before{
-  content:""; position:absolute; inset:4px; border-radius:50%;
-  background:rgba(12,16,24,.9); box-shadow:inset 0 0 0 1px var(--ui-border)
-}
-.gauge__label{position:relative;font-weight:800;font-size:.74rem;letter-spacing:.02em}
-
-/* tps/mspt badges */
-.kv{display:flex;align-items:center;gap:8px}
-.kv .b{font-size:.78rem;border-radius:8px;padding:.2rem .5rem;border:1px solid var(--ui-border);background:rgba(2,6,23,.35)}
-.b.ok{border-color:rgba(34,197,94,.35)} .b.ok strong{color:var(--ok)}
-.b.warn{border-color:rgba(245,158,11,.35)} .b.warn strong{color:var(--warn)}
-.b.bad{border-color:rgba(239,68,68,.35)} .b.bad strong{color:var(--bad)}
 
 /* skeleton */
-.skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:8px}
+.skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:10px}
 .skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:shimmer 1.05s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
 
@@ -81,10 +122,8 @@
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{animation:spin .8s linear infinite}
 
-/* Reduce motion */
-@media (prefers-reduced-motion: reduce){
-  .tabs .tab-btn, .tab-pane{transition:none}
-}
+/* reduce motion */
+@media (prefers-reduced-motion: reduce){ .tabs .tab-btn, .tab-pane{transition:none} }
 </style>
 
 <div class="container-xxl py-4">
@@ -112,16 +151,25 @@
       <div class="tile">
         <div class="cap">Loading</div>
         <div class="row2">
-          <div class="h5 m-0 skel" style="height:22px;width:120px"></div>
+          <div class="realm-name">
+            <span class="realm-dot"></span>
+            <div class="h5 m-0 skel" style="height:22px;width:140px"></div>
+          </div>
           <span class="badge badge-cap bg-secondary">—</span>
         </div>
-        <div class="kv">
+        <div class="kstrip">
           <div class="gauge"><span class="gauge__label">--</span></div>
-          <div class="b"><strong>TPS1m:</strong> —</div>
-          <div class="b"><strong>MSPT:</strong> —</div>
+          <div class="kv">
+            <div class="b"><strong>TPS1m:</strong> —</div>
+            <div class="b"><strong>MSPT:</strong> —</div>
+          </div>
+        </div>
+        <div class="meta">
+          <span class="pill">plugins: —</span>
+          <span class="pill">online: —</span>
         </div>
         <div class="footer small-dim">
-          <span class="skel" style="height:16px;width:120px"></span>
+          <span class="skel" style="height:16px;width:130px"></span>
           <i class="bi bi-arrow-right-short go"></i>
         </div>
       </div>
@@ -145,7 +193,7 @@
 </div>
 
 <script>
-/* --- Tabs --- */
+/* ===== Tabs ===== */
 document.querySelectorAll('.tab-btn').forEach(b=>{
   b.addEventListener('click', ()=>{
     document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
@@ -157,17 +205,17 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
   });
 });
 
-/* --- Helpers --- */
+/* ===== Visual utils ===== */
 function badge(isOnline, text){
   return `<span class="badge badge-cap ${isOnline?'bg-success':'bg-secondary'}">${text || (isOnline?'online':'offline')}</span>`;
 }
-function kvClass(val, goodHigh=true){ // returns ok/warn/bad by thresholds
+function kvClass(val, goodHigh=true){
   if(val==null) return '';
-  if(goodHigh){ // TPS
+  if(goodHigh){
     if(val >= 18) return 'ok';
     if(val >= 12) return 'warn';
     return 'bad';
-  }else{        // MSPT (меньше — лучше)
+  }else{
     if(val < 30) return 'ok';
     if(val < 50) return 'warn';
     return 'bad';
@@ -183,32 +231,38 @@ function gaugeSet(el, value=0, max=20){
   el.style.setProperty('--c', color.trim());
   const label = el.querySelector('.gauge__label'); if(label) label.textContent = (value!=null? value.toFixed(1) : '--');
 }
+const flash = (node)=>{ if(!node) return; node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); };
 
-/* --- Servers grid --- */
+/* ===== Servers grid ===== */
 function tileSkeleton(){
   return `<div class="tile">
     <div class="cap">Realm</div>
-    <div class="row2"><div class="h5 m-0 skel" style="height:22px;width:120px"></div>${badge(false,'—')}</div>
-    <div class="kv">
+    <div class="row2">
+      <div class="realm-name"><span class="realm-dot"></span><div class="h6 m-0 skel" style="height:20px;width:120px"></div></div>
+      ${badge(false,'—')}
+    </div>
+    <div class="kstrip">
       <div class="gauge"><span class="gauge__label">--</span></div>
-      <div class="b"><strong>TPS1m:</strong> —</div>
-      <div class="b"><strong>MSPT:</strong> —</div>
+      <div class="kv"><div class="b"><strong>TPS1m:</strong> —</div><div class="b"><strong>MSPT:</strong> —</div></div>
     </div>
-    <div class="footer small-dim">
-      <span class="skel" style="height:16px;width:120px"></span>
-      <i class="bi bi-arrow-right-short go"></i>
-    </div>
+    <div class="meta" id="m-__"></div>
+    <div class="footer small-dim"><span class="skel" style="height:16px;width:120px"></span><i class="bi bi-arrow-right-short go"></i></div>
   </div>`;
 }
 function realmTileHtml(name, plugins){
   const href = `/admin/gameservers/${encodeURIComponent(name)}`;
   return `<a class="tile text-decoration-none text-reset" href="${href}" data-realm="${name}">
     <div class="cap">Realm</div>
-    <div class="row2"><div class="h5 m-0">${name}</div>${badge((plugins|0)>0)}</div>
-    <div class="kv">
+    <div class="row2">
+      <div class="realm-name"><span class="realm-dot" data-k="dot"></span><div class="h5 m-0">${name}</div></div>
+      ${badge((plugins|0)>0)}
+    </div>
+    <div class="kstrip">
       <div class="gauge" data-gauge="tps-${name}"><span class="gauge__label">--</span></div>
-      <div class="b" data-k="tps"><strong>TPS1m:</strong> —</div>
-      <div class="b" data-k="mspt"><strong>MSPT:</strong> —</div>
+      <div class="kv">
+        <div class="b" data-k="tps"><strong>TPS1m:</strong> —</div>
+        <div class="b" data-k="mspt"><strong>MSPT:</strong> —</div>
+      </div>
     </div>
     <div class="meta" id="m-${name}">
       <span class="pill">plugins: ${(plugins|0)}</span>
@@ -221,6 +275,7 @@ function realmTileHtml(name, plugins){
     </div>
   </a>`;
 }
+
 async function loadRealms(){
   const box = document.getElementById('realms');
   document.getElementById('refreshIco')?.classList.add('spin');
@@ -252,36 +307,59 @@ async function loadRealms(){
   }
   document.getElementById('refreshIco')?.classList.remove('spin');
 }
+
 function normalize(d){
   d=d||{}; const t=d.tps||{}, p=d.players||{}, j=d.jvm||{};
   return { tps1: t["1m"] ?? d.tps_1m ?? null, mspt: t.mspt ?? d.mspt ?? null,
            online: p.online ?? d.players_online ?? null, uptime_ms: j.uptime_ms ?? d.uptime_ms ?? null,
            ts: d.ts || Math.floor(Date.now()/1000) };
 }
+
 function fillTile(name, p){
   const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`); if(!root) return;
   const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta.querySelector(`[data-k="${k}"]`);
-  if(q('online')) q('online').textContent = `online: ${p.online ?? '—'}`;
 
-  // tps/mspt text + classes
+  // online / dot
+  const dot = root.querySelector('[data-k="dot"]');
+  if(q('online')) q('online').textContent = `online: ${p.online ?? '—'}`;
+  if(dot){ dot.classList.remove('on','off'); dot.classList.add((p.online>0)?'on':'off'); }
+
+  // tps/mspt
   const tpsB = root.querySelector('[data-k="tps"]');
-  if(tpsB){ const cls = kvClass(p.tps1, true); tpsB.className = `b ${cls}`; tpsB.innerHTML = `<strong>TPS1m:</strong> ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`; }
   const msptB = root.querySelector('[data-k="mspt"]');
-  if(msptB){ const cls = kvClass(p.mspt, false); msptB.className = `b ${cls}`; msptB.innerHTML = `<strong>MSPT:</strong> ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`; }
+  if(tpsB){
+    const prev = tpsB.textContent;
+    const cls = kvClass(p.tps1, true);
+    tpsB.className = `b ${cls}`;
+    const txt = `TPS1m: ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`;
+    tpsB.innerHTML = `<strong>TPS1m:</strong> ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`;
+    if(prev.trim() !== txt) flash(tpsB);
+  }
+  if(msptB){
+    const prev = msptB.textContent;
+    const cls = kvClass(p.mspt, false);
+    msptB.className = `b ${cls}`;
+    const txt = `MSPT: ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`;
+    msptB.innerHTML = `<strong>MSPT:</strong> ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`;
+    if(prev.trim() !== txt) flash(msptB);
+  }
 
   // gauge
-  const g = root.querySelector(`[data-gauge="tps-${CSS.escape(name)}"]`); gaugeSet(g, p.tps1 ?? 0, 20);
+  const g = root.querySelector(`[data-gauge="tps-${CSS.escape(name)}"]`);
+  gaugeSet(g, p.tps1 ?? 0, 20);
 
   // uptime + updated
   const up = root.querySelector('[data-k="uptime"]'); if(up) up.textContent = `uptime: ${humanMs(p.uptime_ms)}`;
   const upd = root.querySelector('[data-k="updated"]');
   if(upd){ const now = Math.floor(Date.now()/1000), ts = p.ts || now; const ago = Math.max(0, now - ts); upd.textContent = `· обновлено: ${ago}s ago`; }
 }
+
 function humanMs(ms){
   if(!ms || ms<0) return '—'; let s=Math.floor(ms/1000);
   const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
   const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
 }
+
 document.getElementById('refresh').addEventListener('click', loadRealms);
 loadRealms();
 </script>
