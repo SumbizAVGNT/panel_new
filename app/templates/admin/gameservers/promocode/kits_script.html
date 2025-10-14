@@ -1,5 +1,5 @@
 <script>
-/* Kits module + автокомплит + CRUD киты (исправлено под .items-grid) */
+/* Kits module + автокомплит + CRUD киты (расширено: d&d между слотами, Alt/ПКМ-очистка, клик по lvl, режим "All") */
 (function(){
   'use strict';
 
@@ -14,12 +14,18 @@
   const SLOT_COUNT = 27;
 
   const VERSIONS = [
-    { id:'vanilla-1.20.6', label:'Vanilla 1.20.6',
+    { id:'vanilla',   label:'Vanilla 1.20.6',
       itemsUrl: API.itemsVanilla,
       imgUrl:(id)=>`/static/mc/1.20.6/items/${id}.png` },
-    { id:'itemsadder', label:'ItemsAdder',
+    { id:'custom',    label:'Custom (ItemsAdder)',
       itemsUrl: API.itemsCustom,
-      imgUrl:(id)=>`/static/mc/itemsadder/${String(id).replace(':','.')}.png` }
+      imgUrl:(id)=>`/static/mc/itemsadder/${String(id).replace(':','.')}.png` },
+    { id:'all',       label:'Все',
+      itemsUrl: null,
+      imgUrl:(id,ns)=> ns && ns!=='minecraft'
+        ? `/static/mc/itemsadder/${ns}.${id}.png`
+        : `/static/mc/1.20.6/items/${id}.png`
+    }
   ];
 
   const ENCH_FILE = '/static/data/enchantments-1.20.6.json';
@@ -36,9 +42,9 @@
 
   const state = {
     inited:false,
-    items:[],
+    items:[],                 // [{id:'ns:id', ns, name, icon}]
     version: VERSIONS[0],
-    slots: Array(SLOT_COUNT).fill(null),
+    slots: Array(SLOT_COUNT).fill(null), // [{ns,id,qty,display,extra:{ench:[{id,lvl}],attr:[{id,val}]}}, ...]
     active:-1,
     ench: { list:[], attrs:[] },
     dd:{ open:false, idx:-1, data:[] },
@@ -55,6 +61,7 @@
   let enchInput, enchWrap, enchClearBtn;
   let ddPortal;
   let btnNew, btnDup, btnSave, btnDel, listWrap, btnRefresh, kitsCountLbl;
+  let itemSearch, itemRefresh;
 
   async function GET(url){
     const r=await fetch(url,{cache:'no-store'});
@@ -101,6 +108,9 @@
     listWrap    = $('#kits-list', root);
     kitsCountLbl= $('#kits-count', root);
 
+    itemSearch  = $('#item-search', root);
+    itemRefresh = $('#item-refresh', root);
+
     if(!ddPortal){
       ddPortal = document.createElement('div');
       Object.assign(ddPortal.style,{
@@ -134,27 +144,46 @@
   window.addEventListener('beforeunload',(e)=>{ if(state.dirty){ e.preventDefault(); e.returnValue=''; } });
 
   /* ===== ITEMS ===== */
+  async function fetchItems(url){
+    const data = await GET(url);
+    const arr = Array.isArray(data) ? data : [];
+    const out = [];
+    for(const it of arr){
+      if(!it) continue;
+      const idRaw = it.id || it.item_id || '';
+      if(!idRaw) continue;
+      const ns = it.ns || it.namespace || 'minecraft';
+      const id = String(idRaw);
+      const full = `${ns}:${id}`;
+      out.push({
+        key: full,
+        id,
+        ns,
+        name: it.name || full.replaceAll('_',' '),
+        icon: it.icon || (ns==='minecraft'
+          ? `/static/mc/1.20.6/items/${id}.png`
+          : `/static/mc/itemsadder/${ns}.${id}.png`)
+      });
+    }
+    return out;
+  }
+
   async function loadItemsFor(version){
     state.version = version;
     try{
-      const data = await GET(version.itemsUrl);
-      const arr = Array.isArray(data) ? data : [];
-      const map=new Map();
-      for(const it of arr){
-        if(!it) continue;
-        const idRaw = it.id || it.item_id || '';
-        if(!idRaw) continue;
-        const ns = it.ns || it.namespace || 'minecraft';
-        const id = String(idRaw);
-        const full = (ns && ns!=='minecraft') ? `${ns}:${id}` : id;
-        map.set(full,{
-          id: full,
-          ns,
-          name: it.name || full.replaceAll('_',' '),
-          icon: it.icon || version.imgUrl(id)
-        });
+      let items = [];
+      if(version.id==='all'){
+        const [van, cust] = await Promise.all([
+          fetchItems(API.itemsVanilla),
+          fetchItems(API.itemsCustom)
+        ]);
+        const map = new Map();
+        for(const it of [...van, ...cust]) if(!map.has(it.key)) map.set(it.key, it);
+        items = Array.from(map.values());
+      }else{
+        items = await fetchItems(version.itemsUrl);
       }
-      state.items = Array.from(map.values());
+      state.items = items;
       renderItems();
     }catch(e){
       console.error('Items load error', e);
@@ -162,10 +191,11 @@
       toast('Не удалось загрузить список предметов', false);
     }
   }
+
   function renderItems(filter=''){
     const q=String(filter).trim().toLowerCase();
     const list = !q ? state.items : state.items.filter(x =>
-      x.id.toLowerCase().includes(q) || (x.name||'').toLowerCase().includes(q));
+      x.key.toLowerCase().includes(q) || (x.name||'').toLowerCase().includes(q));
 
     itemsWrap.innerHTML=''; itemsEmpty.hidden = list.length>0;
 
@@ -174,20 +204,21 @@
       el.className = 'item';
       el.setAttribute('draggable','true');
       el.dataset.ns = it.ns || 'minecraft';
-      el.dataset.id = it.id.includes(':') ? it.id.split(':',2)[1] : it.id;
-      el.title = `${it.name}\n${it.id}`;
+      el.dataset.id = it.id;
+      el.dataset.icon = it.icon;
+      el.title = `${it.name}\n${it.key}`;
       el.innerHTML = `
         <img class="icon" src="${it.icon}" alt="" onerror="this.style.visibility='hidden'">
-        <div class="n">${it.ns}:${el.dataset.id}</div>
+        <div class="n">${it.ns}:${it.id}</div>
       `;
       el.addEventListener('dragstart', (e)=>{
-        const payload = JSON.stringify({ns:el.dataset.ns, id:el.dataset.id, name:it.name});
-        e.dataTransfer.setData('application/json', payload);
+        const payload = JSON.stringify({type:'catalog', ns:el.dataset.ns, id:el.dataset.id, icon:it.icon, name:it.name});
+        e.dataTransfer.setData('application/x-kits', payload);
         e.dataTransfer.setData('text/plain', payload);
       });
       el.addEventListener('dblclick', ()=>{
         const idx = state.active>=0 ? state.active : (state.slots.findIndex(x=>!x) >= 0 ? state.slots.findIndex(x=>!x) : 0);
-        putItemToSlot(idx, {ns:el.dataset.ns, id:el.dataset.id, name:it.name});
+        putItemToSlot(idx, {ns:el.dataset.ns, id:el.dataset.id, name:it.name, icon:it.icon});
       });
       itemsWrap.appendChild(el);
     }
@@ -202,56 +233,95 @@
     btnSave && (btnSave.disabled = !state.dirty || !(nameInput.value||'').trim());
     slotClearBtn && (slotClearBtn.disabled = state.active<0 || !state.slots[state.active]);
   }
+
   function buildSlots(){
     grid.innerHTML='';
     for(let i=0;i<SLOT_COUNT;i++){
       const s=document.createElement('div');
       s.className='slot'; s.dataset.idx=String(i);
-      s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`;
-      s.addEventListener('click', ()=>selectSlot(i));
+      s.innerHTML=`<div class="name dim">#${i+1}</div><div class="qty" hidden>1</div>`;
+      s.addEventListener('click', (ev)=>{
+        if(ev.altKey){ clearSlot(i); return; }
+        selectSlot(i);
+      });
+      s.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); clearSlot(i); });
+
       s.addEventListener('dragover', e=>{e.preventDefault(); s.classList.add('drag-over');});
       s.addEventListener('dragleave', ()=>s.classList.remove('drag-over'));
       s.addEventListener('drop', e=>{
         e.preventDefault(); s.classList.remove('drag-over');
-        try{
-          const data = e.dataTransfer.getData('application/json') || e.dataTransfer.getData('text/plain');
-          const item = JSON.parse(data); putItemToSlot(i, item);
-        }catch(_){}
+        let dataRaw = e.dataTransfer.getData('application/x-kits') || e.dataTransfer.getData('text/plain');
+        if(!dataRaw) return;
+        let data = {}; try{ data = JSON.parse(dataRaw); }catch(_){}
+        if(data.type==='slot' && typeof data.from==='number'){
+          // swap/move
+          const from = data.from, to = i;
+          if(from===to) return;
+          const A = state.slots[from];
+          const B = state.slots[to];
+          state.slots[to] = A ? {...A} : null;
+          state.slots[from] = B ? {...B} : null;
+          renderSlot(from); renderSlot(to);
+          selectSlot(to); updateStats(); markDirty(true);
+          return;
+        }
+        if(data.type==='catalog' && data.id){
+          putItemToSlot(i, data);
+        }
       });
+
       grid.appendChild(s);
       renderSlot(i);
     }
     updateStats();
   }
+
   function renderSlot(i){
     const s=grid.children[i]; if(!s) return;
     const info=state.slots[i];
+    s.classList.remove('active');
     if(!info){
-      s.classList.remove('active');
-      s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`;
+      s.innerHTML=`<div class="name dim">#${i+1}</div><div class="qty" hidden>1</div>`;
+      s.removeAttribute('draggable');
+      s.onmousedown = null;
+      s.ondragstart = null;
       return;
     }
-    const baseId = info.id;
-    const img=state.version.imgUrl(baseId);
+    const img = info.icon || (state.version.id==='all'
+      ? VERSIONS[2].imgUrl(info.id, info.ns)
+      : (info.ns==='minecraft'
+          ? VERSIONS[0].imgUrl(info.id)
+          : VERSIONS[1].imgUrl(`${info.ns}:${info.id}`)));
     const qty=info.qty ?? 1;
     s.innerHTML = `
       <img class="icon" src="${img}" alt="" onerror="this.style.visibility='hidden'">
       <div class="name">${info.display || `${info.ns}:${info.id}`}</div>
       <div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
     s.classList.toggle('active', state.active===i);
+
+    // сделать перетаскиваемым
+    s.setAttribute('draggable','true');
+    s.addEventListener('dragstart', (e)=>{
+      const payload = JSON.stringify({type:'slot', from:i});
+      e.dataTransfer.setData('application/x-kits', payload);
+      e.dataTransfer.setData('text/plain', payload);
+    }, {once:true}); // перевесим при следующем renderSlot
   }
+
   function putItemToSlot(i,item){
     const ns = item.ns || 'minecraft';
-    const id = item.id.includes(':') ? item.id.split(':',2)[1] : item.id;
-    state.slots[i] = { ns, id, qty:1, name:item.name||id, display:'', extra:{ench:[], attr:[]} };
+    const id = (item.id||'').includes(':') ? item.id.split(':',2)[1] : item.id;
+    state.slots[i] = { ns, id, qty:1, name:item.name||id, display:'', icon:item.icon, extra:{ench:[], attr:[]} };
     renderSlot(i); selectSlot(i); updateStats(); markDirty(true);
   }
+
   function selectSlot(i){
     state.active=i;
     $$('.slot',grid).forEach(el=>el.classList.toggle('active', Number(el.dataset.idx)===i));
     const data = state.slots[i];
-    slotEditor.hidden=false; slotNo.textContent=String(i+1);
-    slotQty.value = data?.qty ?? 1;
+    slotEditor.hidden = !data;
+    slotNo.textContent = String(i+1);
+    slotQty.value   = data?.qty ?? 1;
     slotDName.value = data?.display ?? '';
     slotClearBtn.disabled = !data;
 
@@ -261,11 +331,21 @@
     (extra.attr||[]).forEach(addAttrChip);
     serializeExtra();
   }
+
+  function clearSlot(i){
+    if(i<0) return;
+    if(!state.slots[i]) return;
+    state.slots[i]=null;
+    renderSlot(i);
+    if(state.active===i){ selectSlot(i); }
+    updateStats(); markDirty(true);
+  }
+
   function clearActiveSlot(){
     if(state.active<0) return;
-    state.slots[state.active]=null;
-    renderSlot(state.active); selectSlot(state.active); updateStats(); markDirty(true);
+    clearSlot(state.active);
   }
+
   function applySlotEditor(){
     if(state.active<0) return;
     const s = state.slots[state.active] || (state.slots[state.active]={});
@@ -297,20 +377,20 @@
     const pool=[...state.ench.list, ...state.ench.attrs];
     if(!pool.length) return [];
     if(!s) return pool.slice(0,12);
-    return pool.filter(x => x.id.includes(s) || (x.alias||[]).some(a=>a.includes(s))).slice(0,12);
+    return pool.filter(x => x.id.toLowerCase().includes(s) || (x.alias||[]).some(a=>a.toLowerCase().includes(s))).slice(0,12);
   }
   function addEnchChip(e){
     const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='ench'; chip.dataset.id=e.id;
     const max = (state.ench.list.find(x=>x.id===e.id)?.max) || 5;
     const lvl = Math.max(1, Math.min(max, Number(e.lvl||1)));
-    chip.innerHTML = `<span>${e.id}</span> <span class="lvl" data-lvl="${lvl}">${lvl}</span> <button class="x" title="Удалить" aria-label="Удалить">&times;</button>`;
+    chip.innerHTML = `<span>${e.id}</span> <span class="lvl" data-lvl="${lvl}" title="Клик: +1, Shift: −1 (max ${max})">${lvl}</span> <button class="x" title="Удалить" aria-label="Удалить">&times;</button>`;
     enchWrap.appendChild(chip);
   }
   function addAttrChip(a){
     const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='attr'; chip.dataset.id=a.id;
     let val = (a.val==null) ? (state.ench.attrs.find(x=>x.id===a.id)?.def ?? 1) : Number(a.val);
     if(isNaN(val)) val=1;
-    chip.innerHTML = `<span>${a.id}</span> <span class="lvl" data-val="${val}">${val}</span> <button class="x" title="Удалить" aria-label="Удалить">&times;</button>`;
+    chip.innerHTML = `<span>${a.id}</span> <span class="lvl" data-val="${val}" title="Клик: +1, Shift: −1">${val}</span> <button class="x" title="Удалить" aria-label="Удалить">&times;</button>`;
     enchWrap.appendChild(chip);
   }
   function parseExtraFromChips(){
@@ -341,10 +421,12 @@
   }
   function openDD(list){
     if(!list || list.length===0){ closeDD(); return; }
-    ddPortal.innerHTML = list.map((x,i)=>(
-      `<div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}" style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">`+
-      `<span style="color:#e5e7eb">${x.id}</span><small style="color:#94a3b8">${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small></div>`
-    )).join('');
+    ddPortal.innerHTML = list.map((x,i)=>(`
+      <div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}"
+           style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">
+        <span style="color:#e5e7eb">${x.id}</span>
+        <small style="color:#94a3b8">${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small>
+      </div>`)).join('');
     ddPortal.style.display = 'block';
     state.dd.open = true;
     placeDD();
@@ -365,7 +447,7 @@
         namespace: s.ns || 'minecraft',
         item_id:   s.id,
         amount:    Number(s.qty||1),
-        display_name: s.display||'',
+        display_name: s.display || '',
         enchants:  (s.extra?.ench)||[],
         nbt:       (s.extra?.attr)||[],
         slot: i
@@ -400,6 +482,9 @@
       state.slots[idx] = {
         ns, id:iid, qty: Number(it.amount||1),
         display: it.display_name || '',
+        icon: (ns==='minecraft'
+          ? `/static/mc/1.20.6/items/${iid}.png`
+          : `/static/mc/itemsadder/${ns}.${iid}.png`),
         extra:{ ench:Array.isArray(ench)?ench:[], attr:Array.isArray(nbt)?nbt:[] }
       };
       renderSlot(idx);
@@ -414,9 +499,9 @@
     const list = Array.isArray(state.kitsCache)? state.kitsCache : [];
     kitsCountLbl && (kitsCountLbl.textContent = list.length ? `${list.length}` : '—');
     listWrap.innerHTML = list.map(k => `
-      <div class="kit-row${state.kit.id===k.id?' sel':''}" data-id="${k.id}" title="${k.description||''}">
+      <div class="kit-row${state.kit.id===k.id?' sel':''}" data-id="${k.id}" title="${(k.description||'').replaceAll('"','&quot;')}">
         <div class="ttl">${k.name}</div>
-        <div class="sub">${(k.created_at||'').toString().replace('T',' ').slice(0,19)}</div>
+        <div class="sub">${(k.created_at||'').toString().replace('T',' ').slice(0,19)} · ${(k.items||[]).length} items</div>
       </div>
     `).join('');
     $$('.kit-row', listWrap).forEach(el=>{
@@ -461,7 +546,6 @@
       markDirty(false);
       await loadKitsList();
       highlightSelected(state.kit.id);
-      // повторно открыть по id (точно тот же)
       const fresh = state.kitsCache.find(k=>Number(k.id)===Number(state.kit.id));
       if(fresh) kitLoadToUI(fresh);
     }catch(e){
@@ -513,8 +597,8 @@
       const v = VERSIONS.find(x=>x.id===verSelect.value) || VERSIONS[0];
       loadItemsFor(v);
     });
-    $('#item-search',root)?.addEventListener('input', (e)=>renderItems(e.target.value));
-    $('#item-refresh',root)?.addEventListener('click', ()=>loadItemsFor(state.version));
+    itemSearch?.addEventListener('input', (e)=>renderItems(e.target.value));
+    itemRefresh?.addEventListener('click', ()=>loadItemsFor(state.version));
 
     // слоты/редактор
     slotClearBtn?.addEventListener('click', clearActiveSlot);
@@ -529,10 +613,34 @@
     slotQty?.addEventListener('input', applySlotEditor);
     slotDName?.addEventListener('input', applySlotEditor);
 
-    // энчанты/атрибуты
+    // чипы: удалить / изменить lvl кликом
     enchWrap?.addEventListener('click', (e)=>{
-      const x = e.target.closest('.x'); if(x){ x.parentElement.remove(); serializeExtra(); enchInput.focus(); markDirty(true); }
+      const chip = e.target.closest('.chip');
+      if(!chip) return;
+      if(e.target.classList.contains('x')){
+        chip.remove(); serializeExtra(); enchInput.focus(); markDirty(true);
+        return;
+      }
+      if(e.target.classList.contains('lvl')){
+        // инк/дек
+        if(chip.dataset.type==='ench'){
+          const id = chip.dataset.id;
+          const max = (state.ench.list.find(x=>x.id===id)?.max) || 5;
+          let lvl = Number(e.target.dataset.lvl||1);
+          lvl += (e.shiftKey?-1:1);
+          lvl = Math.max(1, Math.min(max, lvl));
+          e.target.dataset.lvl = String(lvl);
+          e.target.textContent = String(lvl);
+        }else{
+          let val = Number(e.target.dataset.val||1);
+          val += (e.shiftKey?-1:1);
+          e.target.dataset.val = String(val);
+          e.target.textContent = String(val);
+        }
+        serializeExtra(); markDirty(true);
+      }
     });
+
     enchInput?.addEventListener('keydown', (e)=>{
       if(e.key==='Backspace' && !enchInput.value){
         const chips = $$('.chip',enchWrap); const last = chips[chips.length-1];
@@ -541,7 +649,7 @@
     });
     enchClearBtn?.addEventListener('click', ()=>{ enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; enchInput.focus(); markDirty(true); });
 
-    function showDD(){ const list = findSuggestions(enchInput.value); state.dd.idx=0; state.dd.data=list; openDD(list); }
+    const showDD = ()=>{ const list = findSuggestions(enchInput.value); state.dd.idx=0; state.dd.data=list; openDD(list); };
     enchInput?.addEventListener('focus', showDD);
     enchInput?.addEventListener('input', showDD);
     enchInput?.addEventListener('keydown', (e)=>{
@@ -583,6 +691,10 @@
   function init(){
     if(!grab() || state.inited) return;
     state.inited=true;
+
+    // если в select уже есть опции в разметке — перезапишем нашими (Vanilla/Custom/All)
+    if(verSelect) verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
+
     buildSlots();
     bind();
     loadItemsFor(state.version);

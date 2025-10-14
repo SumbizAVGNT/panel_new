@@ -1,16 +1,20 @@
+# app/routes/admin/promocode.py
+from __future__ import annotations
 
-from flask import Blueprint, render_template, request, jsonify, current_app, g, session
-from flask_login import login_required
 import os
+import re
 import json
 import random
-import re
 from datetime import datetime
-from typing import Optional, Iterable, Any, Sequence, Dict, List, Tuple
+from typing import Optional, Iterable, List, Tuple
 
+from flask import Blueprint, render_template, request, jsonify, current_app, g, session
+
+from ...decorators import login_required
 from ...database import get_db_connection, MySQLConnection, init_db
+from . import admin_bp
 
-bp = Blueprint("admin_gameservers_promocode", __name__)
+bp = Blueprint("promocode", __name__, url_prefix="/promocode")
 
 # =========================================================
 # utils
@@ -298,32 +302,43 @@ def api_kits_delete():
 def api_promo_create():
     js = request.get_json(silent=True) or {}
     code = (js.get("code") or "").strip().upper() or _rand_code()
-    fields = {
-        "code": code,
-        "enabled": int(js.get("enabled") or 1),
-        "realm": (js.get("realm") or "").strip() or None,
-        "expires_at": (js.get("expires_at") or "").strip() or None,
-        "amount": js.get("amount"),
-        "currency_key": (js.get("currency_key") or "").strip() or None,
-        "uses_total": js.get("uses_total"),
-        "per_player_uses": js.get("per_player_uses"),
-        "cooldown_seconds": js.get("cooldown_seconds"),
-        "kit_id": js.get("kit_id"),
-        "created_by": _actor_name(),
-    }
-    cols, vals = zip(*fields.items())
+    amount = float(js.get("amount") or 0)
+    currency = (js.get("currency_key") or os.getenv("POINTS_KEY", "rubs")).strip()
+    realm = (js.get("realm") or "").strip() or None
+    kit_id = js.get("kit_id")
+    uses = int(js.get("uses") or 1)
+    expires_at = (js.get("expires_at") or "").strip() or None
+    created_by = _actor_name()
+
+    if amount <= 0 and not kit_id:
+        return _err("amount > 0 or kit_id required")
+
     with get_db_connection() as conn:
         _ensure_schema(conn)
+        if kit_id:
+            kit = _row(conn, "SELECT id FROM promo_kits WHERE id=?", (int(kit_id),))
+            if not kit:
+                return _err("kit_id not found")
+
         conn.execute(
-            f"""
-            INSERT INTO promo_codes({','.join(cols)})
-            VALUES ({','.join('?' for _ in cols)})
+            """
+            INSERT INTO promo_codes(code, amount, currency_key, realm, kit_id, uses_total, uses_left, expires_at, created_by)
+            VALUES (?,?,?,?,?,?,?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              amount=VALUES(amount),
+              currency_key=VALUES(currency_key),
+              realm=VALUES(realm),
+              kit_id=VALUES(kit_id),
+              uses_total=VALUES(uses_total),
+              uses_left=VALUES(uses_left),
+              expires_at=VALUES(expires_at),
+              created_by=VALUES(created_by)
             """,
-            tuple(vals),
+            (code, amount, currency, realm, int(kit_id) if kit_id else None, uses, uses, expires_at, created_by),
         )
         conn.commit()
-        pid = conn.lastrowid
-    return _ok({"id": pid, "code": code}, id=pid, code=code)
+        pid = int(_row(conn, "SELECT id FROM promo_codes WHERE code=?", (code,))["id"])
+    return _ok({"id": pid, "code": code})
 
 @bp.post("/api/promo/update")
 @login_required
@@ -457,3 +472,264 @@ def api_promo_list():
             """,
         )
     return _ok(rows)
+
+# =========================================================
+# API: LuckPerms groups for a code
+# =========================================================
+
+@bp.get("/api/promo/groups/list")
+@login_required
+def api_promo_groups_list():
+    code_id = request.args.get("code_id", type=int)
+    if not code_id:
+        return _err("code_id required")
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        rows = _rows(
+            conn,
+            """
+            SELECT id, code_id, group_name, temp_seconds, context_server, context_world, priority, created_at
+            FROM promo_groups
+            WHERE code_id=?
+            ORDER BY priority ASC, id ASC
+            """,
+            (code_id,),
+        )
+    return _ok(rows)
+
+@bp.post("/api/promo/groups/save")
+@login_required
+def api_promo_groups_save():
+    js = request.get_json(silent=True) or {}
+    code_id = js.get("code_id")
+    groups = js.get("groups") or []
+    if not code_id:
+        return _err("code_id required")
+
+    # sanitize
+    bulk = []
+    for i, g in enumerate(groups, start=1):
+        name = (g.get("group_name") or "").strip()
+        if not name:
+            continue
+        tmp = g.get("temp_seconds")
+        try:
+            tmp = int(tmp) if tmp is not None and str(tmp) != "" else None
+        except Exception:
+            tmp = None
+        srv = (g.get("context_server") or "").strip() or None
+        wrd = (g.get("context_world") or "").strip() or None
+        pr  = g.get("priority")
+        try:
+            pr = int(pr) if pr is not None and str(pr) != "" else i
+        except Exception:
+            pr = i
+        bulk.append((int(code_id), name, tmp, srv, wrd, pr))
+
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        conn.execute("DELETE FROM promo_groups WHERE code_id=?", (int(code_id),))
+        if bulk:
+            conn.executemany(
+                """
+                INSERT INTO promo_groups(code_id, group_name, temp_seconds, context_server, context_world, priority)
+                VALUES (?,?,?,?,?,?)
+                """,
+                bulk,
+            )
+        conn.commit()
+    return _ok({"count": len(bulk)})
+
+# =========================================================
+# API: redemptions (preview + redeem + history)
+# =========================================================
+
+def _load_code_for_update(conn: MySQLConnection, code: str) -> Optional[dict]:
+    return _row(conn, "SELECT * FROM promo_codes WHERE code=? FOR UPDATE", (code,))
+
+def _validate_code_row(p: dict, *, realm: Optional[str]) -> Optional[str]:
+    if not p:
+        return "code not found"
+    if int(p.get("uses_left") or 0) <= 0:
+        return "no uses left"
+    if p.get("expires_at"):
+        try:
+            exp = datetime.fromisoformat(str(p["expires_at"]).replace(" ", "T"))
+            if datetime.utcnow() > exp:
+                return "code expired"
+        except Exception:
+            pass
+    if p.get("realm") and realm and str(p["realm"]).strip() != str(realm).strip():
+        return "code is restricted to another realm"
+    return None
+
+@bp.post("/api/promo/redeem_preview")
+@login_required
+def api_promo_redeem_preview():
+    js = request.get_json(silent=True) or {}
+    code = (js.get("code") or "").strip().upper()
+    realm = (js.get("realm") or "").strip() or None
+    if not code:
+        return _err("code required")
+
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        p = _row(conn, "SELECT * FROM promo_codes WHERE code=?", (code,))
+        err = _validate_code_row(p, realm=realm)
+        if err:
+            return _err(err, 400, code=code)
+
+        out = {
+            "code_id": int(p["id"]),
+            "code": code,
+            "amount": float(p["amount"] or 0),
+            "currency_key": p["currency_key"],
+            "kit_id": p.get("kit_id"),
+            "uses_left": int(p.get("uses_left") or 0),
+            "uses_total": int(p.get("uses_total") or 0),
+            "realm": p.get("realm"),
+            "expires_at": p.get("expires_at"),
+            "kit_items": _kit_items(conn, int(p["kit_id"])) if p.get("kit_id") else [],
+        }
+        out["uses_left_after"] = max(0, int(out["uses_left"]) - 1)
+        return _ok(out)
+
+@bp.post("/api/promo/redeem")
+@login_required
+def api_promo_redeem():
+    js = request.get_json(silent=True) or {}
+    code = (js.get("code") or "").strip().upper()
+    uuid = (js.get("uuid") or "").strip()
+    username = (js.get("username") or "").strip() or None
+    realm = (js.get("realm") or "").strip() or None
+    ip = (js.get("ip") or request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+
+    if not code:
+        return _err("code required")
+    if not uuid:
+        return _err("uuid required")
+
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        p = _load_code_for_update(conn, code)
+        err = _validate_code_row(p, realm=realm)
+        if err:
+            return _err(err, 400, code=code)
+
+        code_id = int(p["id"])
+        amount = float(p.get("amount") or 0.0)
+        currency_key = p.get("currency_key")
+        kit_id = p.get("kit_id")
+        kit_items = _kit_items(conn, int(kit_id)) if kit_id else []
+
+        conn.execute(
+            """
+            INSERT INTO promo_redemptions(code_id, uuid, username, realm, granted_amount, kit_id, granted_items_json, ip)
+            VALUES (?,?,?,?,?,?,?,?)
+            """,
+            (
+                code_id, uuid, username, realm,
+                amount if amount > 0 else None,
+                int(kit_id) if kit_id else None,
+                _json(kit_items),
+                ip or None,
+            ),
+        )
+        conn.execute("UPDATE promo_codes SET uses_left = uses_left - 1 WHERE id = ? AND uses_left > 0", (code_id,))
+        conn.commit()
+
+        return _ok({
+            "code": code,
+            "code_id": code_id,
+            "uses_left": int(p["uses_left"]) - 1,
+            "amount": amount,
+            "currency_key": currency_key,
+            "kit_id": kit_id,
+            "kit_items": kit_items,
+        })
+
+@bp.get("/api/promo/redemptions")
+@login_required
+def api_promo_redemptions():
+    code = (request.args.get("code") or "").strip().upper()
+    code_id = request.args.get("code_id", type=int)
+    uuid = (request.args.get("uuid") or "").strip()
+    username = (request.args.get("username") or "").strip()
+    q = (request.args.get("q") or "").strip()
+    limit = max(1, min(500, int(request.args.get("limit") or 100)))
+
+    where = []
+    params: List[object] = []
+    if code_id:
+        where.append("r.code_id = ?")
+        params.append(code_id)
+    elif code:
+        where.append("r.code_id = (SELECT id FROM promo_codes WHERE code = ?)")
+        params.append(code)
+    if uuid:
+        where.append("r.uuid = ?")
+        params.append(uuid)
+    if username:
+        where.append("r.username = ?")
+        params.append(username)
+    if q:
+        where.append("(r.username LIKE ? OR r.uuid LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        rows = _rows(
+            conn,
+            f"""
+            SELECT r.id, r.code_id, (SELECT code FROM promo_codes WHERE id=r.code_id) AS code,
+                   r.uuid, r.username, r.realm, r.granted_amount, r.kit_id, r.ip, r.created_at
+            FROM promo_redemptions r
+            {where_sql}
+            ORDER BY r.id DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        )
+    return _ok(rows)
+
+# короткий алиас под фронтовой путь /api/promo/reds
+@bp.get("/api/promo/reds")
+@login_required
+def api_promo_reds_alias():
+    return api_promo_redemptions()
+
+# =========================================================
+# Register under /admin
+# =========================================================
+
+admin_bp.register_blueprint(bp)
+
+# UI aliases
+admin_bp.add_url_rule("/gameservers/promocode", view_func=ui_index, methods=["GET"], endpoint="gameservers_promocode_index_no_slash")
+admin_bp.add_url_rule("/gameservers/promocode/", view_func=ui_index, methods=["GET"], endpoint="gameservers_promocode_index")
+
+# items
+admin_bp.add_url_rule("/gameservers/promocode/api/items/vanilla", view_func=api_items_vanilla, methods=["GET"], endpoint="gameservers_promocode_api_items_vanilla")
+admin_bp.add_url_rule("/gameservers/promocode/api/items/custom",  view_func=api_items_custom,  methods=["GET"], endpoint="gameservers_promocode_api_items_custom")
+
+# kits
+admin_bp.add_url_rule("/gameservers/promocode/api/kits/list",   view_func=api_kits_list,   methods=["GET"],  endpoint="gameservers_promocode_api_kits_list")
+admin_bp.add_url_rule("/gameservers/promocode/api/kits/save",   view_func=api_kits_save,   methods=["POST"], endpoint="gameservers_promocode_api_kits_save")
+admin_bp.add_url_rule("/gameservers/promocode/api/kits/delete", view_func=api_kits_delete, methods=["POST"], endpoint="gameservers_promocode_api_kits_delete")
+
+# promo CRUD + details
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/create",  view_func=api_promo_create,  methods=["POST"], endpoint="gameservers_promocode_api_promo_create")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/update",  view_func=api_promo_update,  methods=["POST"], endpoint="gameservers_promocode_api_promo_update")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/delete",  view_func=api_promo_delete,  methods=["POST"], endpoint="gameservers_promocode_api_promo_delete")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/details", view_func=api_promo_details, methods=["GET"],  endpoint="gameservers_promocode_api_promo_details")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/info",    view_func=api_promo_info,    methods=["GET"],  endpoint="gameservers_promocode_api_promo_info")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/list",    view_func=api_promo_list,    methods=["GET"],  endpoint="gameservers_promocode_api_promo_list")
+
+# promo groups
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/groups/list", view_func=api_promo_groups_list, methods=["GET"],  endpoint="gameservers_promocode_api_promo_groups_list")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/groups/save", view_func=api_promo_groups_save, methods=["POST"], endpoint="gameservers_promocode_api_promo_groups_save")
+
+# redemptions
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/redemptions", view_func=api_promo_redemptions, methods=["GET"], endpoint="gameservers_promocode_api_promo_redemptions")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/reds",        view_func=api_promo_reds_alias,  methods=["GET"], endpoint="gameservers_promocode_api_promo_reds")

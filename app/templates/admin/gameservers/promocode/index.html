@@ -1,100 +1,176 @@
 {% extends "layout/base.html" %}
-{% block title %}Promocodes & Kits Management{% endblock %}
+{% block title %}Promocode & Kits{% endblock %}
 {% block content %}
 <style>
-/* tabs */
+/* Tabs */
 .tabs {
   display: flex;
   gap: 8px;
   margin: 8px 0 14px;
 }
-.tabs .tab-btn {
-  border-radius: 12px;
-  border: 1px solid rgba(148,163,184,.22);
-  background: rgba(13,17,23,.55);
-  color: #e5e7eb;
-  padding: .5rem .9rem;
-  font-weight: 600;
-  letter-spacing: .015em;
-  transition: .2s;
+.tabs .tab-btn{
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.22);
+  background:rgba(13,17,23,.55);
+  color:#e5e7eb;
+  padding:.5rem .9rem;
+  font-weight:600;
+  letter-spacing:.015em;
+  transition:.2s;
 }
-.tabs .tab-btn:hover {
-  transform: translateY(-1px);
-  background: rgba(13,17,23,.7);
+.tabs .tab-btn:hover{ transform:translateY(-1px) }
+.tabs .tab-btn.active{
+  background:#0f172a;
+  border-color:rgba(148,163,184,.35);
 }
-.tabs .tab-btn.active {
-  background: #0f172a;
-  border-color: rgba(148,163,184,.35);
+.tab-pane{
+  display:none;
+  opacity:0;
+  transform:translateY(6px);
+  transition:opacity .2s, transform .2s;
 }
-.tab-pane {
-  display: none;
-  opacity: 0;
-  transform: translateY(6px);
-  transition: .2s;
+.tab-pane.active{
+  display:block;
+  opacity:1;
+  transform:none;
 }
-.tab-pane.active {
-  display: block;
-  opacity: 1;
-  transform: none;
+
+/* small helpers */
+.header-actions .btn {
+  --bs-btn-padding-y: .25rem;
+  --bs-btn-padding-x: .5rem;
 }
 </style>
 
 <div class="container-xxl py-3">
   <div class="d-flex align-items-center justify-content-between mb-2">
-    <h2 class="m-0">Promocodes & Kits Management</h2>
-    <a class="btn btn-sm btn-outline-light" href="/admin" title="Back to Admin Dashboard">
-      <i class="bi bi-house"></i>
-      <span class="d-none d-sm-inline ms-1">Dashboard</span>
-    </a>
+    <h2 class="m-0">Promocode</h2>
+    <div class="header-actions d-flex align-items-center gap-2">
+      <button id="copyLinkBtn" class="btn btn-sm btn-outline-secondary" type="button" title="Скопировать ссылку на вкладку">
+        <i class="bi bi-link-45deg"></i>
+      </button>
+      <a class="btn btn-sm btn-outline-light" href="/admin" title="Админ-панель">
+        <i class="bi bi-house"></i>
+      </a>
+    </div>
   </div>
 
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="promo">
+  <div class="tabs" role="tablist" aria-label="Promocode tabs">
+    <button class="tab-btn active"
+            id="tabbtn-promo"
+            role="tab"
+            aria-selected="true"
+            aria-controls="tab-promo"
+            data-tab="promo">
       <i class="bi bi-megaphone me-1"></i>Promocodes
     </button>
-    <button class="tab-btn" data-tab="kits">
+    <button class="tab-btn"
+            id="tabbtn-kits"
+            role="tab"
+            aria-selected="false"
+            aria-controls="tab-kits"
+            data-tab="kits">
       <i class="bi bi-box-seam me-1"></i>Kits
     </button>
   </div>
 
-  <div id="tab-promo" class="tab-pane active">
+  <div id="tab-promo" class="tab-pane active" role="tabpanel" aria-labelledby="tabbtn-promo">
     {% include "admin/gameservers/promocode/promocode.html" %}
   </div>
 
-  <div id="tab-kits" class="tab-pane">
+  <div id="tab-kits" class="tab-pane" role="tabpanel" aria-labelledby="tabbtn-kits">
     {% include "admin/gameservers/promocode/kits.html" %}
   </div>
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  const tabButtons = document.querySelectorAll('.tab-btn');
-  const tabPanes = document.querySelectorAll('.tab-pane');
+(function(){
+  const TAB_KEY = 'admin_promocode_active_tab';
+  const tabs = Array.from(document.querySelectorAll('.tab-btn'));
+  const panes = {
+    promo: document.getElementById('tab-promo'),
+    kits:  document.getElementById('tab-kits')
+  };
 
-  function switchTab(tabId) {
-    tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabId));
-    tabPanes.forEach(pane => pane.classList.toggle('active', pane.id === `tab-${tabId}`));
-
-    // Call init function for the active tab if it exists
-    const initFuncName = `${tabId}Init`;
-    if (typeof window[initFuncName] === 'function') {
-      window[initFuncName]();
-    }
+  function setActive(tab){
+    if(!panes[tab]) return;
+    tabs.forEach(btn => {
+      const isActive = btn.dataset.tab === tab;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      (panes[btn.dataset.tab] || {}).classList.toggle('active', isActive);
+      if (isActive) btn.focus({preventScroll:true});
+    });
+    // обновляем URL-хэш без прокрутки страницы
+    try {
+      const url = new URL(window.location);
+      url.hash = tab;
+      history.replaceState(null, '', url);
+    } catch(e){}
+    // запоминаем выбор
+    try { localStorage.setItem(TAB_KEY, tab); } catch(e){}
   }
 
-  tabButtons.forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  // начальная вкладка из хэша -> из localStorage -> по умолчанию promo
+  function resolveInitialTab(){
+    const hash = (location.hash || '').replace('#','').trim();
+    if (hash && panes[hash]) return hash;
+    try {
+      const saved = localStorage.getItem(TAB_KEY);
+      if (saved && panes[saved]) return saved;
+    } catch(e){}
+    return 'promo';
+  }
+
+  // обработчики кликов по кнопкам
+  tabs.forEach(b => b.addEventListener('click', () => setActive(b.dataset.tab)));
+
+  // клавиатурная навигация стрелками
+  document.querySelector('.tabs').addEventListener('keydown', (e) => {
+    const idx = tabs.findIndex(b => b.classList.contains('active'));
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      let next = idx + (e.key === 'ArrowRight' ? 1 : -1);
+      if (next < 0) next = tabs.length - 1;
+      if (next >= tabs.length) next = 0;
+      setActive(tabs[next].dataset.tab);
+    }
   });
 
-  // Initialize the active tab
-  const activeTab = document.querySelector('.tab-btn.active');
-  if (activeTab) {
-    switchTab(activeTab.dataset.tab);
-  }
-});
+  // реакция на смену хэша (например, при ручном вводе #kits)
+  window.addEventListener('hashchange', () => {
+    const h = (location.hash || '').replace('#','');
+    if (h && panes[h]) setActive(h);
+  });
+
+  // кнопка "скопировать ссылку"
+  const copyBtn = document.getElementById('copyLinkBtn');
+  copyBtn?.addEventListener('click', async () => {
+    const active = tabs.find(b => b.classList.contains('active'))?.dataset.tab || 'promo';
+    const url = new URL(window.location);
+    url.hash = active;
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      copyBtn.classList.remove('btn-outline-secondary');
+      copyBtn.classList.add('btn-success');
+      copyBtn.innerHTML = '<i class="bi bi-check2"></i>';
+      setTimeout(() => {
+        copyBtn.classList.add('btn-outline-secondary');
+        copyBtn.classList.remove('btn-success');
+        copyBtn.innerHTML = '<i class="bi bi-link-45deg"></i>';
+      }, 1200);
+    } catch(e){
+      // graceful fallback: просто обновим hash — пользователь сможет скопировать из адресной строки
+      history.replaceState(null, '', url);
+    }
+  });
+
+  // инициализация
+  setActive(resolveInitialTab());
+})();
 </script>
 
-{# Modules (paths are important!) #}
+{# Модули (пути важны!) #}
 {% include "admin/gameservers/promocode/promocode_script.html" %}
 {% include "admin/gameservers/promocode/kits_script.html" %}
 {% endblock %}

@@ -13,11 +13,11 @@
     #kits-root .builder{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
     @media (max-width:1100px){#kits-root .builder{grid-template-columns:1fr}}
     #kits-root .slot-grid{display:grid;grid-template-columns:repeat(9,1fr);gap:10px}
-    #kits-root .slot{position:relative;background:rgba(2,6,23,.5);border:1px dashed rgba(148,163,184,.3);border-radius:12px;min-height:62px;display:grid;place-items:center;color:#cbd5e1;cursor:pointer;transition:.15s}
+    #kits-root .slot{position:relative;background:rgba(2,6,23,.5);border:1px dashed rgba(148,163,184,.3);border-radius:12px;min-height:62px;display:grid;place-items:center;color:#cbd5e1;cursor:pointer;transition:.15s; user-select:none}
     #kits-root .slot:hover{border-color:rgba(148,163,184,.5);transform:translateY(-1px)}
     #kits-root .slot.active{outline:2px solid #60a5fa;outline-offset:2px}
     #kits-root .slot .qty{position:absolute;right:6px;bottom:4px;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.35);border-radius:8px;padding:2px 6px;font-size:.72rem}
-    #kits-root .slot .name{max-width:90%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #kits-root .slot .name{max-width:90%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.8rem}
     #kits-root .slot .icon{width:30px;height:30px;image-rendering:pixelated;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6);display:block}
     #kits-root .slot.drag-over{background:rgba(96,165,250,.08);border-style:solid}
 
@@ -53,7 +53,7 @@
     #kits-root .dd-item:hover,#kits-root .dd-item.act{background:rgba(96,165,250,.12)}
     #kits-root .chips{position:relative;z-index:51}
     #kits-root .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.6);margin:.25rem .25rem 0 0}
-    #kits-root .chip .lvl{font-weight:700}
+    #kits-root .chip .lvl{font-weight:700; cursor:pointer}
     #kits-root .chip .x{border:0;background:transparent;color:#e5e7eb;line-height:1;padding:0 .1rem;cursor:pointer}
     #kits-root #ench-input{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.55);color:#e5e7eb;border-radius:10px;padding:.48rem .6rem;width:100%}
   </style>
@@ -100,7 +100,7 @@
         <div id="slot-editor" class="mt-3" hidden>
           <div class="d-flex align-items-center justify-content-between">
             <div class="sec-title">Редактор слота <span id="slot-no" class="pill">—</span></div>
-            <div class="hint">клик по слоту — выбрать, перетянуть предмет — положить</div>
+            <div class="hint">клик по слоту — выбрать; Alt+клик или ПКМ — очистить; перетянуть предмет — положить/переместить</div>
           </div>
           <div class="row g-2 mt-1">
             <div class="col-md-4">
@@ -128,7 +128,7 @@
               </div>
               <div id="slot-enchants" class="chips mt-2"></div>
               <div class="d-flex justify-content-between mt-1">
-                <div class="form-text text-secondary">Enter — добавить выбранную подсказку; Backspace на пустом поле — удалить последний чип.</div>
+                <div class="form-text text-secondary">Enter — добавить; клик по уровню на чипе — +1 (Shift — −1); Backspace на пустом поле — удалить последний чип.</div>
                 <button id="ench-clear" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-octagon me-1"></i>Очистить</button>
               </div>
               <input id="slot-extra" type="hidden" value="">
@@ -145,6 +145,7 @@
             <select id="ver-select" class="form-select form-select-sm" style="min-width:220px">
               <option value="vanilla" selected>Vanilla</option>
               <option value="custom">Custom (если есть)</option>
+              <option value="all">Все</option>
             </select>
             <div class="input-group input-group-sm" style="min-width:320px">
               <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -181,7 +182,8 @@
         <div class="sec-title mb-1">Подсказки</div>
         <ul class="mb-0 text-secondary small">
           <li>Перетащите предмет из каталога на слот (1–27).</li>
-          <li>Клик по слоту — редактирование количества, имени и чар.</li>
+          <li>Клик по слоту — редактирование, Alt+клик или ПКМ — очистить слот.</li>
+          <li>Можно перетаскивать между слотами для перемещения/обмена.</li>
           <li>«Сохранить» станет активной, когда есть изменения.</li>
         </ul>
       </div>
@@ -202,11 +204,23 @@ window.kitsInit = function() {
   const $  = (q, d=root)=>d.querySelector(q);
   const $$ = (q, d=root)=>Array.from(d.querySelectorAll(q));
   const SLOT_COUNT = 27;
+
+  // расширенный список: энчанты + популярные атрибуты (для удобства поиска)
   const ENCHANTS = [
     "sharpness","smite","bane_of_arthropods","looting","unbreaking","mending","efficiency","fortune",
     "protection","projectile_protection","blast_protection","fire_protection","feather_falling",
-    "power","punch","flame","infinity","thorns","respiration","aqua_affinity","soul_speed","swift_sneak"
+    "power","punch","flame","infinity","thorns","respiration","aqua_affinity","soul_speed","swift_sneak",
+    "depth_strider","frost_walker","silk_touch","knockback","fire_aspect","sweeping_edge","luck_of_the_sea","lure",
+    // attrs (на чипах будут храниться как обычные записи {id,lvl})
+    "attack_damage","attack_speed","max_health","movement_speed","armor","armor_toughness"
   ];
+
+  const iconUrl = (ns, id, hint) => {
+    if (hint) return hint;
+    ns = ns || 'minecraft';
+    if (ns === 'minecraft') return `/static/mc/1.20.6/items/${id}.png`;
+    return `/static/mc/itemsadder/${ns}.${id}.png`;
+  };
 
   const toast = (msg, type="info")=>{
     const id = "t"+Date.now();
@@ -231,50 +245,14 @@ window.kitsInit = function() {
     list: [],
     selectedId: null,
     kit: null,      // {id,name,description,slots:[{namespace,item_id,amount,display_name,enchants,slot}|null]*27}
-    items: [],      // catalog
-    dirty: false
+    items: [],      // catalog: {id, ns, name, icon}
+    dirty: false,
+    _sel: null
   };
 
   const markDirty = (v=true)=>{
     state.dirty = v;
     $('#kit-save').disabled = !state.dirty || !state.kit || !state.kit.name?.trim();
-  };
-
-  const renderSlots = ()=>{
-    const grid = $('#slot-grid');
-    grid.innerHTML = "";
-    for (let i=0;i<SLOT_COUNT;i++){
-      const it = state.kit?.slots?.[i] || null;
-      const el = document.createElement('div');
-      el.className = "slot";
-      el.dataset.idx = i;
-
-      if (it){
-        el.innerHTML = `
-          <div class="name">${(it.namespace||'minecraft')}:${it.item_id}</div>
-          <span class="qty">${it.amount||1}</span>`;
-      } else {
-        el.innerHTML = `<span class="dim">#${i+1}</span>`;
-      }
-
-      // drag&drop
-      el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('drag-over'); });
-      el.addEventListener('dragleave', ()=> el.classList.remove('drag-over'));
-      el.addEventListener('drop', e=>{
-        e.preventDefault(); el.classList.remove('drag-over');
-        const raw = e.dataTransfer.getData('text/plain');
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        state.kit.slots[i] = { namespace: data.ns||'minecraft', item_id: data.id, amount: 1, display_name: "", enchants: [], slot: i };
-        renderSlots();
-        selectSlot(i);
-        markDirty(true);
-      });
-
-      el.addEventListener('click', ()=> selectSlot(i));
-      grid.appendChild(el);
-    }
-    updateStats();
   };
 
   const updateStats = ()=>{
@@ -288,7 +266,7 @@ window.kitsInit = function() {
 
   const selectSlot = (idx)=>{
     state._sel = idx;
-    $$('.slot').forEach(x=>x.classList.toggle('active', x.dataset.idx==idx));
+    $$('.slot').forEach(x=>x.classList.toggle('active', Number(x.dataset.idx)===idx));
     const it = state.kit?.slots?.[idx] || null;
     $('#slot-editor').hidden = !it;
     $('#slot-no').textContent = it ? ("#"+(idx+1)) : "—";
@@ -299,10 +277,105 @@ window.kitsInit = function() {
     (it?.enchants||[]).forEach((e,i)=>{
       const chip = document.createElement('span');
       chip.className = "chip";
-      chip.innerHTML = `<span>${e.id}</span><span class="lvl">${e.lvl||1}</span><button class="x" title="Удалить">&times;</button>`;
-      chip.querySelector('.x').onclick = ()=>{ it.enchants.splice(i,1); selectSlot(idx); markDirty(true); };
+      chip.innerHTML = `<span>${e.id}</span><span class="lvl" title="Клик: +1, Shift: −1">${e.lvl||1}</span><button class="x" title="Удалить">&times;</button>`;
+      chip.querySelector('.x').onclick = (ev)=>{ ev.stopPropagation(); it.enchants.splice(i,1); selectSlot(idx); markDirty(true); };
+      chip.querySelector('.lvl').onclick = (ev)=>{
+        ev.stopPropagation();
+        const up = !ev.shiftKey;
+        const cur = Number(e.lvl||1);
+        e.lvl = Math.max(1, Math.min(10, cur + (up?1:-1)));
+        selectSlot(idx); markDirty(true);
+      };
+      chip.addEventListener('auxclick', (ev)=>{ // средняя кнопка — удалить
+        if (ev.button===1){ it.enchants.splice(i,1); selectSlot(idx); markDirty(true); }
+      });
       wrap.appendChild(chip);
     });
+    updateStats();
+  };
+
+  const renderSlots = ()=>{
+    const grid = $('#slot-grid');
+    const prevSel = state._sel;
+    grid.innerHTML = "";
+    for (let i=0;i<SLOT_COUNT;i++){
+      const it = state.kit?.slots?.[i] || null;
+      const el = document.createElement('div');
+      el.className = "slot";
+      el.dataset.idx = i;
+
+      if (it){
+        const ico = iconUrl(it.namespace, it.item_id, it.icon);
+        el.innerHTML = `
+          <img class="icon" alt="${(it.namespace||'minecraft')}:${it.item_id}" src="${ico}" onerror="this.style.visibility='hidden'">
+          <div class="name">${(it.namespace||'minecraft')}:${it.item_id}</div>
+          <span class="qty">${it.amount||1}</span>`;
+        el.setAttribute('draggable','true');
+        el.addEventListener('dragstart', e=>{
+          e.dataTransfer.setData('application/x-slot', JSON.stringify({from:i, move:true}));
+          // fallback: also put text/plain
+          e.dataTransfer.setData('text/plain', JSON.stringify({from:i, move:true, type:'slot'}));
+        });
+      } else {
+        el.innerHTML = `<span class="dim">#${i+1}</span>`;
+      }
+
+      // drag&drop (item from catalog OR slot move)
+      el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('drag-over'); });
+      el.addEventListener('dragleave', ()=> el.classList.remove('drag-over'));
+      el.addEventListener('drop', e=>{
+        e.preventDefault(); el.classList.remove('drag-over');
+        const raw = e.dataTransfer.getData('application/x-slot') || e.dataTransfer.getData('text/plain');
+        if (!raw) return;
+        let data = {};
+        try{ data = JSON.parse(raw); }catch(_){}
+        // move from another slot
+        if (data && typeof data.from === 'number'){
+          const from = data.from, to = i;
+          if (from===to) return;
+          const a = state.kit.slots[from];
+          const b = state.kit.slots[to];
+          state.kit.slots[to] = a ? {...a, slot: to} : null;
+          state.kit.slots[from] = b ? {...b, slot: from} : null;
+          renderSlots();
+          selectSlot(to);
+          markDirty(true);
+          return;
+        }
+        // from catalog
+        if (data && data.id){
+          state.kit.slots[i] = { namespace: data.ns||'minecraft', item_id: data.id, amount: 1, display_name: "", enchants: [], slot: i, icon: data.icon };
+          renderSlots();
+          selectSlot(i);
+          markDirty(true);
+        }
+      });
+
+      el.addEventListener('click', (ev)=>{
+        if (ev.altKey){ // быстрый очист
+          if (state.kit.slots[i]) {
+            state.kit.slots[i] = null;
+            renderSlots();
+            selectSlot(i);
+            markDirty(true);
+          }
+          return;
+        }
+        selectSlot(i);
+      });
+      el.addEventListener('contextmenu', (ev)=>{
+        ev.preventDefault();
+        if (state.kit.slots[i]){
+          state.kit.slots[i] = null;
+          renderSlots();
+          selectSlot(i);
+          markDirty(true);
+        }
+      });
+
+      grid.appendChild(el);
+    }
+    if (prevSel!=null) selectSlot(prevSel);
     updateStats();
   };
 
@@ -318,7 +391,7 @@ window.kitsInit = function() {
       return `<div class="kit-row ${k.id===state.selectedId?'sel':''}" data-id="${k.id}">
         <div>
           <div class="ttl">${k.name}</div>
-          <div class="sub">${cnt} items${k.description? ' · '+k.description:''}</div>
+          <div class="sub">${cnt} items${k.description? ' · '+escapeHtml(k.description):''}</div>
         </div>
       </div>`;
     }).join('');
@@ -332,15 +405,16 @@ window.kitsInit = function() {
     });
   };
 
+  const escapeHtml = (s)=>String(s||"").replace(/[&<>"]/g, t=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[t]));
+
   const openKit = (k)=>{
     state.selectedId = k?.id ?? null;
     state.kit = {
       id: k?.id ?? null,
       name: k?.name ?? "",
       description: k?.description ?? "",
-      slots: Array.from({length:SLOT_COUNT}, (_,i)=> null)
+      slots: Array.from({length:SLOT_COUNT}, ()=> null)
     };
-    // map items by slot if present
     (k?.items||[]).forEach(it=>{
       const pos = (typeof it.slot==='number' && it.slot>=0 && it.slot<SLOT_COUNT) ? it.slot : state.kit.slots.findIndex(x=>x==null);
       if (pos>=0) state.kit.slots[pos] = {
@@ -358,11 +432,11 @@ window.kitsInit = function() {
     renderSlots();
     renderKitsList();
     markDirty(false);
+    $('#kit-hint').textContent = k?.id ? `открыт кит #${k.id}` : 'новый кит';
   };
 
   const newKit = ()=>{
     openKit({id:null,name:"",description:"",items:[]});
-    $('#kit-hint').textContent = "новый кит";
   };
 
   const duplicateKit = ()=>{
@@ -402,25 +476,34 @@ window.kitsInit = function() {
     if (!res.ok){ toast(res.error||"Не удалось сохранить", "error"); return; }
     toast("Сохранено","ok");
     await loadKits();
-    // reopen freshly saved
-    const saved = state.list.find(x=> x.name===payload.name);
+    const savedId = res.id || res.data?.id;
+    const saved = state.list.find(x=> x.id===savedId) || state.list.find(x=> x.name===payload.name);
     if (saved) openKit(saved);
     markDirty(false);
   };
 
   const loadKits = async ()=>{
-    const res = await API.kitsList();
-    if (!res.ok){ toast(res.error||"Ошибка загрузки", "error"); return; }
-    state.list = res.data || [];
-    renderKitsList();
+    try{
+      const res = await API.kitsList();
+      if (!res.ok){ toast(res.error||"Ошибка загрузки", "error"); return; }
+      state.list = res.data || [];
+      renderKitsList();
+    }catch(e){ toast("Ошибка сети при загрузке китов","error"); }
   };
 
   const loadCatalog = async ()=>{
-    const [van, cust] = await Promise.all([API.itemsVanilla(), API.itemsCustom()]);
-    const vv = van.ok ? (van.data||[]) : [];
-    const cc = cust.ok ? (cust.data||[]) : [];
-    state.items = [...vv, ...cc].map(x=>({ id:x.id, ns:x.ns||x.namespace||'minecraft', name:x.name||x.id }));
-    renderCatalog();
+    try{
+      const [van, cust] = await Promise.allSettled([API.itemsVanilla(), API.itemsCustom()]);
+      const vv = (van.status==="fulfilled" && van.value.ok) ? (van.value.data||[]) : [];
+      const cc = (cust.status==="fulfilled" && cust.value.ok) ? (cust.value.data||[]) : [];
+      state.items = [...vv, ...cc].map(x=>({
+        id: x.id,
+        ns: x.ns||x.namespace||'minecraft',
+        name: x.name||x.id,
+        icon: x.icon || iconUrl(x.ns||x.namespace, x.id)
+      }));
+      renderCatalog();
+    }catch(e){ toast("Ошибка сети при загрузке каталога","error"); }
   };
 
   const renderCatalog = ()=>{
@@ -431,23 +514,22 @@ window.kitsInit = function() {
       const okScope = scope==="vanilla" ? (x.ns==='minecraft' || !x.ns) : scope==="custom" ? (x.ns && x.ns!=='minecraft') : true;
       if (!okScope) return false;
       if (!q) return true;
-      return x.id.toLowerCase().includes(q) || (x.name||"").toLowerCase().includes(q);
+      return x.id.toLowerCase().includes(q) || (x.name||"").toLowerCase().includes(q) || (`${x.ns}:${x.id}`).toLowerCase().includes(q);
     });
     $('#items-empty').hidden = list.length>0;
     wrap.innerHTML = list.map(it=>`
-      <div class="item" draggable="true" data-ns="${it.ns}" data-id="${it.id}" title="${it.ns}:${it.id}">
-        <div class="icon"></div>
+      <div class="item" draggable="true" data-ns="${it.ns}" data-id="${it.id}" data-icon="${it.icon}" title="${it.ns}:${it.id}">
+        <img class="icon" alt="${it.ns}:${it.id}" src="${it.icon}" loading="lazy" onerror="this.style.visibility='hidden'">
         <div class="n">${it.ns}:${it.id}</div>
       </div>`).join('');
     $$('.item').forEach(el=>{
       el.addEventListener('dragstart', e=>{
-        e.dataTransfer.setData('text/plain', JSON.stringify({ns:el.dataset.ns,id:el.dataset.id}));
+        e.dataTransfer.setData('text/plain', JSON.stringify({ns:el.dataset.ns,id:el.dataset.id,icon:el.dataset.icon}));
       });
       el.addEventListener('dblclick', ()=>{
-        // quick put: into first empty or selected slot
         let pos = (state._sel!=null) ? state._sel : state.kit.slots.findIndex(x=>!x);
         if (pos<0) pos=0;
-        state.kit.slots[pos] = { namespace: el.dataset.ns||'minecraft', item_id: el.dataset.id, amount:1, display_name:"", enchants:[], slot:pos };
+        state.kit.slots[pos] = { namespace: el.dataset.ns||'minecraft', item_id: el.dataset.id, amount:1, display_name:"", enchants:[], slot:pos, icon: el.dataset.icon };
         renderSlots();
         selectSlot(pos);
         markDirty(true);
@@ -509,7 +591,7 @@ window.kitsInit = function() {
   });
 
   // enchants autocomplete + chips
-  const dd = $('#ench-dd'), input = $('#ench-input'), chips = $('#slot-enchants');
+  const dd = $('#ench-dd'), input = $('#ench-input');
   const renderDd = ()=>{
     const q = (input.value||"").toLowerCase();
     const list = ENCHANTS.filter(x=>x.includes(q)).slice(0,30);
@@ -541,6 +623,8 @@ window.kitsInit = function() {
       const it = state.kit.slots[state._sel]; if (!it) return;
       it.enchants?.pop();
       selectSlot(state._sel); markDirty(true);
+    } else if (e.key==="Escape"){
+      dd.classList.add('d-none');
     }
   });
   document.getElementById('ench-clear').addEventListener('click', ()=>{
