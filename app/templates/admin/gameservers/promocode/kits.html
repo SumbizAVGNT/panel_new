@@ -1,4 +1,5 @@
 <section id="kits-root" class="vstack gap-3">
+  {% raw %}
   <style>
     /* ===== Kits (scoped) ===== */
     #kits-root .glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px);border-radius:16px}
@@ -10,7 +11,7 @@
 
     /* Builder grid */
     #kits-root .builder{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
-    @media (max-width: 1100px){#kits-root .builder{grid-template-columns:1fr}}
+    @media (max-width: 1100px){ #kits-root .builder{grid-template-columns:1fr} }
     #kits-root .slot-grid{display:grid;grid-template-columns:repeat(9,1fr);gap:10px}
     #kits-root .slot{position:relative;background:rgba(2,6,23,.5);border:1px dashed rgba(148,163,184,.3);border-radius:12px;min-height:62px;display:grid;place-items:center;color:#cbd5e1;cursor:pointer;transition:.15s}
     #kits-root .slot:hover{border-color:rgba(148,163,184,.5);transform:translateY(-1px)}
@@ -21,10 +22,10 @@
 
     /* Items catalog */
     #kits-root .items-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
-    @media (max-width:1400px){#kits-root .items-grid{grid-template-columns:repeat(6,1fr)}}
-    @media (max-width:1100px){#kits-root .items-grid{grid-template-columns:repeat(5,1fr)}}
-    @media (max-width:900px){#kits-root .items-grid{grid-template-columns:repeat(4,1fr)}}
-    @media (max-width:680px){#kits-root .items-grid{grid-template-columns:repeat(3,1fr)}}
+    @media (max-width:1400px){ #kits-root .items-grid{grid-template-columns:repeat(6,1fr)} }
+    @media (max-width:1100px){ #kits-root .items-grid{grid-template-columns:repeat(5,1fr)} }
+    @media (max-width:900px){  #kits-root .items-grid{grid-template-columns:repeat(4,1fr)} }
+    @media (max-width:680px){  #kits-root .items-grid{grid-template-columns:repeat(3,1fr)} }
     #kits-root .item{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(13,17,23,.55);cursor:grab}
     #kits-root .item:active{cursor:grabbing}
     #kits-root .item .icon{width:28px;height:28px;image-rendering:pixelated;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6)}
@@ -55,6 +56,7 @@
     #kits-root .chip .btn{border:0;background:transparent;color:#e5e7eb;line-height:1;padding:0 .15rem;cursor:pointer}
     #kits-root #ench-input{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.55);color:#e5e7eb;border-radius:10px;padding:.45rem .6rem;width:100%}
   </style>
+  {% endraw %}
 
   <!-- Header -->
   <div class="glass p-3 head-bar">
