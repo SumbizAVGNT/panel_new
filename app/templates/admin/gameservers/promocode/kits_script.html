@@ -1,22 +1,32 @@
 <script>
-/* Kits module + автокомплит через портал (фикс позиционирования дропдауна) */
+/* Kits module + автокомплит через портал + подключение к БД */
 (function(){
   'use strict';
 
+  /* ===== API ===== */
+  const API = {
+    base: '/admin/promocode',
+    itemsVanilla: '/admin/promocode/api/items/vanilla',
+    itemsCustom:  '/admin/promocode/api/items/custom',
+    kitsList:     '/admin/promocode/api/kits/list',
+    kitsSave:     '/admin/promocode/api/kits/save',
+    kitsDelete:   '/admin/promocode/api/kits/delete',
+  };
+
+  /* ===== CONSTS ===== */
   const SLOT_COUNT = 27;
 
   const VERSIONS = [
     { id:'vanilla-1.20.6', label:'Vanilla 1.20.6',
-      itemsUrl:'/static/data/vanilla-items-1.20.6.json',
+      itemsUrl: API.itemsVanilla,
       imgUrl:(id)=>`/static/mc/1.20.6/items/${id}.png` },
     { id:'itemsadder', label:'ItemsAdder',
-      itemsUrl:'/static/data/itemsadder-items.json',
-      imgUrl:(id)=>`/static/itemsadder/${id.replace(':','_')}.png` }
+      itemsUrl: API.itemsCustom,
+      imgUrl:(id)=>`/static/mc/itemsadder/${String(id).replace(':','.')}.png` }
   ];
 
   const ENCH_FILE = '/static/data/enchantments-1.20.6.json';
 
-  /* ---- Fallback, если файл чар не загрузился ---- */
   const DEFAULT_ENCH = [
     {id:'minecraft:sharpness',max:5},{id:'minecraft:smite',max:5},
     {id:'minecraft:efficiency',max:5},{id:'minecraft:looting',max:3},
@@ -28,6 +38,7 @@
     {id:'minecraft:generic.movement_speed',def:0.1,range:[-1024,1024]}
   ];
 
+  /* ===== STATE ===== */
   const state = {
     inited:false,
     items:[],
@@ -35,15 +46,38 @@
     slots: Array(SLOT_COUNT).fill(null),
     active:-1,
     ench: { list:[], attrs:[] },
-    dd:{ open:false, idx:-1, data:[] }
+    dd:{ open:false, idx:-1, data:[] },
+    kit:{ id:null, name:'', description:'' },
+    dirty:false,
+    kitsCache:[]
   };
 
+  /* ===== MINI DOM ===== */
   const $=(s,r=document)=>r.querySelector(s);
   const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
   let root, grid, itemsWrap, itemsEmpty, verSelect, nameInput, descInput;
   let slotEditor, slotNo, slotQty, slotDName, dnameClear, slotExtra, slotClearBtn, statsPill, kitsToasts;
   let enchInput, enchWrap, enchClearBtn;
   let ddPortal;
+  // панель управления/список
+  let btnNew, btnDup, btnSave, btnDel, listWrap, btnRefresh;
+
+  /* ===== HELPERS ===== */
+  async function GET(url){
+    const r=await fetch(url,{cache:'no-store'});
+    let j=null; try{ j=await r.json(); }catch(_){}
+    return (j && j.ok) ? j.data : j;
+  }
+  async function POST(url, body){
+    const r=await fetch(url,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body||{})
+    });
+    const j=await r.json().catch(()=>({ok:false,error:'bad json'}));
+    if(!j.ok) throw new Error(j.error||'Request failed');
+    return j.data;
+  }
 
   function grab(){
     root = document.getElementById('kits-root');
@@ -70,24 +104,23 @@
     enchWrap     = $('#slot-enchants', root);
     enchClearBtn = $('#ench-clear', root);
 
-    /* === Портальный контейнер дропдауна (самодостаточные стили) === */
+    // элементы панели
+    btnNew    = $('#kit-new', root);
+    btnDup    = $('#kit-dup', root);
+    btnSave   = $('#kit-save', root);
+    btnDel    = $('#kit-del', root);
+    listWrap  = $('#kits-list', root);
+    btnRefresh= $('#kits-refresh', root);
+
     if(!ddPortal){
       ddPortal = document.createElement('div');
       ddPortal.className = 'kits-dd-popover';
-      // ВАЖНО: инлайн-стили – чтобы не зависеть от CSS
       Object.assign(ddPortal.style, {
-        position:'absolute',
-        zIndex:'4000',
-        left:'0px', top:'0px',
-        minWidth:'240px',
-        background:'#0b1220',
-        border:'1px solid rgba(148,163,184,.25)',
-        borderRadius:'10px',
-        boxShadow:'0 10px 24px rgba(0,0,0,.35)',
-        maxHeight:'260px',
-        overflow:'auto',
-        padding:'4px 0',
-        display:'none'
+        position:'absolute', zIndex:'4000', left:'0px', top:'0px',
+        minWidth:'240px', background:'#0b1220',
+        border:'1px solid rgba(148,163,184,.25)', borderRadius:'10px',
+        boxShadow:'0 10px 24px rgba(0,0,0,.35)', maxHeight:'260px',
+        overflow:'auto', padding:'4px 0', display:'none'
       });
       document.body.appendChild(ddPortal);
     }
@@ -103,24 +136,28 @@
     setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2000);
   }
 
-  /* ========== ITEMS ========== */
+  function markDirty(v=true){
+    state.dirty = !!v;
+    if(btnSave) btnSave.disabled = !state.dirty;
+  }
+
+  window.addEventListener('beforeunload', (e)=>{
+    if(state.dirty){ e.preventDefault(); e.returnValue=''; }
+  });
+
+  /* ===== ITEMS ===== */
   async function loadItemsFor(version){
     state.version = version;
     try{
-      const r=await fetch(version.itemsUrl,{cache:'no-store'});
-      const j=await r.json();
-      let arr=[];
-      if(Array.isArray(j)) arr=j;
-      else if(Array.isArray(j.items)) arr=j.items;
-      else arr=Object.keys(j||{}).map(k=>({id:k,name:j[k]}));
-
-      // убираем дубли
+      const data = await GET(version.itemsUrl);
+      // поддержим оба формата: [{id,name,icon}] или просто [{id,name}]
+      const arr = Array.isArray(data) ? data : [];
       const map=new Map();
       for(const it of arr){
         if(!it||!it.id) continue;
         const id=String(it.id);
         const name = it.name || id.replaceAll('_',' ');
-        if(!map.has(id)) map.set(id,{id,name});
+        map.set(id,{id,name,icon:it.icon});
       }
       state.items = Array.from(map.values());
       renderItems();
@@ -138,9 +175,10 @@
     itemsWrap.innerHTML=''; itemsEmpty.hidden = list.length>0;
     for(const it of list){
       const col=document.createElement('div'); col.className='col';
+      const icon = it.icon || state.version.imgUrl(it.id);
       col.innerHTML = `
         <div class="item" draggable="true" title="${it.name}\n${it.id}">
-          <img class="icon" src="${state.version.imgUrl(it.id)}" alt="" onerror="this.style.visibility='hidden'">
+          <img class="icon" src="${icon}" alt="" onerror="this.style.visibility='hidden'">
           <div class="n">${it.name}</div>
         </div>`;
       const div = col.firstElementChild;
@@ -154,8 +192,11 @@
     }
   }
 
-  /* ========== SLOTS ========== */
-  function updateStats(){ const c = state.slots.filter(Boolean).length; statsPill.textContent=`${c} item${c===1?'':'s'}`; }
+  /* ===== SLOTS ===== */
+  function updateStats(){
+    const c = state.slots.filter(Boolean).length;
+    if(statsPill) statsPill.textContent=`${c} item${c===1?'':'s'}`;
+  }
 
   function buildSlots(){
     grid.innerHTML='';
@@ -182,19 +223,24 @@
   function renderSlot(i){
     const s=grid.children[i]; if(!s) return;
     const info=state.slots[i];
-    if(!info){ s.classList.remove('active'); s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`; return; }
-    const img=state.version.imgUrl(info.id);
+    if(!info){
+      s.classList.remove('active');
+      s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`;
+      return;
+    }
+    const baseId = info.id.includes(':') ? info.id.split(':',2)[1] : info.id;
+    const img=state.version.imgUrl(baseId);
     const qty=info.qty ?? 1;
     s.innerHTML = `
       <img class="icon" src="${img}" alt="" onerror="this.style.visibility='hidden'">
-      <div class="name">${info.display || info.name || info.id}</div>
+      <div class="name">${info.display || info.name || baseId}</div>
       <div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
     s.classList.toggle('active', state.active===i);
   }
 
   function putItemToSlot(i,item){
-    state.slots[i] = { id:item.id, name:item.name, qty:1, extra:{ench:[], attr:[]} };
-    renderSlot(i); selectSlot(i); updateStats();
+    state.slots[i] = { id:String(item.id), name:item.name, qty:1, extra:{ench:[], attr:[]} };
+    renderSlot(i); selectSlot(i); updateStats(); markDirty(true);
   }
 
   function selectSlot(i){
@@ -216,7 +262,7 @@
   function clearActiveSlot(){
     if(state.active<0) return;
     state.slots[state.active]=null;
-    renderSlot(state.active); selectSlot(state.active); updateStats();
+    renderSlot(state.active); selectSlot(state.active); updateStats(); markDirty(true);
   }
 
   function applySlotEditor(){
@@ -226,10 +272,10 @@
     s.display = slotDName.value.trim() || '';
     s.extra = parseExtraFromChips();
     serializeExtra();
-    renderSlot(state.active); updateStats();
+    renderSlot(state.active); updateStats(); markDirty(true);
   }
 
-  /* ========== ENCHANTS/ATTR ========== */
+  /* ===== ENCHANTS/ATTR ===== */
   async function loadEnchData(){
     try{
       const r=await fetch(ENCH_FILE,{cache:'no-store'});
@@ -287,7 +333,7 @@
     state.slots[state.active] = s;
   }
 
-  /* ========== DROPDOWN-PORTAL (с инлайн-стилями) ========== */
+  /* ===== DROPDOWN PORTAL ===== */
   function placeDD(){
     if(!state.dd.open) return;
     const r = enchInput.getBoundingClientRect();
@@ -295,27 +341,21 @@
     const top = Math.round(r.bottom + margin + window.scrollY);
     const left= Math.round(r.left + window.scrollX);
     const width = Math.round(r.width);
-
-    ddPortal.style.top = top+'px';
-    ddPortal.style.left = left+'px';
-    ddPortal.style.width = width+'px';
+    Object.assign(ddPortal.style,{ top:top+'px', left:left+'px', width:width+'px' });
   }
 
   function openDD(list){
     if(!list || list.length===0){ closeDD(); return; }
     ddPortal.innerHTML = list.map((x,i)=>(
-      `<div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}" ` +
-      `style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">` +
+      `<div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}" style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">` +
         `<span style="color:#e5e7eb">${x.id}</span>` +
         `<small style="color:#94a3b8">${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small>` +
       `</div>`
     )).join('');
-    // hover/active стили прямо здесь
     ddPortal.querySelectorAll('.kits-dd-item').forEach(el=>{
       el.addEventListener('mouseenter',()=>el.style.background='rgba(96,165,250,.12)');
       el.addEventListener('mouseleave',()=>el.style.background='transparent');
     });
-
     ddPortal.style.display = 'block';
     state.dd.open = true;
     placeDD();
@@ -328,38 +368,180 @@
     state.dd.open=false; state.dd.idx=-1; state.dd.data=[];
   }
 
-  /* ========== BINDINGS ========== */
+  /* ===== KITS <-> DB ===== */
+
+  function kitSerializeItems(){
+    const items=[];
+    for(let i=0;i<SLOT_COUNT;i++){
+      const s = state.slots[i];
+      if(!s) continue;
+      const hasNs = String(s.id).includes(':');
+      const ns = hasNs ? s.id.split(':',2)[0] : 'minecraft';
+      const iid = hasNs ? s.id.split(':',2)[1] : s.id;
+      items.push({
+        ns, id:iid,
+        amount: Number(s.qty||1),
+        display_name: s.display||'',
+        enchants: (s.extra?.ench)||[],
+        nbt: (s.extra?.attr)||[],
+        slot: i
+      });
+    }
+    return items;
+  }
+
+  function kitLoadToUI(kit){
+    // очистка
+    state.slots = Array(SLOT_COUNT).fill(null);
+    buildSlots();
+
+    nameInput.value = kit.name||'';
+    descInput.value = kit.description||'';
+    state.kit.id = kit.id||null;
+    state.kit.name = nameInput.value;
+    state.kit.description = descInput.value;
+
+    const items = Array.isArray(kit.items)? kit.items : [];
+    for(const it of items){
+      const idx = (it.slot!=null) ? Number(it.slot) : -1;
+      if(idx<0 || idx>=SLOT_COUNT) continue;
+      const ns = it.namespace || it.ns || 'minecraft';
+      const iid = it.item_id || it.id;
+      if(!iid) continue;
+      const fullId = (ns && ns!=='minecraft') ? `${ns}:${iid}` : String(iid);
+      const ench = it.enchants || it.enchantss || it.enchants_s || it.enchants_json || [];
+      const nbt  = it.nbt || it.nbts || it.nbt_json || [];
+      state.slots[idx] = {
+        id: fullId, name: it.display_name || iid, qty: Number(it.amount||1),
+        display: it.display_name || '',
+        extra:{ ench:Array.isArray(ench)?ench:[], attr:Array.isArray(nbt)?nbt:[] }
+      };
+      renderSlot(idx);
+    }
+    updateStats();
+    markDirty(false);
+  }
+
+  function renderKitsList(){
+    if(!listWrap) return;
+    listWrap.innerHTML = (state.kitsCache||[]).map(k => `
+      <div class="kit-row" data-id="${k.id}" title="${k.description||''}">
+        <div class="ttl">${k.name}</div>
+        <div class="sub">${(k.created_at||'').toString().replace('T',' ').slice(0,19)}</div>
+      </div>
+    `).join('');
+    $$('.kit-row', listWrap).forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const id = Number(el.dataset.id);
+        const k = state.kitsCache.find(x=>x.id===id);
+        if(!k) return;
+        kitLoadToUI(k);
+      });
+    });
+  }
+
+  async function loadKitsList(){
+    try{
+      const data = await GET(API.kitsList);
+      // сервер уже возвращает items в каждом ките
+      state.kitsCache = Array.isArray(data)? data : [];
+      renderKitsList();
+      // если ничего не выбрано — выбрать первый
+      if(state.kit.id==null && state.kitsCache.length){
+        kitLoadToUI(state.kitsCache[0]);
+      }
+    }catch(e){
+      console.error('kits list error', e);
+      toast('Не удалось загрузить киты', false);
+    }
+  }
+
+  async function saveKit(){
+    const payload = {
+      id: state.kit.id,
+      name: (nameInput.value||'').trim(),
+      description: (descInput.value||'').trim(),
+      items: kitSerializeItems()
+    };
+    if(!payload.name){ toast('Введите название кита', false); return; }
+    try{
+      const data = await POST(API.kitsSave, payload);
+      if(data && data.id!=null) state.kit.id = data.id;
+      toast('Кит сохранён');
+      markDirty(false);
+      await loadKitsList();
+    }catch(e){
+      console.error(e);
+      toast('Ошибка при сохранении кита', false);
+    }
+  }
+
+  async function deleteKit(){
+    if(!state.kit.id){ toast('Кит ещё не сохранён', false); return; }
+    if(!confirm('Удалить этот кит?')) return;
+    try{
+      await POST(API.kitsDelete, {id: state.kit.id});
+      toast('Кит удалён');
+      state.kit = {id:null,name:'',description:''};
+      nameInput.value=''; descInput.value='';
+      state.slots = Array(SLOT_COUNT).fill(null); buildSlots(); updateStats();
+      markDirty(false);
+      await loadKitsList();
+    }catch(e){
+      console.error(e);
+      toast('Не удалось удалить кит', false);
+    }
+  }
+
+  function newKit(){
+    state.kit = {id:null,name:'',description:''};
+    nameInput.value=''; descInput.value='';
+    state.slots = Array(SLOT_COUNT).fill(null); buildSlots(); updateStats();
+    markDirty(false);
+  }
+
+  function duplicateKit(){
+    const base = (nameInput.value||'').trim() || 'Kit';
+    nameInput.value = base + ' (copy)';
+    state.kit.id = null;
+    markDirty(true);
+  }
+
+  /* ===== BINDINGS ===== */
   function bind(){
+    // версии/поиск/обновить items
     verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
     verSelect.value = state.version.id;
     verSelect.addEventListener('change', ()=>{ const v = VERSIONS.find(x=>x.id===verSelect.value) || VERSIONS[0]; loadItemsFor(v); });
-    $('#item-search',root).addEventListener('input', (e)=>renderItems(e.target.value));
-    $('#item-refresh',root).addEventListener('click', ()=>loadItemsFor(state.version));
+    $('#item-search',root)?.addEventListener('input', (e)=>renderItems(e.target.value));
+    $('#item-refresh',root)?.addEventListener('click', ()=>loadItemsFor(state.version));
 
-    slotClearBtn.addEventListener('click', clearActiveSlot);
+    // слоты/редактор
+    slotClearBtn?.addEventListener('click', clearActiveSlot);
     dnameClear?.addEventListener('click', ()=>{ slotDName.value=''; applySlotEditor(); });
     $$('#slot-editor [data-qty]', root).forEach(btn=>{
       btn.addEventListener('click', ()=>{ let v=Number(slotQty.value||1) + (btn.dataset.qty==='+1'?1:-1); v=Math.max(1, Math.min(64, v)); slotQty.value=String(v); applySlotEditor(); });
     });
-    slotQty.addEventListener('input', applySlotEditor);
-    slotDName.addEventListener('input', applySlotEditor);
+    slotQty?.addEventListener('input', applySlotEditor);
+    slotDName?.addEventListener('input', applySlotEditor);
 
-    enchWrap.addEventListener('click', (e)=>{
-      const x = e.target.closest('.x'); if(x){ x.parentElement.remove(); serializeExtra(); enchInput.focus(); }
+    // энчанты/атрибуты
+    enchWrap?.addEventListener('click', (e)=>{
+      const x = e.target.closest('.x'); if(x){ x.parentElement.remove(); serializeExtra(); enchInput.focus(); markDirty(true); }
     });
-    enchInput.addEventListener('keydown', (e)=>{
+    enchInput?.addEventListener('keydown', (e)=>{
       if(e.key==='Backspace' && !enchInput.value){
         const chips = $$('.chip',enchWrap); const last = chips[chips.length-1];
-        if(last){ last.remove(); serializeExtra(); e.preventDefault(); }
+        if(last){ last.remove(); serializeExtra(); e.preventDefault(); markDirty(true); }
       }
     });
-    enchClearBtn?.addEventListener('click', ()=>{ enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; enchInput.focus(); });
+    enchClearBtn?.addEventListener('click', ()=>{ enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; enchInput.focus(); markDirty(true); });
 
     function showDD(){ const list = findSuggestions(enchInput.value); state.dd.idx=0; state.dd.data=list; openDD(list); }
-    enchInput.addEventListener('focus', showDD);
-    enchInput.addEventListener('input', showDD);
+    enchInput?.addEventListener('focus', showDD);
+    enchInput?.addEventListener('input', showDD);
 
-    enchInput.addEventListener('keydown', (e)=>{
+    enchInput?.addEventListener('keydown', (e)=>{
       if(!state.dd.open) return;
       if(e.key==='ArrowDown'){ e.preventDefault(); state.dd.idx=Math.min(state.dd.data.length-1, state.dd.idx+1); openDD(state.dd.data); }
       if(e.key==='ArrowUp'){   e.preventDefault(); state.dd.idx=Math.max(0, state.dd.idx-1); openDD(state.dd.data); }
@@ -368,7 +550,7 @@
         e.preventDefault();
         const it=state.dd.data[state.dd.idx]; if(!it) return;
         if(it.t==='ench') addEnchChip({id:it.id, lvl:1}); else addAttrChip({id:it.id, val:it.def ?? 1});
-        enchInput.value=''; closeDD(); serializeExtra(); enchInput.focus();
+        enchInput.value=''; closeDD(); serializeExtra(); enchInput.focus(); markDirty(true);
       }
     });
 
@@ -377,23 +559,36 @@
       const row = e.target.closest('.kits-dd-item'); if(!row) return;
       const i = Number(row.dataset.i||-1); const it = state.dd.data[i]; if(!it) return;
       if(it.t==='ench') addEnchChip({id:it.id, lvl:1}); else addAttrChip({id:it.id, val:it.def ?? 1});
-      enchInput.value=''; closeDD(); serializeExtra(); enchInput.focus();
+      enchInput.value=''; closeDD(); serializeExtra(); enchInput.focus(); markDirty(true);
     });
 
     document.addEventListener('click', (e)=>{ if(e.target!==enchInput && !ddPortal.contains(e.target)) closeDD(); });
     window.addEventListener('resize', placeDD);
     window.addEventListener('scroll', placeDD, true);
+
+    // поля кита + кнопки
+    nameInput?.addEventListener('input', ()=>markDirty(true));
+    descInput?.addEventListener('input', ()=>markDirty(true));
+    btnSave?.addEventListener('click', saveKit);
+    btnDel?.addEventListener('click', deleteKit);
+    btnNew?.addEventListener('click', newKit);
+    btnDup?.addEventListener('click', duplicateKit);
+    btnRefresh?.addEventListener('click', loadKitsList);
   }
 
-  /* ========== INIT ========== */
-  window.kitsInit = function kitsInit(){
+  /* ===== INIT ===== */
+  function init(){
     if(!grab() || state.inited) return;
     state.inited=true;
     buildSlots();
     bind();
     loadItemsFor(state.version);
     loadEnchData();
-  };
-  if(document.getElementById('tab-kits')?.classList.contains('active')) window.kitsInit();
+    loadKitsList();         // <-- подключение к БД: тянем список китов
+    markDirty(false);
+  }
+
+  window.kitsInit = init;
+  if(document.getElementById('tab-kits')?.classList.contains('active')) init();
 })();
 </script>
