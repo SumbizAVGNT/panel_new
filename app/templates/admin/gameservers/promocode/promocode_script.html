@@ -2,442 +2,363 @@
 (function(){
   'use strict';
 
-  // ====== API endpoints (ожидаемые на бэке) ======
-  const API = {
-    list:        '/admin/promocode/api/promo/list',
-    create:      '/admin/promocode/api/promo/create',
-    update:      '/admin/promocode/api/promo/update',
-    remove:      '/admin/promocode/api/promo/delete',
-    details:     '/admin/promocode/api/promo/details',          // ?id=...
-    reds:        '/admin/promocode/api/promo/reds',             // ?code_id=...&q=
-    groupsList:  '/admin/promocode/api/promo/groups/list',      // ?code_id=...
-    groupsSave:  '/admin/promocode/api/promo/groups/save',
-    kitsList:    '/admin/promocode/api/kits/list'
+  // ---------- helpers ----------
+  const $ = (s, r=document)=>r.querySelector(s);
+  const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
+  const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api']; // fallback
+  const pickBase = async (path='')=>{
+    for (const base of API_BASES){
+      try{ const r=await fetch(base+'/ping',{cache:'no-store'}); if(r.ok||r.status===404) return base; }catch(_){}
+    }
+    return API_BASES[0];
   };
+  const json = async (url, opts={})=>{
+    const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+    const j = await r.json().catch(()=>({ok:false,error:'bad json'}));
+    if(!j.ok) throw new Error(j.error||('HTTP '+r.status));
+    return j.data;
+  };
+  const fmt = {
+    money:(a,k)=> a!=null && a!=='' ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—',
+    date:(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—'
+  };
+  const badge = (t,cls='badge-soft')=>`<span class="badge ${cls}">${t}</span>`;
+  const copy = (t)=>navigator.clipboard?.writeText(t).catch(()=>{});
 
-  // ====== helpers ======
-  const $  = (sel, root=document)=>root.querySelector(sel);
-  const $$ = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
+  // ---------- state ----------
+  let API='';            // выбранный base
+  let list=[];           // строки таблицы
+  let sortBy='id', sortDir='desc';
+  let modal, els={};     // ссылки на элементы
 
-  const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
-  const headers = (h={})=> CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
+  // ---------- grab ----------
+  function grab(){
+    els.body     = $('#pc-list');
+    els.count    = $('#pc-count');
+    els.search   = $('#pc-search');
+    els.btnRef   = $('#pc-refresh');
+    els.btnCreate= $('#pc-create');
+    els.tbl      = $('#pc-table');
 
-  async function GET(url){
-    const r = await fetch(url, {cache:'no-store'});
-    const j = await r.json().catch(()=>null);
-    if(!j || j.ok===false) throw new Error(j?.error || 'Request failed');
-    return j.data ?? j;
+    // modal
+    els.m         = $('#pcEditModal');
+    els.mId       = $('#pc-f-id');
+    els.mTitle    = $('#pc-f-title');
+    els.mCode     = $('#pc-f-code');
+    els.mEnabled  = $('#pc-f-enabled');
+    els.mRealm    = $('#pc-f-realm');
+    els.mExp      = $('#pc-f-exp');
+    els.mAmount   = $('#pc-f-amount');
+    els.mCurr     = $('#pc-f-currency');
+    els.mTotal    = $('#pc-f-total');
+    els.mPer      = $('#pc-f-per');
+    els.mCd       = $('#pc-f-cd');
+    els.mKit      = $('#pc-f-kit');
+    els.mLeft     = $('#pc-f-left');
+    els.mSave     = $('#pc-f-save');
+    els.mDel      = $('#pc-f-delete');
+    els.gBody     = $('#pc-groups-body');
+    els.gAdd      = $('#pc-g-add');
+    els.gSave     = $('#pc-g-save');
+    els.rQuery    = $('#pc-r-player');
+    els.rBtn      = $('#pc-r-search');
+    els.rCount    = $('#pc-r-count');
+    els.rBody     = $('#pc-reds-body');
+
+    // bootstrap modal
+    if (window.bootstrap) modal = bootstrap.Modal.getOrCreateInstance(els.m);
   }
-  async function POST(url, body){
-    const r = await fetch(url, {method:'POST', headers: headers({'Content-Type':'application/json'}), body: JSON.stringify(body||{})});
-    const j = await r.json().catch(()=>null);
-    if(!j || j.ok===false) throw new Error(j?.error || 'Request failed');
-    return j.data ?? j;
-  }
 
-  function flash(text, type='info', ms=2200){
-    const host = document.querySelector('.flash-stack') || (()=>{const d=document.createElement('div');d.className='flash-stack';document.body.appendChild(d);return d})();
-    const n = document.createElement('div'); n.className = `flash flash-${type}`; n.textContent = text; host.appendChild(n);
-    setTimeout(()=> n.remove(), ms);
-  }
-
-  function fmtMoney(v, cur=''){
-    if(v==null||isNaN(v)) return '';
-    const s=(+v).toFixed(2);
-    return cur ? `${s} ${cur}` : s;
-  }
-  function fmtDate(s){
-    if(!s) return '';
-    // допускаем оба вида: "YYYY-MM-DD HH:mm:ss" или ISO
-    const d = isNaN(Date.parse(s)) ? null : new Date(s);
-    if(!d) return s;
-    const pad=n=>String(n).padStart(2,'0');
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  }
-
-  // ====== elements ======
-  const table   = $('#pc-table');
-  const tbody   = $('#pc-list');
-  const searchI = $('#pc-search');
-  const btnRef  = $('#pc-refresh');
-  const btnNew  = $('#pc-create');
-  const countLb = $('#pc-count');
-
-  // modal
-  const modalEl = $('#pcEditModal');
-  const modal   = window.bootstrap ? new bootstrap.Modal(modalEl) : null;
-
-  const fId      = $('#pc-f-id');
-  const fTitle   = $('#pc-f-title');
-  const fCode    = $('#pc-f-code');
-  const fEnabled = $('#pc-f-enabled');
-  const fRealm   = $('#pc-f-realm');
-  const fExp     = $('#pc-f-exp');
-  const fAmount  = $('#pc-f-amount');
-  const fCur     = $('#pc-f-currency');
-  const fTotal   = $('#pc-f-total');
-  const fPer     = $('#pc-f-per');
-  const fCD      = $('#pc-f-cd');
-  const fKit     = $('#pc-f-kit');
-  const fLeft    = $('#pc-f-left');
-
-  const btnSave  = $('#pc-f-save');
-  const btnDel   = $('#pc-f-delete');
-  const hintLb   = $('#pc-f-hint');
-
-  // groups
-  const gBody    = $('#pc-groups-body');
-  const gAdd     = $('#pc-g-add');
-  const gSave    = $('#pc-g-save');
-
-  // redemptions
-  const redsQ    = $('#pc-r-player');
-  const redsBtn  = $('#pc-r-search');
-  const redsBody = $('#pc-reds-body');
-  const redsCnt  = $('#pc-r-count');
-
-  // ====== state ======
-  let rows = [];
-  let filtered = [];
-  let sortKey = 'created_at';
-  let sortDir = 'desc';
-
-  // сохранение количества активаций между перезагрузками
-  const USED_LS_KEY = 'sp_promo_used_counts';
-  function loadUsedMap(){ try{ return JSON.parse(localStorage.getItem(USED_LS_KEY)||'{}'); }catch(_){ return {}; } }
-  function saveUsedMap(map){ try{ localStorage.setItem(USED_LS_KEY, JSON.stringify(map)); }catch(_){} }
-  let usedMap = loadUsedMap(); // { [code_id]: number }
-
-  // ====== kits select ======
-  async function loadKitsToSelect(){
+  // ---------- kits ----------
+  async function loadKitsIntoSelect(){
+    els.mKit.innerHTML = `<option value="">— без кита —</option>`;
     try{
-      const list = await GET(API.kitsList);
-      fKit.innerHTML = `<option value="">— без кита —</option>` + (list||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
-    }catch(e){ /* ignore */ }
+      const kits = await json(API+'/kits/list');
+      els.mKit.innerHTML += (kits||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+    }catch(_){}
   }
 
-  // ====== table render/sort/filter ======
-  function computeUsed(x){
-    // приоритет: локальный кэш -> (uses_total - uses_left) когда оба заданы -> 0
-    if(x.id!=null && usedMap[x.id]!=null) return usedMap[x.id];
-    if(x.uses_total!=null && x.uses_left!=null) return Math.max(0, Number(x.uses_total)-Number(x.uses_left));
-    return 0;
-  }
+  // ---------- table ----------
+  function render(){
+    const q = (els.search.value||'').trim().toLowerCase();
+    let rows = list.filter(x => !q || String(x.code).toLowerCase().includes(q));
 
-  function applyFilter(){
-    const q = (searchI.value||'').trim().toLowerCase();
-    filtered = !q ? [...rows] : rows.filter(r => String(r.code||'').toLowerCase().includes(q));
-    applySort();
-  }
-
-  function applySort(){
-    const dir = sortDir==='desc' ? -1 : 1;
-    const k = sortKey;
-    filtered.sort((a,b)=>{
-      let av=a[k], bv=b[k];
-      if(k==='amount' || k==='uses_left' || k==='uses_total'){ av=Number(av||0); bv=Number(bv||0); }
-      else if(k==='expires_at' || k==='created_at'){ av= new Date(av||0).getTime(); bv= new Date(bv||0).getTime(); }
-      return (av>bv?1:av<bv?-1:0) * dir;
+    rows.sort((a,b)=>{
+      const A = a[sortBy], B = b[sortBy];
+      if (sortBy==='amount' || sortBy==='uses_left' || sortBy==='uses_total' || sortBy==='id') {
+        return (Number(A)||0) - (Number(B)||0);
+      }
+      return String(A??'').localeCompare(String(B??''));
     });
-    renderTable();
-  }
+    if (sortDir==='desc') rows.reverse();
 
-  function renderTable(){
-    countLb.textContent = filtered.length ? `${filtered.length} шт.` : '—';
-    if(!filtered.length){ tbody.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`; return; }
+    els.count.textContent = rows.length ? `${rows.length} шт.` : '';
 
-    tbody.innerHTML = filtered.map(x=>{
-      const enabled = Number(x.enabled??1)===1;
-      const statusBadge = enabled
-        ? '<span class="badge text-bg-success">on</span>'
-        : '<span class="badge text-bg-secondary">off</span>';
-      const reward = (x.amount!=null ? fmtMoney(x.amount, x.currency_key||'') : '');
-      const limits = [
-        (x.uses_total!=null ? `всего: ${x.uses_total}` : 'всего: ∞'),
-        (x.per_player_uses!=null ? `pp: ${x.per_player_uses}` : null),
-        (x.cooldown_seconds!=null ? `cd: ${x.cooldown_seconds}s` : null)
-      ].filter(Boolean).join(', ');
-      const kit = x.kit_name ? `<span class="badge text-bg-secondary">${x.kit_name}</span>` : '';
-      const expires = x.expires_at ? fmtDate(x.expires_at) : '';
-      const used = computeUsed(x);
+    if (!rows.length) {
+      els.body.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`;
+      return;
+    }
 
+    els.body.innerHTML = rows.map(x=>{
+      const used = (x.uses_total!=null && x.uses_left!=null) ? (x.uses_total - x.uses_left) : '—';
+      const st = +x.enabled ? badge('active') : badge('off','bg-secondary');
+      const lim = (x.uses_total!=null) ? `${x.uses_left}/${x.uses_total}` : '∞';
       return `
-        <tr data-id="${x.id||''}">
-          <td class="fw-semibold">${x.code}</td>
-          <td>${statusBadge}</td>
-          <td>${reward}</td>
-          <td>${x.realm||'<span class="text-secondary">all</span>'}</td>
-          <td class="small text-secondary">${limits||''}</td>
-          <td>${expires}</td>
-          <td>${kit}</td>
-          <td>${used}</td>
-          <td class="text-end">
-            <div class="btn-group btn-group-sm">
-              <button class="btn btn-outline-light act-edit">Ред.</button>
-              <button class="btn btn-outline-secondary act-players" title="Активации"><i class="bi bi-people"></i></button>
-              <button class="btn btn-outline-danger act-del"><i class="bi bi-trash"></i></button>
-            </div>
-          </td>
-        </tr>
-      `;
+      <tr data-id="${x.id}">
+        <td class="fw-semibold">${x.code}</td>
+        <td>${st}</td>
+        <td>${fmt.money(x.amount, x.currency_key)}</td>
+        <td>${x.realm || '<span class="text-dim">all</span>'}</td>
+        <td>${lim}</td>
+        <td>${fmt.date(x.expires_at)}</td>
+        <td>${x.kit_name? badge(x.kit_name): ''}</td>
+        <td class="text-end">${used}</td>
+        <td class="text-end">
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-light act-edit">Изм.</button>
+            <button class="btn btn-outline-secondary act-copy" title="Скопировать код"><i class="bi bi-clipboard"></i></button>
+            <button class="btn btn-outline-danger act-del">Удалить</button>
+          </div>
+        </td>
+      </tr>`;
     }).join('');
 
-    // bind row actions
-    $$('.act-edit', tbody).forEach(btn=>{
-      btn.addEventListener('click', (e)=>{
-        const id = Number(e.target.closest('tr')?.dataset.id);
-        openEdit(id);
-      });
-    });
-    $$('.act-del', tbody).forEach(btn=>{
-      btn.addEventListener('click', async (e)=>{
-        const tr = e.target.closest('tr'); const id = Number(tr?.dataset.id);
-        if(!id) return;
-        if(!confirm('Удалить промокод?')) return;
-        try{
-          await POST(API.remove, {id});
-          flash('Промокод удалён','success');
-          await reload();
-        }catch(err){ flash('Ошибка удаления: ' + (err.message||err),'error',3200); }
-      });
-    });
-    $$('.act-players', tbody).forEach(btn=>{
-      btn.addEventListener('click', (e)=>{
-        const id = Number(e.target.closest('tr')?.dataset.id);
-        openEdit(id, {focusRedemptions:true});
-      });
-    });
+    // actions
+    $$('.act-edit', els.body).forEach(btn=>btn.addEventListener('click', onRowEdit));
+    $$('.act-copy', els.body).forEach(btn=>btn.addEventListener('click', (e)=>{
+      const tr = e.target.closest('tr'); const r = list.find(x=>x.id==tr.dataset.id); if(r) copy(r.code);
+    }));
+    $$('.act-del', els.body).forEach(btn=>btn.addEventListener('click', onRowDelete));
   }
 
-  function bindSortHeaders(){
-    $$('th[data-sort]', table).forEach(th=>{
-      th.style.cursor = 'pointer';
-      th.addEventListener('click', ()=>{
-        const k = th.getAttribute('data-sort');
-        if(sortKey===k){ sortDir = (sortDir==='asc' ? 'desc' : 'asc'); }
-        else { sortKey = k; sortDir = 'asc'; }
-        applySort();
-      });
-    });
+  async function loadList(){
+    els.body.innerHTML = `<tr><td colspan="9" class="text-secondary small">Загрузка…</td></tr>`;
+    try{
+      list = await json(API+'/promo/list');
+    }catch(e){
+      els.body.innerHTML = `<tr><td colspan="9" class="text-danger">${e.message||e}</td></tr>`;
+      return;
+    }
+    render();
   }
 
-  // ====== modal helpers ======
-  function fillForm(x){
-    fId.value      = x?.id ?? '';
-    fTitle.textContent = x?.id ? `#${x.id}` : '(новый)';
-    fCode.value    = x?.code ?? '';
-    fEnabled.value = (x?.enabled ?? 1) ? '1' : '0';
-    fRealm.value   = x?.realm ?? '';
-    fExp.value     = x?.expires_at ? fmtDate(x.expires_at) : '';
-    fAmount.value  = x?.amount ?? '';
-    fCur.value     = x?.currency_key ?? 'rubs';
-    fTotal.value   = x?.uses_total ?? '';
-    fPer.value     = x?.per_player_uses ?? '';
-    fCD.value      = x?.cooldown_seconds ?? '';
-    fKit.value     = (x?.kit_id ?? '') || '';
-    fLeft.value    = x?.uses_left ?? '';
-    hintLb.textContent = '';
+  // ---------- modal: fill & open ----------
+  function fillModal(row){
+    els.mId.value      = row?.id ?? '';
+    els.mTitle.textContent = row ? `#${row.id}` : '(новый)';
+    els.mCode.value    = row?.code ?? '';
+    els.mEnabled.value = (row?.enabled ?? 1) ? '1':'0';
+    els.mRealm.value   = row?.realm ?? '';
+    els.mExp.value     = row?.expires_at ?? '';
+    els.mAmount.value  = row?.amount ?? '';
+    els.mCurr.value    = row?.currency_key ?? 'rubs';
+    els.mTotal.value   = row?.uses_total ?? '';
+    els.mPer.value     = row?.per_player_uses ?? '';
+    els.mCd.value      = row?.cooldown_seconds ?? '';
+    els.mLeft.value    = row?.uses_left ?? '';
+    els.mKit.value     = row?.kit_id ?? '';
+
+    // группы + редемпшены
+    loadGroups(row?.id);
+    loadReds(row?.id);
   }
 
-  function collectForm(){
-    const id = fId.value ? Number(fId.value) : null;
+  async function onRowEdit(e){
+    const tr = e.target.closest('tr');
+    const id = Number(tr.dataset.id);
+    const row = list.find(x=>x.id===id);
+    fillModal(row);
+    modal.show();
+  }
+
+  async function onRowDelete(e){
+    const tr = e.target.closest('tr');
+    const id = Number(tr.dataset.id);
+    const row = list.find(x=>x.id===id);
+    if (!confirm(`Удалить промокод ${row?.code || ('#'+id)}?`)) return;
+    try{
+      await json(API+'/promo/delete',{method:'POST',body:JSON.stringify({id})});
+      await loadList();
+    }catch(err){ alert('Ошибка: '+(err.message||err)); }
+  }
+
+  // ---------- modal actions ----------
+  async function saveCurrent(){
+    const id = els.mId.value ? Number(els.mId.value) : null;
     const body = {
       id,
-      code: (fCode.value||'').trim().toUpperCase(),
-      enabled: Number(fEnabled.value||'1'),
-      realm: (fRealm.value||'').trim() || null,
-      expires_at: (fExp.value||'').trim() || null,
-      amount: fAmount.value==='' ? null : Number(fAmount.value),
-      currency_key: (fCur.value||'').trim() || null,
-      uses_total: fTotal.value==='' ? null : Number(fTotal.value),
-      per_player_uses: fPer.value==='' ? null : Number(fPer.value),
-      cooldown_seconds: fCD.value==='' ? null : Number(fCD.value),
-      kit_id: !fKit.value ? null : Number(fKit.value)
+      code: (els.mCode.value||'').trim().toUpperCase(),
+      enabled: Number(els.mEnabled.value||1),
+      realm: (els.mRealm.value||'').trim() || null,
+      expires_at: (els.mExp.value||'').trim() || null,
+      amount: (els.mAmount.value!==''? Number(els.mAmount.value): null),
+      currency_key: (els.mCurr.value||'').trim() || null,
+      uses_total: (els.mTotal.value!==''? Number(els.mTotal.value): null),
+      per_player_uses: (els.mPer.value!==''? Number(els.mPer.value): null),
+      cooldown_seconds: (els.mCd.value!==''? Number(els.mCd.value): null),
+      kit_id: (els.mKit.value||'')||null
     };
-    return body;
-  }
 
-  async function openEdit(id, opts={}){
-    await loadKitsToSelect();
-    if(id){
-      try{
-        const data = await GET(API.details + '?id=' + encodeURIComponent(id));
-        fillForm(data);
-        await loadGroups(id);
-        await loadReds(id, opts.focusRedemptions ? (redsQ.value||'') : '');
-      }catch(e){
-        flash('Ошибка загрузки: ' + (e.message||e),'error',3200);
-        return;
+    try{
+      if(!id){
+        // create
+        const resp = await json(API+'/promo/create',{method:'POST',body:JSON.stringify({
+          code: body.code || undefined,
+          amount: body.amount || 0,
+          currency_key: body.currency_key || 'rubs',
+          realm: body.realm,
+          kit_id: body.kit_id,
+          uses: body.uses_total || 1,
+          expires_at: body.expires_at
+        })});
+        // открываем его же для редактирования
+        await loadList();
+        const row = list.find(x=>x.id===resp.id) || list.find(x=>x.code===resp.code);
+        fillModal(row);
+      }else{
+        // update
+        await json(API+'/promo/update',{method:'POST',body:JSON.stringify(body)});
+        await loadList();
+        const row = list.find(x=>x.id===id);
+        fillModal(row);
       }
-    }else{
-      fillForm({enabled:1,currency_key:'rubs'});
-      gBody.innerHTML = '';
-      redsBody.innerHTML = '';
-      redsCnt.textContent = '';
+      alert('Сохранено');
+    }catch(err){
+      alert('Ошибка: '+(err.message||err));
     }
-    modal?.show();
-    if(opts.focusRedemptions){ redsQ?.focus(); }
   }
 
-  // ====== groups ======
-  function groupsRender(list){
-    gBody.innerHTML = (list||[]).map((g,i)=>`
-      <tr>
-        <td class="text-secondary">${i+1}</td>
-        <td><input class="form-control form-control-sm g-name" value="${g.group_name||''}"></td>
-        <td style="max-width:140px"><input type="number" class="form-control form-control-sm g-temp" value="${g.temp_seconds??''}" placeholder="null"></td>
-        <td><input class="form-control form-control-sm g-server" value="${g.context_server||''}" placeholder="global"></td>
-        <td><input class="form-control form-control-sm g-world" value="${g.context_world||''}" placeholder="global"></td>
-        <td style="max-width:110px"><input type="number" class="form-control form-control-sm g-prio" value="${g.priority??(i+1)}"></td>
-        <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del" title="Удалить"><i class="bi bi-x"></i></button></td>
-      </tr>
-    `).join('');
-    $$('.g-del', gBody).forEach(btn=>{
-      btn.addEventListener('click', ()=>{ btn.closest('tr')?.remove(); });
+  // ---------- groups (LuckPerms) ----------
+  function rowGroupTpl(i,g){
+    return `<tr>
+      <td class="text-secondary">${i+1}</td>
+      <td><input class="form-control form-control-sm g-name" value="${g.group_name||''}"></td>
+      <td style="width:150px"><input type="number" class="form-control form-control-sm g-temp" value="${g.temp_seconds??''}"></td>
+      <td><input class="form-control form-control-sm g-srv" value="${g.context_server||''}"></td>
+      <td><input class="form-control form-control-sm g-wld" value="${g.context_world||''}"></td>
+      <td style="width:110px"><input type="number" class="form-control form-control-sm g-pr" value="${g.priority??(i+1)}"></td>
+      <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del">&times;</button></td>
+    </tr>`;
+  }
+  function readGroupsFromUI(){
+    const rows=[];
+    $$('#pc-groups-body tr').forEach((tr,i)=>{
+      const g={
+        group_name: $('.g-name',tr).value.trim(),
+        temp_seconds: $('.g-temp',tr).value ? Number($('.g-temp',tr).value) : null,
+        context_server: $('.g-srv',tr).value.trim()||null,
+        context_world: $('.g-wld',tr).value.trim()||null,
+        priority: $('.g-pr',tr).value ? Number($('.g-pr',tr).value) : (i+1)
+      };
+      if(g.group_name) rows.push(g);
     });
+    return rows;
   }
   async function loadGroups(codeId){
+    els.gBody.innerHTML = '';
+    if(!codeId) return;
     try{
-      const list = await GET(API.groupsList + '?code_id=' + encodeURIComponent(codeId));
-      groupsRender(list||[]);
-    }catch(e){
-      groupsRender([]);
+      const rows = await json(API+'/promo/groups/list?code_id='+codeId);
+      els.gBody.innerHTML = rows.map((g,i)=>rowGroupTpl(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
+      bindGroupRowEvents();
+    }catch(_){
+      els.gBody.innerHTML = '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
     }
   }
-  function groupsCollect(){
-    const out=[];
-    $$('#pc-groups-body tr').forEach(tr=>{
-      out.push({
-        group_name: $('.g-name', tr).value.trim(),
-        temp_seconds: (v=> v===''?null:Number(v))($('.g-temp', tr).value),
-        context_server: (v=> v===''?null:v)($('.g-server', tr).value.trim()),
-        context_world:  (v=> v===''?null:v)($('.g-world', tr).value.trim()),
-        priority: (v=> v===''?1:Number(v))($('.g-prio', tr).value)
+  function bindGroupRowEvents(){
+    $$('.g-del', els.gBody).forEach(btn=>btn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      e.target.closest('tr').remove();
+    }));
+  }
+  function addGroupRow(){
+    const i = $$('#pc-groups-body tr').length;
+    els.gBody.insertAdjacentHTML('beforeend', rowGroupTpl(i, {}));
+    bindGroupRowEvents();
+  }
+  async function saveGroups(){
+    const id = Number(els.mId.value||0);
+    if(!id) return alert('Сначала сохраните промокод');
+    try{
+      const groups = readGroupsFromUI();
+      await json(API+'/promo/groups/save',{method:'POST',body:JSON.stringify({code_id:id, groups})});
+      alert('Группы сохранены');
+      await loadGroups(id);
+    }catch(err){ alert('Ошибка: '+(err.message||err)); }
+  }
+
+  // ---------- redemptions ----------
+  async function loadReds(codeId){
+    els.rBody.innerHTML = '';
+    els.rCount.textContent = '';
+    if(!codeId) return;
+    try{
+      const q = (els.rQuery.value||'').trim();
+      const rows = await json(API+`/promo/redemptions?code_id=${codeId}` + (q?`&q=${encodeURIComponent(q)}`:''));
+      els.rBody.innerHTML = rows.map(r=>`
+        <tr>
+          <td>${fmt.date(r.created_at)}</td>
+          <td>${r.username||'—'}</td>
+          <td class="text-secondary small">${r.uuid}</td>
+          <td>${r.granted_amount!=null? (+r.granted_amount).toFixed(2) : '—'}</td>
+          <td>${list.find(x=>x.id===r.code_id)?.currency_key || ''}</td>
+          <td class="text-secondary">${r.ip||''}</td>
+        </tr>
+      `).join('') || `<tr><td colspan="6" class="text-secondary small">Пусто</td></tr>`;
+      els.rCount.textContent = rows.length ? `${rows.length} активаций` : '';
+    }catch(_){
+      els.rBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Ошибка загрузки</td></tr>`;
+    }
+  }
+
+  // ---------- events ----------
+  function bind(){
+    // сортировка
+    $$('th[data-sort]', els.tbl).forEach(th=>{
+      th.addEventListener('click', ()=>{
+        const k = th.getAttribute('data-sort');
+        if (sortBy===k) sortDir = (sortDir==='asc'?'desc':'asc'); else { sortBy=k; sortDir='asc'; }
+        $$('th[data-sort]', els.tbl).forEach(x=>x.classList.remove('desc'));
+        if (sortDir==='desc') th.classList.add('desc');
+        render();
       });
     });
-    return out.filter(x=>x.group_name);
+
+    els.search.addEventListener('input', render);
+    els.btnRef.addEventListener('click', loadList);
+
+    els.btnCreate.addEventListener('click', async ()=>{
+      await loadKitsIntoSelect();
+      fillModal(null);
+      modal && modal.show();
+    });
+
+    els.mSave.addEventListener('click', saveCurrent);
+    els.mDel.addEventListener('click', async ()=>{
+      const id = els.mId.value ? Number(els.mId.value) : null;
+      if(!id){ alert('Промокод ещё не сохранён'); return; }
+      if(!confirm('Удалить промокод?')) return;
+      try{
+        await json(API+'/promo/delete',{method:'POST', body:JSON.stringify({id})});
+        modal && modal.hide();
+        await loadList();
+      }catch(err){ alert('Ошибка: '+(err.message||err)); }
+    });
+
+    els.gAdd.addEventListener('click', addGroupRow);
+    els.gSave.addEventListener('click', saveGroups);
+
+    els.rBtn.addEventListener('click', ()=>loadReds(Number(els.mId.value||0)));
   }
 
-  // ====== redemptions ======
-  async function loadReds(codeId, q){
-    redsBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Загрузка…</td></tr>`;
-    try{
-      const data = await GET(API.reds + '?code_id=' + encodeURIComponent(codeId) + (q?('&q='+encodeURIComponent(q)):''));
-      const list = Array.isArray(data) ? data : [];
-      if(!list.length){
-        redsBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Нет активаций</td></tr>`;
-      }else{
-        redsBody.innerHTML = list.map(r=>`
-          <tr>
-            <td>${fmtDate(r.created_at)}</td>
-            <td>${r.username||''}</td>
-            <td class="text-secondary small">${r.uuid||''}</td>
-            <td>${r.granted_amount!=null ? fmtMoney(r.granted_amount, r.currency_key||'') : ''}</td>
-            <td>${r.currency_key||''}</td>
-            <td class="text-secondary small">${r.ip||''}</td>
-          </tr>
-        `).join('');
-      }
-      redsCnt.textContent = `${list.length} шт.`;
-      // обновим локальный кэш использований
-      const cid = Number(fId.value||0);
-      if(cid){ usedMap[cid] = list.length; saveUsedMap(usedMap); }
-    }catch(e){
-      redsBody.innerHTML = `<tr><td colspan="6" class="text-danger small">${e.message||e}</td></tr>`;
-      redsCnt.textContent = '';
-    }
-  }
+  // ---------- init ----------
+  (async function init(){
+    grab();
+    API = await pickBase();
+    bind();
+    await loadKitsIntoSelect();
+    await loadList();
+  })();
 
-  // ====== actions ======
-  async function reload(){
-    tbody.innerHTML = `<tr><td colspan="9" class="text-secondary small">Загрузка…</td></tr>`;
-    try{
-      rows = await GET(API.list);
-      applyFilter();
-    }catch(e){
-      tbody.innerHTML = `<tr><td colspan="9" class="text-danger small">${e.message||e}</td></tr>`;
-    }
-  }
-
-  // create new
-  btnNew?.addEventListener('click', ()=> openEdit(null));
-
-  // save (create/update)
-  btnSave?.addEventListener('click', async ()=>{
-    const body = collectForm();
-    if(!body.code){ flash('Укажите код','error'); fCode.focus(); return; }
-    try{
-      if(body.id){ await POST(API.update, body); }
-      else { const r = await POST(API.create, body); if(r?.id) fId.value = r.id; }
-      flash('Сохранено','success');
-      await reload();
-      // перезагрузим группы/активации если открыто
-      if(body.id){ await loadGroups(body.id); await loadReds(body.id, redsQ.value||''); }
-    }catch(e){ flash('Ошибка: ' + (e.message||e),'error',3200); }
-  });
-
-  // delete
-  btnDel?.addEventListener('click', async ()=>{
-    const id = Number(fId.value||0);
-    if(!id){ flash('Сначала сохраните промокод','error'); return; }
-    if(!confirm('Удалить промокод?')) return;
-    try{
-      await POST(API.remove, {id});
-      flash('Удалено','success');
-      modal?.hide();
-      await reload();
-    }catch(e){ flash('Ошибка удаления: ' + (e.message||e),'error',3200); }
-  });
-
-  // groups: add/save
-  gAdd?.addEventListener('click', ()=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="text-secondary">#</td>
-      <td><input class="form-control form-control-sm g-name" placeholder="group"></td>
-      <td style="max-width:140px"><input type="number" class="form-control form-control-sm g-temp" placeholder="null"></td>
-      <td><input class="form-control form-control-sm g-server" placeholder="global"></td>
-      <td><input class="form-control form-control-sm g-world" placeholder="global"></td>
-      <td style="max-width:110px"><input type="number" class="form-control form-control-sm g-prio" value="1"></td>
-      <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del"><i class="bi bi-x"></i></button></td>
-    `;
-    gBody.appendChild(tr);
-    $('.g-del', tr).addEventListener('click', ()=> tr.remove());
-  });
-
-  gSave?.addEventListener('click', async ()=>{
-    const id = Number(fId.value||0);
-    if(!id){ flash('Сначала сохраните промокод','error'); return; }
-    const groups = groupsCollect();
-    try{
-      await POST(API.groupsSave, {code_id:id, groups});
-      flash('Группы сохранены','success');
-      await loadGroups(id);
-    }catch(e){ flash('Ошибка сохранения групп: ' + (e.message||e),'error',3200); }
-  });
-
-  // redemptions search
-  redsBtn?.addEventListener('click', ()=>{
-    const id = Number(fId.value||0);
-    if(id) loadReds(id, redsQ.value||'');
-  });
-
-  // search + refresh
-  searchI?.addEventListener('input', applyFilter);
-  btnRef?.addEventListener('click', reload);
-
-  // sort headers
-  bindSortHeaders();
-
-  // initial load
-  reload();
-
-  // expose for debug (optional)
-  window.PC = {
-    openEdit,
-    reload,
-    groups:{ load:loadGroups, save:()=>gSave.click(), addRow:()=>gAdd.click() },
-    redemptions:{ reload:()=>redsBtn.click() }
-  };
 })();
 </script>
