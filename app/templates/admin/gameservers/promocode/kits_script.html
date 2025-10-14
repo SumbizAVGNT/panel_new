@@ -1,5 +1,5 @@
 <script>
-/* Kits module + автокомплит через портал (с fallback) */
+/* Kits module + автокомплит через портал (фикс позиционирования дропдауна) */
 (function(){
   'use strict';
 
@@ -16,7 +16,7 @@
 
   const ENCH_FILE = '/static/data/enchantments-1.20.6.json';
 
-  /* ---- Fallback на случай 404/пустого json ---- */
+  /* ---- Fallback, если файл чар не загрузился ---- */
   const DEFAULT_ENCH = [
     {id:'minecraft:sharpness',max:5},{id:'minecraft:smite',max:5},
     {id:'minecraft:efficiency',max:5},{id:'minecraft:looting',max:3},
@@ -48,12 +48,14 @@
   function grab(){
     root = document.getElementById('kits-root');
     if(!root) return false;
+
     grid       = $('#slot-grid', root);
     itemsWrap  = $('#items-wrap', root);
     itemsEmpty = $('#items-empty', root);
     verSelect  = $('#ver-select', root);
     nameInput  = $('#kit-name', root);
     descInput  = $('#kit-desc', root);
+
     slotEditor   = $('#slot-editor', root);
     slotNo       = $('#slot-no', root);
     slotQty      = $('#slot-qty', root);
@@ -63,13 +65,30 @@
     slotClearBtn = $('#slot-clear', root);
     statsPill    = $('#kit-stats', root);
     kitsToasts   = $('#kits-toasts', root);
+
     enchInput    = $('#ench-input', root);
     enchWrap     = $('#slot-enchants', root);
     enchClearBtn = $('#ench-clear', root);
 
+    /* === Портальный контейнер дропдауна (самодостаточные стили) === */
     if(!ddPortal){
       ddPortal = document.createElement('div');
-      ddPortal.className = 'kits-dd-popover d-none';
+      ddPortal.className = 'kits-dd-popover';
+      // ВАЖНО: инлайн-стили – чтобы не зависеть от CSS
+      Object.assign(ddPortal.style, {
+        position:'absolute',
+        zIndex:'4000',
+        left:'0px', top:'0px',
+        minWidth:'240px',
+        background:'#0b1220',
+        border:'1px solid rgba(148,163,184,.25)',
+        borderRadius:'10px',
+        boxShadow:'0 10px 24px rgba(0,0,0,.35)',
+        maxHeight:'260px',
+        overflow:'auto',
+        padding:'4px 0',
+        display:'none'
+      });
       document.body.appendChild(ddPortal);
     }
     return true;
@@ -95,6 +114,7 @@
       else if(Array.isArray(j.items)) arr=j.items;
       else arr=Object.keys(j||{}).map(k=>({id:k,name:j[k]}));
 
+      // убираем дубли
       const map=new Map();
       for(const it of arr){
         if(!it||!it.id) continue;
@@ -229,7 +249,7 @@
   function findSuggestions(q){
     const s=(q||'').toLowerCase();
     const pool=[...state.ench.list, ...state.ench.attrs];
-    if(!pool.length) return [];             // теоретически не случится из-за fallback
+    if(!pool.length) return [];
     if(!s) return pool.slice(0,12);
     return pool.filter(x => x.id.includes(s) || (x.alias||[]).some(a=>a.includes(s))).slice(0,12);
   }
@@ -267,27 +287,44 @@
     state.slots[state.active] = s;
   }
 
-  /* ========== DROPDOWN-PORTAL ========== */
+  /* ========== DROPDOWN-PORTAL (с инлайн-стилями) ========== */
   function placeDD(){
     if(!state.dd.open) return;
     const r = enchInput.getBoundingClientRect();
-    ddPortal.style.top   = Math.round(r.bottom + 6 + window.scrollY)+'px';
-    ddPortal.style.left  = Math.round(r.left   + window.scrollX)+'px';
-    ddPortal.style.width = Math.round(r.width)+'px';
+    const margin = 6;
+    const top = Math.round(r.bottom + margin + window.scrollY);
+    const left= Math.round(r.left + window.scrollX);
+    const width = Math.round(r.width);
+
+    ddPortal.style.top = top+'px';
+    ddPortal.style.left = left+'px';
+    ddPortal.style.width = width+'px';
   }
+
   function openDD(list){
     if(!list || list.length===0){ closeDD(); return; }
-    ddPortal.innerHTML = list.map((x,i)=>`
-      <div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}">
-        <span>${x.id}</span><small>${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small>
-      </div>`).join('');
-    ddPortal.classList.remove('d-none');
+    ddPortal.innerHTML = list.map((x,i)=>(
+      `<div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}" ` +
+      `style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">` +
+        `<span style="color:#e5e7eb">${x.id}</span>` +
+        `<small style="color:#94a3b8">${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small>` +
+      `</div>`
+    )).join('');
+    // hover/active стили прямо здесь
+    ddPortal.querySelectorAll('.kits-dd-item').forEach(el=>{
+      el.addEventListener('mouseenter',()=>el.style.background='rgba(96,165,250,.12)');
+      el.addEventListener('mouseleave',()=>el.style.background='transparent');
+    });
+
+    ddPortal.style.display = 'block';
     state.dd.open = true;
     placeDD();
   }
+
   function closeDD(){
     if(!state.dd.open) return;
-    ddPortal.classList.add('d-none'); ddPortal.innerHTML='';
+    ddPortal.style.display = 'none';
+    ddPortal.innerHTML='';
     state.dd.open=false; state.dd.idx=-1; state.dd.data=[];
   }
 
@@ -300,7 +337,7 @@
     $('#item-refresh',root).addEventListener('click', ()=>loadItemsFor(state.version));
 
     slotClearBtn.addEventListener('click', clearActiveSlot);
-    dnameClear.addEventListener('click', ()=>{ slotDName.value=''; applySlotEditor(); });
+    dnameClear?.addEventListener('click', ()=>{ slotDName.value=''; applySlotEditor(); });
     $$('#slot-editor [data-qty]', root).forEach(btn=>{
       btn.addEventListener('click', ()=>{ let v=Number(slotQty.value||1) + (btn.dataset.qty==='+1'?1:-1); v=Math.max(1, Math.min(64, v)); slotQty.value=String(v); applySlotEditor(); });
     });
@@ -316,9 +353,8 @@
         if(last){ last.remove(); serializeExtra(); e.preventDefault(); }
       }
     });
-    enchClearBtn.addEventListener('click', ()=>{ enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; enchInput.focus(); });
+    enchClearBtn?.addEventListener('click', ()=>{ enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; enchInput.focus(); });
 
-    // Показ подсказок при фокусе И при вводе
     function showDD(){ const list = findSuggestions(enchInput.value); state.dd.idx=0; state.dd.data=list; openDD(list); }
     enchInput.addEventListener('focus', showDD);
     enchInput.addEventListener('input', showDD);
@@ -332,7 +368,7 @@
         e.preventDefault();
         const it=state.dd.data[state.dd.idx]; if(!it) return;
         if(it.t==='ench') addEnchChip({id:it.id, lvl:1}); else addAttrChip({id:it.id, val:it.def ?? 1});
-        enchInput.value=''; closeDD(); serializeExtra(); // сразу закрываем
+        enchInput.value=''; closeDD(); serializeExtra(); enchInput.focus();
       }
     });
 
