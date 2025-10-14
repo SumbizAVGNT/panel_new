@@ -2,6 +2,9 @@
 {% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
+/* ===== Accounts CSS: вернуть импорт, иначе вкладка без стилей ===== */
+@import url("{{ url_for('static', filename='css/accounts.css') }}");
+
 /* Палитра */
 :root{
   --ui-surface : rgba(12,16,24,.62);
@@ -208,7 +211,6 @@ function fillTile(name, p){
   const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`); if(!root) return;
   const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta?.querySelector(`[data-k="${k}"]`);
 
-  // state (dot + badge)
   const dot = root.querySelector('[data-k="dot"]');
   if(dot){ dot.classList.remove('on','off'); dot.classList.add(p.isUp ? 'on' : 'off'); }
   const state = root.querySelector('[data-k="state"]');
@@ -261,7 +263,6 @@ async function loadRealms(){
   const ico = document.getElementById('refreshIco');
   ico?.classList.add('spin');
 
-  // отмена предыдущего запроса
   try{ lastController?.abort(); }catch(_){}
   lastController = new AbortController();
 
@@ -278,24 +279,18 @@ async function loadRealms(){
     ico?.classList.remove('spin'); return;
   }
 
-  // Список актуальных имён
   const names = Object.keys(data).sort((a,b)=>a.localeCompare(b));
   const nameSet = new Set(names);
 
-  // 1) Удаляем ВСЕ скелеты и карточки, которых больше нет
   box.querySelectorAll('[data-skel="1"]').forEach(el=>el.remove());
-  box.querySelectorAll('.tile[data-realm]').forEach(el=>{
-    if(!nameSet.has(el.dataset.realm)) el.remove();
-  });
+  box.querySelectorAll('.tile[data-realm]').forEach(el=>{ if(!nameSet.has(el.dataset.realm)) el.remove(); });
 
-  // 2) Добавляем недостающие карточки
   names.forEach(name=>{
     if(!box.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`)){
       box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0));
     }
   });
 
-  // 3) Обновляем метрики у всех существующих карточек
   await Promise.allSettled(names.map(async (name)=>{
     try{
       const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store', signal:lastController.signal});
@@ -303,7 +298,6 @@ async function loadRealms(){
     }catch(_){}
   }));
 
-  // Если после синхронизации не осталось карточек — отрисуем заглушку
   if(!box.querySelector('.tile[data-realm]')){
     box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`;
   }
