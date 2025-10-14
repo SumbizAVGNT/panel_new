@@ -136,14 +136,21 @@
 
             <!-- Enchants / attributes with autocomplete -->
             <div class="col-12">
-              <label class="form-label mb-1">Enchant / Attr</label>
+              <label class="form-label mb-1 d-flex align-items-center justify-content-between">
+                <span>Enchant / Attr</span>
+                <button id="ench-clear" type="button" class="btn btn-sm btn-outline-light">
+                  <i class="bi bi-eraser"></i> Очистить
+                </button>
+              </label>
               <div class="dd">
                 <input id="ench-input" placeholder="Начните печатать: sharp..., prot..., attack_damage..." autocomplete="off" aria-expanded="false" aria-haspopup="listbox">
                 <div id="ench-dd" class="dd-list d-none" role="listbox"></div>
               </div>
               <div id="slot-enchants" class="mt-2"></div>
               <input id="slot-extra" type="hidden" value="">
-              <div class="form-text text-secondary">Выберите подсказку и отредактируйте уровень/значение на чипсе. Enter — добавить выбранную подсказку.</div>
+              <div class="form-text text-secondary">
+                Enter — добавить выбранную подсказку; Backspace на пустом поле — удалить последний чип; «Очистить» — удалить все.
+              </div>
             </div>
           </div>
         </div>
@@ -227,18 +234,19 @@
 
       const $=(s,r=document)=>r.querySelector(s);
       const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
-      let root, grid, itemsWrap, itemsEmpty, verSelect, nameInput, descInput;
+      let root, grid, itemsWrap, itemsEmpty, verSelect;
       let slotEditor, slotNo, slotQty, slotDName, slotExtra, slotClearBtn, statsPill, kitsToasts;
-      let enchInput, enchDD, enchWrap;
+      let enchInput, enchDD, enchWrap, enchClearBtn;
 
       function grab(){
         root = document.getElementById('kits-root'); if(!root) return false;
         grid=$('#slot-grid',root); itemsWrap=$('#items-wrap',root); itemsEmpty=$('#items-empty',root);
-        verSelect=$('#ver-select',root); nameInput=$('#kit-name',root); descInput=$('#kit-desc',root);
+        verSelect=$('#ver-select',root);
         slotEditor=$('#slot-editor',root); slotNo=$('#slot-no',root); slotQty=$('#slot-qty',root);
         slotDName=$('#slot-dname',root); slotExtra=$('#slot-extra',root); slotClearBtn=$('#slot-clear',root);
         statsPill=$('#kit-stats',root); kitsToasts=$('#kits-toasts',root);
         enchInput=$('#ench-input',root); enchDD=$('#ench-dd',root); enchWrap=$('#slot-enchants',root);
+        enchClearBtn=$('#ench-clear',root);
         return true;
       }
 
@@ -418,16 +426,32 @@
         slotQty.addEventListener('input',applySlotEditor);
         slotDName.addEventListener('input',applySlotEditor);
 
+        // Очистить все чары/атрибуты
+        enchClearBtn.addEventListener('click',()=>{
+          enchWrap.innerHTML=''; serializeExtra();
+          toast('Чары очищены');
+        });
+
+        // автокомплит
         enchInput.addEventListener('input',()=>{ const list=findSuggestions(enchInput.value); state.dd.idx=0; state.dd.data=list; openDD(list); });
         enchInput.addEventListener('keydown',e=>{
-          if(!state.dd.open) return;
-          if(e.key==='ArrowDown'){e.preventDefault(); state.dd.idx=Math.min(state.dd.data.length-1,state.dd.idx+1); openDD(state.dd.data);}
-          if(e.key==='ArrowUp'){e.preventDefault(); state.dd.idx=Math.max(0,state.dd.idx-1); openDD(state.dd.data);}
-          if(e.key==='Escape'){closeDD();}
-          if(e.key==='Enter'){
-            e.preventDefault(); const it=state.dd.data[state.dd.idx]; if(!it) return;
-            if(it.t==='ench') addEnchChip({id:it.id,lvl:1}); else addAttrChip({id:it.id,val:it.def??1});
-            enchInput.value=''; closeDD(); serializeExtra();
+          // Backspace на пустом поле — удалить последний чип
+          if(e.key==='Backspace' && enchInput.value===''){
+            const last=enchWrap.querySelector('.chip:last-of-type');
+            if(last){ last.remove(); serializeExtra(); e.preventDefault(); return; }
+          }
+          if(!state.dd.open){
+            if(e.key==='ArrowDown'){ const list=findSuggestions(enchInput.value); if(list.length){ state.dd.data=list; state.dd.idx=0; openDD(list); } return; }
+            if(e.key==='Escape'){ closeDD(); return; }
+          }else{
+            if(e.key==='ArrowDown'){ e.preventDefault(); state.dd.idx=Math.min(state.dd.data.length-1,state.dd.idx+1); openDD(state.dd.data); }
+            if(e.key==='ArrowUp'){ e.preventDefault(); state.dd.idx=Math.max(0,state.dd.idx-1); openDD(state.dd.data); }
+            if(e.key==='Escape'){ closeDD(); }
+            if(e.key==='Enter'){
+              e.preventDefault(); const it=state.dd.data[state.dd.idx]; if(!it) return;
+              if(it.t==='ench') addEnchChip({id:it.id,lvl:1}); else addAttrChip({id:it.id,val:it.def??1});
+              enchInput.value=''; closeDD(); serializeExtra();
+            }
           }
         });
         enchDD.addEventListener('click',e=>{
