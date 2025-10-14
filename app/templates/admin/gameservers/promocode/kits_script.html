@@ -1,284 +1,388 @@
 <script>
-(function KitsInventory(){
-  // ---------- helpers ----------
-  const $ = (id)=>document.getElementById(id);
-  const el = (sel, root=document)=>root.querySelector(sel);
-  const els = (sel, root=document)=>[...root.querySelectorAll(sel)];
-  const fmtId = (ns,id)=>`${ns||'minecraft'}:${id}`;
-  const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
-  const xheaders = (h={}) => CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
-  const flash = (text,type='info',ms=2200)=>{
-    const host = document.querySelector('.flash-stack') || (()=>{const d=document.createElement('div');d.className='flash-stack';document.body.appendChild(d);return d})();
-    const n = document.createElement('div'); n.className = `flash flash-${type}`; n.textContent = text; host.appendChild(n);
-    setTimeout(()=> n.remove(), ms);
+(() => {
+  if (window.kitsInit) return; // не дублируем инициализацию между табами
+
+  /* ===== Config / endpoints ===== */
+  const API = {
+    versions: '/admin/gameservers/api/kits/versions',   // GET -> {ok, versions:[{id,name}]}
+    items:    '/admin/gameservers/api/kits/items',      // GET ?version=&q=  -> {ok, items:[{id,name,icon}]}
+    list:     '/admin/gameservers/api/kits/list',       // GET -> {ok, kits:[{id,name,desc,slots:[...]}]}
+    get:      (id)=> `/admin/gameservers/api/kits/${encodeURIComponent(id)}`, // GET -> {ok, kit}
+    save:     '/admin/gameservers/api/kits/save',       // POST {kit} -> {ok, id}
+    delete:   (id)=> `/admin/gameservers/api/kits/${encodeURIComponent(id)}`  // DELETE -> {ok}
   };
 
-  // ---------- state ----------
-  const SLOTS_TOTAL = 54;
-  let current = { id:null, name:'', description:'', inventory: Array.from({length:SLOTS_TOTAL}, ()=>null) };
-  let selectedSlot = null;
-  let catalog = [];
-  let lastCatalogSrc = 'vanilla';
+  /* ===== State ===== */
+  const S = {
+    currentId: null,
+    dirty: false,
+    slots: Array.from({length:9},()=>null), // {id,name,icon,qty,dname,extra}
+    versions: [],
+    items: [],
+  };
 
-  // ---------- nodes ----------
-  const grid = $('inv-grid');
-  const enchList = $('enchips');
-  const lblTitle = $('kit-title-lbl');
-  const lblCount = $('kit-count');
-  const catBox = $('cat-grid');
+  /* ===== DOM ===== */
+  const R = {
+    root: document.getElementById('kits-root'),
+    name: document.getElementById('kit-name'),
+    desc: document.getElementById('kit-desc'),
+    stats: document.getElementById('kit-stats'),
+    hint: document.getElementById('kit-hint'),
+    btnNew: document.getElementById('kit-new'),
+    btnDup: document.getElementById('kit-dup'),
+    btnSave: document.getElementById('kit-save'),
+    btnDel: document.getElementById('kit-del'),
+    grid: document.getElementById('slot-grid'),
+    slotEditor: document.getElementById('slot-editor'),
+    slotNo: document.getElementById('slot-no'),
+    slotQty: document.getElementById('slot-qty'),
+    slotDname: document.getElementById('slot-dname'),
+    slotExtra: document.getElementById('slot-extra'),
+    slotClear: document.getElementById('slot-clear'),
+    verSel: document.getElementById('ver-select'),
+    search: document.getElementById('item-search'),
+    iWrap: document.getElementById('items-wrap'),
+    iEmpty: document.getElementById('items-empty'),
+    iRefresh: document.getElementById('item-refresh'),
+    kList: document.getElementById('kits-list'),
+    kCount: document.getElementById('kits-count'),
+    toasts: document.getElementById('kits-toasts'),
+  };
 
-  // ---------- ui: inventory drawing ----------
-  function renderInventory(){
-    els('.slot', grid).forEach(slot=>{
-      const i = +slot.dataset.slot;
-      const item = current.inventory[i];
-      slot.innerHTML = '';
-      slot.classList.toggle('selected', selectedSlot===i);
-      if(item){
-        const wrap = document.createElement('div');
-        wrap.className = 'item';
-        wrap.title = `${item.display_name?.trim() || item.orig_name || item.id}\n${fmtId(item.ns,item.id)}${(item.enchants?.length? '\n' + item.enchants.map(e=>`${e.id}@${e.lvl}`).join(', ') : '')}`;
-        const img = document.createElement('img');
-        img.alt = item.id; img.loading='lazy'; img.decoding='async';
-        img.src = item.icon || iconFor(item);
-        wrap.appendChild(img);
-        const qty = document.createElement('span');
-        qty.className = 'qty'; qty.textContent = Math.max(1, item.amount|0);
-        wrap.appendChild(qty);
-        slot.appendChild(wrap);
+  /* ===== Utils ===== */
+  const toast = (msg, ok=true) => {
+    const el = document.createElement('div');
+    el.className = `toast align-items-center text-bg-${ok?'dark':'danger'} border-0 show`;
+    el.role = 'alert';
+    el.style = 'min-width:280px;border:1px solid rgba(148,163,184,.28);background:#0b1220';
+    el.innerHTML = `
+      <div class="d-flex">
+        <div class="toast-body small">${msg}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>`;
+    R.toasts.appendChild(el);
+    setTimeout(()=> el.remove(), 2600);
+  };
+
+  const setDirty = (v=true) => {
+    S.dirty = v;
+    R.btnSave.disabled = !S.dirty;
+    R.btnDup.disabled  = (S.currentId==null);
+    R.btnDel.disabled  = (S.currentId==null);
+    updateStats();
+  };
+
+  const updateStats = () => {
+    const total = S.slots.reduce((a,s)=>a+(s?.qty||0),0);
+    R.stats.textContent = `${total} items`;
+  };
+
+  const renderSlots = (active = null) => {
+    R.grid.innerHTML = "";
+    S.slots.forEach((s, i) => {
+      const el = document.createElement('div');
+      el.className = 'slot';
+      el.dataset.idx = String(i);
+      if (active === i) el.classList.add('active');
+
+      // content
+      if (s && s.id) {
+        el.innerHTML = `
+          ${s.icon ? `<img class="icon" src="${s.icon}" alt="">` : `<div class="icon"></div>`}
+          <div class="name">${s.name||s.id}</div>
+          <div class="qty">${s.qty||1}</div>
+        `;
+      } else {
+        el.innerHTML = `<div class="dim">слот ${i+1}</div>`;
       }
-    });
-    const n = current.inventory.filter(Boolean).length;
-    lblCount.textContent = `${n} предметов`;
-  }
 
-  function iconFor(it){
-    if(it.icon) return it.icon;
-    const ns = it.ns || 'minecraft';
-    if(ns==='minecraft') return `/static/mc/1.20.6/items/${it.id}.png`;
-    return `/static/mc/itemsadder/${ns}.${it.id}.png`;
-  }
-
-  function setSelected(idx){
-    selectedSlot = (idx==null? null : +idx);
-    els('.slot', grid).forEach(s=> s.classList.toggle('selected', +s.dataset.slot===selectedSlot));
-    fillEditorsFromSlot();
-  }
-
-  // ---------- editors ----------
-  function fillEditorsFromSlot(){
-    const it = (selectedSlot!=null ? current.inventory[selectedSlot] : null);
-    $('edit-slot').textContent = (selectedSlot!=null? selectedSlot+1 : '—');
-    $('edit-name').value   = it?.display_name || '';
-    $('edit-amount').value = it?.amount || 1;
-    enchList.innerHTML = '';
-    (it?.enchants||[]).forEach((e,ix)=>{
-      const chip = document.createElement('span');
-      chip.className='chip';
-      chip.innerHTML = `${e.id}@${e.lvl} <a href="#" data-ix="${ix}">×</a>`;
-      chip.querySelector('a').addEventListener('click', ev=>{
-        ev.preventDefault();
-        it.enchants.splice(ix,1);
-        renderInventory(); fillEditorsFromSlot(); markDirty();
+      // click -> select
+      el.addEventListener('click', () => {
+        selectSlot(i);
       });
-      enchList.appendChild(chip);
+
+      // DnD
+      el.addEventListener('dragover', (ev)=>{ev.preventDefault(); el.classList.add('drag-over');});
+      el.addEventListener('dragleave', ()=> el.classList.remove('drag-over'));
+      el.addEventListener('drop', (ev)=>{
+        ev.preventDefault(); el.classList.remove('drag-over');
+        const payload = ev.dataTransfer.getData('application/json');
+        try{
+          const item = JSON.parse(payload);
+          putItem(i, item);
+        }catch(_){}
+      });
+
+      R.grid.appendChild(el);
     });
+  };
+
+  const selectSlot = (idx) => {
+    S.active = idx;
+    renderSlots(idx);
+    const s = S.slots[idx] || {qty:1};
+    R.slotNo.textContent = String(idx+1);
+    R.slotQty.value   = s.qty || 1;
+    R.slotDname.value = s.dname || '';
+    R.slotExtra.value = s.extra || '';
+    R.slotEditor.hidden = false;
+    R.slotClear.disabled = !(S.slots[idx] && S.slots[idx].id);
+  };
+
+  const putItem = (idx, item) => {
+    const curr = S.slots[idx] || {};
+    S.slots[idx] = { ...curr, id:item.id, name:item.name||item.id, icon:item.icon||'', qty:curr.qty||1 };
+    setDirty(true);
+    renderSlots(idx);
+    selectSlot(idx);
+  };
+
+  const clearSlot = (idx) => {
+    S.slots[idx] = null;
+    setDirty(true);
+    renderSlots(idx);
+    selectSlot(idx);
+  };
+
+  /* ===== Catalog ===== */
+  const renderItems = (items) => {
+    R.iWrap.innerHTML = "";
+    if (!items || !items.length) {
+      R.iEmpty.hidden = false; return;
+    }
+    R.iEmpty.hidden = true;
+    for (const it of items) {
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.draggable = true;
+      el.innerHTML = `
+        <img class="icon" src="${it.icon||''}" onerror="this.style.visibility='hidden'">
+        <div class="n">${it.name || it.id}</div>
+      `;
+      el.addEventListener('dragstart', (ev)=>{
+        ev.dataTransfer.setData('application/json', JSON.stringify({id:it.id, name:it.name, icon:it.icon||''}));
+      });
+      el.addEventListener('click', ()=>{
+        if (typeof S.active === 'number') {
+          putItem(S.active, it);
+        }
+      });
+      R.iWrap.appendChild(el);
+    }
+  };
+
+  async function fetchJSON(url){
+    const r = await fetch(url, {cache:'no-store'});
+    return r.json();
   }
 
-  function updateSelectedFromEditors(){
-    if(selectedSlot==null) return;
-    const it = current.inventory[selectedSlot]; if(!it) return;
-    it.display_name = ($('edit-name').value || '').trim() || null;
-    let amt = parseInt($('edit-amount').value || '1', 10); if(!Number.isFinite(amt) || amt<1) amt=1;
-    it.amount = amt;
-    renderInventory();
-  }
-
-  // ---------- catalog (chunked render + debounce) ----------
-  async function loadCatalog(src){
-    lastCatalogSrc = src;
-    const url = src==='custom' ? '/admin/promocode/api/items/custom' : '/admin/promocode/api/items/vanilla';
-    catBox.innerHTML = '<div class="small-dim">Загрузка…</div>';
+  async function loadVersions(){
     try{
-      const r = await fetch(url, {cache:'no-store'});
-      const j = await r.json(); if(!j.ok) throw new Error(j.error || 'catalog error');
-      catalog = j.data || [];
-      drawCatalogChunked(catalog);
-    }catch(e){ catBox.innerHTML = `<div class="text-danger small">${e.message||e}</div>`; catalog = []; }
+      const j = await fetchJSON(API.versions);
+      if (!j.ok) throw new Error(j.error || 'versions error');
+      S.versions = j.versions || [];
+    }catch(_){
+      // fallback
+      S.versions = [{id:'vanilla-1.20.6', name:'Vanilla 1.20.6'}];
+    }
+    R.verSel.innerHTML = S.versions.map(v=>`<option value="${v.id}">${v.name||v.id}</option>`).join('');
   }
 
-  function makeCell(it){
-    const cell = document.createElement('div');
-    cell.className = 'cat-item';
-    cell.title = `${it.name || it.id}\n${fmtId(it.ns||'minecraft', it.id)}`;
-    cell.draggable = true; cell.dataset.ns = it.ns || 'minecraft'; cell.dataset.id = it.id;
-    const img = document.createElement('img');
-    img.src = it.icon || iconFor(it); img.alt = it.id; img.loading='lazy'; img.decoding='async';
-    cell.appendChild(img);
-    const hint = document.createElement('span'); hint.className='hint'; hint.textContent='⠿'; cell.appendChild(hint);
-    return cell;
+  async function loadItems(){
+    const ver = R.verSel.value || (S.versions[0] && S.versions[0].id) || '';
+    const q = R.search.value.trim();
+    R.iWrap.innerHTML = `<div class="skeleton" style="grid-column:1/-1;min-height:52px"></div>`;
+    try{
+      const url = new URL(API.items, location.origin);
+      url.searchParams.set('version', ver);
+      if (q) url.searchParams.set('q', q);
+      const j = await fetchJSON(url);
+      if (!j.ok) throw new Error(j.error || 'items error');
+      S.items = j.items || [];
+      renderItems(S.items);
+    }catch(_){
+      // fallback examples
+      S.items = [
+        {id:'minecraft:stone', name:'Stone'},
+        {id:'minecraft:oak_log', name:'Oak Log'},
+        {id:'minecraft:iron_sword', name:'Iron Sword'},
+        {id:'minecraft:bread', name:'Bread'},
+      ];
+      renderItems(S.items);
+    }
   }
 
-  function drawCatalogChunked(list){
-    catBox.innerHTML='';
-    if(!list.length){ catBox.innerHTML = '<div class="small-dim">Нет данных</div>'; return; }
-    let i = 0;
-    const pump = (deadline)=>{
-      const frag = document.createDocumentFragment();
-      let n = 0;
-      while(i<list.length && (deadline?.timeRemaining?.() > 1 || n < 60)){
-        frag.appendChild(makeCell(list[i++])); n++;
-      }
-      catBox.appendChild(frag);
-      if(i<list.length){ (window.requestIdleCallback||window.requestAnimationFrame)(pump); }
+  /* ===== Saved kits ===== */
+  function renderKitsList(kits){
+    R.kList.innerHTML = "";
+    if (!kits || !kits.length){
+      R.kList.innerHTML = `<div class="dim">Китов нет</div>`;
+      R.kCount.textContent = '0';
+      return;
+    }
+    R.kCount.textContent = String(kits.length);
+    for (const k of kits){
+      const row = document.createElement('div');
+      row.className = 'kit-row';
+      row.innerHTML = `
+        <div class="flex-grow-1">
+          <div class="name">${k.name||k.id}</div>
+          <div class="dim">${k.desc||''}</div>
+        </div>
+        <button class="btn btn-sm btn-outline-light">Открыть</button>
+      `;
+      row.querySelector('button').addEventListener('click', ()=> openKit(k.id));
+      R.kList.appendChild(row);
+    }
+  }
+
+  async function loadKits(){
+    R.kList.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div>`;
+    try{
+      const j = await fetchJSON(API.list);
+      if (!j.ok) throw new Error(j.error||'list error');
+      renderKitsList(j.kits||[]);
+    }catch(_){
+      renderKitsList([]);
+    }
+  }
+
+  async function openKit(id){
+    try{
+      const j = await fetchJSON(API.get(id));
+      if (!j.ok) throw new Error(j.error||'get error');
+      const kit = j.kit || {};
+      S.currentId = kit.id || id;
+      S.slots = Array.from({length:9},(_,i)=> kit.slots?.[i] || null);
+      R.name.value = kit.name||'';
+      R.desc.value = kit.desc||'';
+      renderSlots();
+      selectSlot(0);
+      setDirty(false);
+      R.hint.textContent = `редактирование кита ${kit.name || kit.id}`;
+      toast('Кит загружен');
+    }catch(e){
+      toast('Не удалось открыть кит', false);
+    }
+  }
+
+  async function saveKit(){
+    const payload = {
+      id: S.currentId || undefined,
+      name: R.name.value.trim(),
+      desc: R.desc.value.trim(),
+      slots: S.slots.map(s => s ? {id:s.id, name:s.name, icon:s.icon||'', qty:s.qty||1, dname:s.dname||'', extra:s.extra||''} : null),
     };
-    (window.requestIdleCallback||window.requestAnimationFrame)(pump);
+    if (!payload.name){
+      toast('Укажите название кита', false); return;
+    }
+    try{
+      const r = await fetch(API.save, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error||'save error');
+      S.currentId = j.id || S.currentId || payload.name;
+      setDirty(false);
+      loadKits();
+      toast('Сохранено');
+    }catch(e){
+      toast('Ошибка сохранения', false);
+    }
   }
 
-  // делегирование: click + dragstart
-  catBox.addEventListener('click', (ev)=>{
-    const cell = ev.target.closest('.cat-item'); if(!cell) return;
-    const slotIndex = (selectedSlot!=null? selectedSlot : current.inventory.findIndex(x=>!x));
-    if(slotIndex<0) return;
-    placeItem(slotIndex, {
-      ns: cell.dataset.ns, id: cell.dataset.id, amount: 1, display_name: null,
-      enchants: [], icon: el('img', cell)?.src, orig_name: cell.title?.split('\n')?.[0] || cell.dataset.id,
-    });
-    setSelected(slotIndex); markDirty();
-  });
-  catBox.addEventListener('dragstart', (ev)=>{
-    const cell = ev.target.closest('.cat-item'); if(!cell) return;
-    const it = { id: cell.dataset.id, ns: cell.dataset.ns, icon: el('img', cell)?.src };
-    ev.dataTransfer.setData('application/json', JSON.stringify(it));
-    ev.dataTransfer.effectAllowed = 'copy';
-  }, true);
-
-  // поиск (debounce)
-  let qTimer=null;
-  $('cat-q').addEventListener('input', ()=>{
-    clearTimeout(qTimer);
-    qTimer = setTimeout(()=>{
-      const q = $('cat-q').value.trim().toLowerCase();
-      const filtered = !q ? catalog : catalog.filter(it=>
-        (it.id||'').toLowerCase().includes(q) || (it.name||'').toLowerCase().includes(q) || (it.ns||'minecraft').toLowerCase().includes(q)
-      );
-      drawCatalogChunked(filtered);
-    }, 120);
-  });
-  $('cat-src').addEventListener('change', ()=> loadCatalog($('cat-src').value));
-  $('cat-refresh').addEventListener('click', ()=> loadCatalog(lastCatalogSrc));
-
-  // ---------- inventory: interactions ----------
-  els('.slot', grid).forEach(slot=>{
-    const idx = +slot.dataset.slot;
-    slot.addEventListener('click', ()=> setSelected(idx));
-    slot.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); clearSlot(idx); if(selectedSlot===idx) fillEditorsFromSlot(); markDirty(); });
-    slot.addEventListener('dragover', (ev)=>{ ev.preventDefault(); slot.classList.add('drag-over'); ev.dataTransfer.dropEffect='copy'; });
-    slot.addEventListener('dragleave', ()=> slot.classList.remove('drag-over'));
-    slot.addEventListener('drop', (ev)=>{
-      ev.preventDefault(); slot.classList.remove('drag-over');
-      let data=null; try{ data = JSON.parse(ev.dataTransfer.getData('application/json')||'null'); }catch(_){ }
-      if(!data || !data.id) return;
-      placeItem(idx, { ns: data.ns || 'minecraft', id: data.id, amount: 1, display_name: null, enchants: [], icon: data.icon || iconFor(data), orig_name: data.name || data.id });
-      setSelected(idx); markDirty();
-    });
-  });
-
-  function placeItem(idx, it){ current.inventory[idx] = it; renderInventory(); }
-  function clearSlot(idx){ current.inventory[idx] = null; renderInventory(); }
-
-  // top actions
-  $('inv-clear').addEventListener('click', ()=>{
-    if(!confirm('Очистить все 54 слота?')) return;
-    current.inventory = Array.from({length:SLOTS_TOTAL}, ()=>null);
-    renderInventory(); fillEditorsFromSlot(); markDirty();
-  });
-  $('inv-fill').addEventListener('click', ()=> setSelected(null));
-  $('slot-clear').addEventListener('click', ()=>{ if(selectedSlot==null) return; clearSlot(selectedSlot); markDirty(); });
-
-  // editor change handlers
-  $('edit-name').addEventListener('input', ()=>{ updateSelectedFromEditors(); markDirty(); });
-  $('edit-amount').addEventListener('input', ()=>{ updateSelectedFromEditors(); markDirty(); });
-  $('edit-ench-add').addEventListener('click', ()=>{
-    if(selectedSlot==null) return; const it = current.inventory[selectedSlot]; if(!it) return;
-    const id = ($('edit-ench-id').value||'').trim(); let lvl = parseInt($('edit-ench-lvl').value||'1', 10); if(!Number.isFinite(lvl) || lvl<1) lvl=1;
-    if(!id) return; it.enchants = it.enchants || []; it.enchants.push({id, lvl}); $('edit-ench-id').value=''; $('edit-ench-lvl').value='1';
-    renderInventory(); fillEditorsFromSlot(); markDirty();
-  });
-
-  // ---------- Kit header / CRUD ----------
-  function markDirty(){ $('kit-save').disabled = false; lblTitle.textContent = (current.name || '—'); }
-  $('kit-name').addEventListener('input', ()=>{ current.name = $('kit-name').value.trim(); markDirty(); });
-  $('kit-desc').addEventListener('input', ()=>{ current.description = $('kit-desc').value.trim(); markDirty(); });
-
-  $('kit-new').addEventListener('click', ()=>{
-    if(!confirm('Создать новый кит? Текущие изменения будут потеряны.')) return;
-    current = { id:null, name:'', description:'', inventory: Array.from({length:SLOTS_TOTAL}, ()=>null) };
-    selectedSlot = null; $('kit-name').value=''; $('kit-desc').value=''; $('kit-delete').classList.add('d-none'); $('kit-save').disabled=false; lblTitle.textContent='—'; renderInventory(); fillEditorsFromSlot();
-  });
-
-  $('kit-save').addEventListener('click', async ()=>{
-    const payload = kitPayload(); if(!payload.name){ alert('Название кита обязательно'); return; }
+  async function deleteKit(){
+    if (!S.currentId) return;
+    if (!confirm('Удалить кит?')) return;
     try{
-      const r = await fetch('/admin/promocode/api/kits/save',{
-        method:'POST', headers:xheaders({'Content-Type':'application/json'}), body: JSON.stringify(payload)
-      });
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'save failed');
-      current.id = j.data.id; $('kit-delete').classList.remove('d-none'); $('kit-save').disabled = true; flash('Кит сохранён','success');
-      if(window.refreshKitsSelect) window.refreshKitsSelect();
-    }catch(e){ flash('Ошибка: '+(e.message||e),'error',3200); }
-  });
-
-  $('kit-delete').addEventListener('click', async ()=>{
-    if(!current.id) return; if(!confirm('Удалить этот кит?')) return;
-    try{
-      const r = await fetch('/admin/promocode/api/kits/delete',{
-        method:'POST', headers:xheaders({'Content-Type':'application/json'}), body: JSON.stringify({id: current.id})
-      });
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'delete failed');
-      $('kit-new').click(); if(window.refreshKitsSelect) window.refreshKitsSelect(); flash('Кит удалён','success');
-    }catch(e){ flash('Ошибка: '+(e.message||e),'error',3200); }
-  });
-
-  function kitPayload(){
-    const items = [];
-    current.inventory.forEach((it, idx)=>{ if(!it) return; items.push({ ns: it.ns || 'minecraft', id: it.id, amount: Math.max(1, it.amount|0), display_name: (it.display_name || '').trim() || null, enchants: (it.enchants||[]).map(e=>({id: e.id, lvl: Math.max(1, e.lvl|0)})), slot: idx }); });
-    return { id: current.id, name: (current.name||'').trim(), description: (current.description||'').trim(), items };
+      const r = await fetch(API.delete(S.currentId), {method:'DELETE'});
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error||'delete error');
+      // reset
+      newKit();
+      loadKits();
+      toast('Кит удалён');
+    }catch(e){
+      toast('Не удалось удалить', false);
+    }
   }
-  window.kitGetPayload = kitPayload;
 
-  // ---------- Import / Export ----------
-  $('kit-export').addEventListener('click', ()=>{
-    const data = kitPayload();
-    const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = (data.name ? `kit_${data.name}` : 'kit') + '.json'; a.click();
-    setTimeout(()=> URL.revokeObjectURL(a.href), 0);
+  /* ===== Actions ===== */
+  function newKit(){
+    S.currentId = null;
+    S.slots = Array.from({length:9},()=>null);
+    R.name.value = '';
+    R.desc.value = '';
+    renderSlots();
+    selectSlot(0);
+    setDirty(true);
+    R.hint.textContent = 'новый кит';
+  }
+
+  function duplicateKit(){
+    if (!S.currentId) return;
+    S.currentId = null;
+    R.name.value = (R.name.value || 'kit') + ' copy';
+    setDirty(true);
+    R.hint.textContent = 'дубликат (новый)';
+  }
+
+  /* ===== Binds ===== */
+  renderSlots();
+  selectSlot(0);
+
+  R.name.addEventListener('input', ()=> setDirty(true));
+  R.desc.addEventListener('input', ()=> setDirty(true));
+  R.slotQty.addEventListener('input', ()=>{
+    const n = Math.max(1, Math.min(64, parseInt(R.slotQty.value,10)||1));
+    R.slotQty.value = n;
+    if (typeof S.active === 'number'){
+      S.slots[S.active] = S.slots[S.active] || {qty:1};
+      S.slots[S.active].qty = n;
+      renderSlots(S.active);
+      setDirty(true);
+    }
   });
-  $('kit-import').addEventListener('click', ()=> $('kit-import-input').click());
-  $('kit-import-input').addEventListener('change', async (ev)=>{
-    const f = ev.target.files?.[0]; if(!f) return;
-    try{
-      const text = await f.text();
-      const obj = JSON.parse(text);
-      // мягкая валидация
-      current.id = obj.id || null;
-      current.name = obj.name || '';
-      current.description = obj.description || '';
-      const inv = Array.from({length:SLOTS_TOTAL}, ()=>null);
-      (obj.items||[]).forEach(x=>{
-        if(typeof x.slot !== 'number' || x.slot<0 || x.slot>=SLOTS_TOTAL) return;
-        inv[x.slot] = { ns:x.ns||'minecraft', id:x.id, amount:Math.max(1, x.amount|0), display_name:x.display_name||null, enchants:(x.enchants||[]).map(e=>({id:e.id, lvl:Math.max(1, e.lvl|0)})) };
-      });
-      current.inventory = inv;
-      $('kit-name').value = current.name; $('kit-desc').value = current.description;
-      renderInventory(); setSelected(null); fillEditorsFromSlot(); markDirty(); flash('Кит импортирован','success');
-      $('kit-import-input').value='';
-    }catch(e){ flash('Не удалось импортировать JSON','error',3200); }
+  R.slotDname.addEventListener('input', ()=>{
+    if (typeof S.active === 'number'){
+      S.slots[S.active] = S.slots[S.active] || {qty:1};
+      S.slots[S.active].dname = R.slotDname.value.trim();
+      setDirty(true);
+    }
+  });
+  R.slotExtra.addEventListener('input', ()=>{
+    if (typeof S.active === 'number'){
+      S.slots[S.active] = S.slots[S.active] || {qty:1};
+      S.slots[S.active].extra = R.slotExtra.value.trim();
+      setDirty(true);
+    }
+  });
+  R.slotClear.addEventListener('click', ()=>{
+    if (typeof S.active === 'number') clearSlot(S.active);
+  });
+  R.slotEditor.querySelectorAll('[data-qty]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const d = parseInt(btn.dataset.qty.replace('+',''),10);
+      R.slotQty.value = Math.max(1, Math.min(64, (parseInt(R.slotQty.value,10)||1) + d));
+      R.slotQty.dispatchEvent(new Event('input'));
+    });
   });
 
-  // ---------- boot ----------
-  async function boot(){ renderInventory(); fillEditorsFromSlot(); await loadCatalog('vanilla'); }
-  boot();
+  R.verSel.addEventListener('change', loadItems);
+  R.search.addEventListener('input', ()=> { clearTimeout(R._t); R._t = setTimeout(loadItems, 220); });
+  R.iRefresh.addEventListener('click', loadItems);
+
+  R.btnNew.addEventListener('click', newKit);
+  R.btnDup.addEventListener('click', duplicateKit);
+  R.btnSave.addEventListener('click', saveKit);
+  R.btnDel.addEventListener('click', deleteKit);
+
+  // expose init for lazy tab
+  window.kitsInit = async function kitsInit(){
+    if (!R.verSel.dataset._inited){
+      await loadVersions();
+      await loadItems();
+      await loadKits();
+      R.verSel.dataset._inited = '1';
+    }
+  };
 })();
 </script>

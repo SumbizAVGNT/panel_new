@@ -1,85 +1,165 @@
-{# Конструктор китов — чистая разметка + отдельный CSS/JS #}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/kits.css') }}">
+<div id="kits-root" class="vstack gap-3">
+  <style>
+    /* ===== Kits (scoped) ===== */
+    #kits-root .glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px);border-radius:16px}
+    #kits-root .head-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    #kits-root .pill{border:1px solid rgba(148,163,184,.25);border-radius:999px;padding:.2rem .6rem;color:#cbd5e1;background:rgba(2,6,23,.35);font-size:.78rem}
+    #kits-root .hint{color:#94a3b8;font-size:.86rem}
+    #kits-root .sec-title{font-weight:700;color:#e5e7eb}
+    #kits-root .dim{color:#94a3b8;font-size:.86rem}
 
-<div class="glass p-3 mb-3">
-  <div class="d-flex align-items-center justify-content-between">
-    <h5 class="m-0"><i class="bi bi-box-seam me-1"></i> Конструктор китов</h5>
-    <div class="d-flex gap-2">
-      <input id="kit-import-input" type="file" accept="application/json" class="d-none">
-      <button id="kit-import" class="btn btn-sm btn-outline-secondary" title="Импорт из JSON">
-        <i class="bi bi-upload me-1"></i>Импорт
-      </button>
-      <button id="kit-export" class="btn btn-sm btn-outline-secondary" title="Экспорт в JSON">
-        <i class="bi bi-download me-1"></i>Экспорт
-      </button>
-      <button id="kit-new" class="btn btn-sm btn-outline-success"><i class="bi bi-plus-lg me-1"></i>Новый</button>
-      <button id="kit-save" class="btn btn-sm btn-outline-primary" disabled><i class="bi bi-save me-1"></i>Сохранить</button>
-      <button id="kit-delete" class="btn btn-sm btn-outline-danger d-none"><i class="bi bi-trash me-1"></i>Удалить</button>
+    /* Builder grid */
+    #kits-root .builder{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
+    @media (max-width: 1100px){#kits-root .builder{grid-template-columns:1fr}}
+    #kits-root .slot-grid{display:grid;grid-template-columns:repeat(9,1fr);gap:10px}
+    #kits-root .slot{position:relative;background:rgba(2,6,23,.5);border:1px dashed rgba(148,163,184,.3);border-radius:12px;min-height:62px;display:grid;place-items:center;color:#cbd5e1;cursor:pointer;transition:.15s}
+    #kits-root .slot:hover{border-color:rgba(148,163,184,.5);transform:translateY(-1px)}
+    #kits-root .slot.active{outline:2px solid #60a5fa;outline-offset:2px}
+    #kits-root .slot .qty{position:absolute;right:6px;bottom:4px;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.35);border-radius:8px;padding:2px 6px;font-size:.72rem}
+    #kits-root .slot .name{max-width:90%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #kits-root .slot .icon{width:30px;height:30px;image-rendering:pixelated;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6);display:block}
+
+    /* Items catalog */
+    #kits-root .items-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
+    @media (max-width:1400px){#kits-root .items-grid{grid-template-columns:repeat(6,1fr)}}
+    @media (max-width:1100px){#kits-root .items-grid{grid-template-columns:repeat(5,1fr)}}
+    @media (max-width:900px){#kits-root .items-grid{grid-template-columns:repeat(4,1fr)}}
+    @media (max-width:680px){#kits-root .items-grid{grid-template-columns:repeat(3,1fr)}}
+    #kits-root .item{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(13,17,23,.55);cursor:grab}
+    #kits-root .item:active{cursor:grabbing}
+    #kits-root .item .icon{width:28px;height:28px;image-rendering:pixelated;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6)}
+    #kits-root .item .n{font-size:.86rem;color:#e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    /* Saved kits list */
+    #kits-root .kit-row{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:rgba(13,17,23,.45)}
+    #kits-root .kit-row:hover{border-color:rgba(148,163,184,.35)}
+    #kits-root .kit-row .name{font-weight:700}
+    #kits-root .right-col{display:grid;grid-template-rows:auto 1fr;gap:12px}
+
+    /* drag feedback */
+    #kits-root .slot.drag-over{background:rgba(96,165,250,.08);border-style:solid}
+
+    /* small helpers */
+    #kits-root .skeleton{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:10px;min-height:40px}
+    #kits-root .skeleton::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:sk 1.05s infinite}
+    @keyframes sk{to{transform:translateX(100%)}}
+  </style>
+
+  <!-- Header -->
+  <div class="glass p-3 head-bar">
+    <div class="d-flex align-items-center gap-2">
+      <span class="sec-title">Kits</span>
+      <span class="pill"><span id="kit-stats">0 items</span></span>
+      <span class="dim" id="kit-hint">создайте или выберите кит слева</span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <button id="kit-new" class="btn btn-sm btn-outline-info"><i class="bi bi-plus-lg me-1"></i>Новый</button>
+      <button id="kit-dup" class="btn btn-sm btn-outline-secondary" disabled><i class="bi bi-files me-1"></i>Дублировать</button>
+      <button id="kit-save" class="btn btn-sm btn-success" disabled><i class="bi bi-check2-circle me-1"></i>Сохранить</button>
+      <button id="kit-del" class="btn btn-sm btn-outline-danger" disabled><i class="bi bi-trash me-1"></i>Удалить</button>
     </div>
   </div>
-  <div class="mt-2 inv-fields">
-    <input id="kit-name" class="form-control form-control-sm" placeholder="Название кита">
-    <input id="kit-desc" class="form-control form-control-sm" placeholder="Описание (опц.)">
-    <div class="d-grid"><span class="badge-scope align-self-end small">Слотов: 54</span></div>
-  </div>
-</div>
 
-<div class="inv-wrap">
-  <!-- Catalog -->
-  <div class="catalog-card glass p-3">
-    <div class="cat-toolbar">
-      <div class="input-group input-group-sm">
-        <span class="input-group-text bg-transparent text-secondary"><i class="bi bi-search"></i></span>
-        <input id="cat-q" class="form-control" placeholder="Поиск (id / name)…">
-      </div>
-      <select id="cat-src" class="form-select form-select-sm" style="max-width:170px">
-        <option value="vanilla" selected>Vanilla 1.20.6</option>
-        <option value="custom">ItemsAdder</option>
-      </select>
-      <button id="cat-refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></button>
-    </div>
-    <div class="cat-grid mt-2 flex-grow-1" id="cat-grid"></div>
-    <div class="small-dim mt-2">Подсказки: перетаскивайте в слоты • клик — положить в выбранный слот • ПКМ по слоту — очистить</div>
-  </div>
+  <!-- Builder -->
+  <div class="builder">
+    <!-- left: builder + catalog -->
+    <div class="vstack gap-3">
+      <div class="glass p-3">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label mb-1">Название кита</label>
+            <input id="kit-name" class="form-control" placeholder="starter, vip, tools">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label mb-1">Описание (опц.)</label>
+            <input id="kit-desc" class="form-control" placeholder="короткое описание">
+          </div>
+        </div>
 
-  <!-- Inventory -->
-  <div class="inv-card glass">
-    <div class="inv-top">
-      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <div class="small-dim">Кит: <span id="kit-title-lbl" class="fw-semibold">—</span></div>
-        <div class="d-flex align-items-center gap-2">
-          <button id="inv-clear" class="btn btn-sm btn-outline-warning"><i class="bi bi-eraser me-1"></i>Очистить</button>
-          <button id="inv-fill" class="btn btn-sm btn-outline-light"><i class="bi bi-grid-3x3-gap me-1"></i>Снять выделение</button>
+        <div class="d-flex align-items-center justify-content-between mt-3 mb-1">
+          <div class="sec-title">Слоты</div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="slot-clear" class="btn btn-sm btn-outline-light" disabled><i class="bi bi-x-circle"></i> Очистить слот</button>
+          </div>
+        </div>
+        <div id="slot-grid" class="slot-grid">
+          <!-- 9 slots; fill via JS -->
+        </div>
+
+        <div id="slot-editor" class="mt-3" hidden>
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="sec-title">Редактор слота <span id="slot-no" class="pill">—</span></div>
+            <div class="hint">клик по слоту — выбрать, перетянуть предмет — положить</div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-md-4">
+              <label class="form-label mb-1">Количество</label>
+              <div class="input-group">
+                <button class="btn btn-outline-light" data-qty="-1">−</button>
+                <input id="slot-qty" type="number" min="1" max="64" value="1" class="form-control">
+                <button class="btn btn-outline-light" data-qty="+1">+</button>
+              </div>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label mb-1">Отображаемое имя (опц.)</label>
+              <input id="slot-dname" class="form-control" placeholder="Напр. &aStarter &fSword">
+            </div>
+            <div class="col-12">
+              <label class="form-label mb-1">Enchant / attr (опц.)</label>
+              <input id="slot-extra" class="form-control" placeholder="enchant id (sharpness 5) или itemsadder:fire">
+              <div class="form-text text-secondary">можно перечислять через запятую: sharpness:5,unbreaking:3</div>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- Catalog -->
+      <div class="glass p-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="sec-title">Каталог предметов</div>
+          <div class="d-flex align-items-center gap-2">
+            <select id="ver-select" class="form-select form-select-sm" style="min-width:200px">
+              <option value="">Загрузка версий…</option>
+            </select>
+            <div class="input-group input-group-sm" style="min-width:320px">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input id="item-search" class="form-control" placeholder="Поиск (id / name)">
+              <button id="item-refresh" class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></button>
+            </div>
+          </div>
+        </div>
+        <div id="items-wrap" class="items-grid">
+          <!-- items via JS -->
+        </div>
+        <div id="items-empty" class="text-secondary small mt-2" hidden>Ничего не найдено.</div>
+      </div>
     </div>
 
-    <div class="inv-grid" id="inv-grid">
-      {% for i in range(54) %}
-        <div class="slot" data-slot="{{ i }}" draggable="false"></div>
-      {% endfor %}
-    </div>
-
-    <div class="inv-footer">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <div class="small-dim">Выбран слот: <span id="edit-slot">—</span></div>
-        <div class="badge-scope" id="kit-count">0 предметов</div>
-      </div>
-
-      <div class="edit-grid">
-        <input id="edit-name" class="form-control form-control-sm" placeholder="Отображаемое имя (опц.)">
-        <input id="edit-amount" type="number" min="1" step="1" class="form-control form-control-sm" value="1" placeholder="Кол-во">
-        <div class="input-group input-group-sm">
-          <input id="edit-ench-id" class="form-control" placeholder="enchant id (напр. sharpness или itemsadder:fire)">
-          <input id="edit-ench-lvl" type="number" min="1" step="1" class="form-control" value="1" style="max-width:120px">
-          <button id="edit-ench-add" class="btn btn-outline-secondary"><i class="bi bi-plus"></i></button>
+    <!-- right: saved kits list -->
+    <div class="right-col">
+      <div class="glass p-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div class="sec-title">Сохранённые киты</div>
+          <div class="dim" id="kits-count">—</div>
         </div>
-        <div class="d-grid">
-          <button id="slot-clear" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Очистить слот</button>
+        <div id="kits-list" class="vstack gap-2 mt-2">
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
         </div>
       </div>
 
-      <div class="mt-2 chips" id="enchips"></div>
+      <div class="glass p-3">
+        <div class="sec-title mb-1">Подсказки</div>
+        <ul class="mb-0 text-secondary small">
+          <li>Перетащите предмет из каталога на слот 1-9.</li>
+          <li>Клик по слоту — редактирование количества, имени и чар.</li>
+          <li>«Сохранить» станет активной, когда есть изменения.</li>
+        </ul>
+      </div>
     </div>
   </div>
+
+  <!-- toast zone -->
+  <div id="kits-toasts" class="position-fixed bottom-0 end-0 p-3" style="z-index:1080"></div>
 </div>
