@@ -1,41 +1,110 @@
 <script>
 (async function PromoModule(){
-  const $ = (id)=>document.getElementById(id);
-  const listBody = $('pc-list'), kitSel = $('pc-kit'), msg = $('pc-msg');
+  const $  = (id)=>document.getElementById(id);
+  const qs = (s, r=document)=>r.querySelector(s);
+  const qsa= (s, r=document)=>Array.from(r.querySelectorAll(s));
+
+  const listBody = $('pc-list'),
+        kitSel   = $('pc-kit'),
+        msg      = $('pc-msg');
+
   const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
   const xheaders = (h={}) => CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
+
   const flash = (text,type='info',ms=2200)=>{
     const host = document.querySelector('.flash-stack') || (()=>{const d=document.createElement('div');d.className='flash-stack';document.body.appendChild(d);return d})();
     const n = document.createElement('div'); n.className = `flash flash-${type}`; n.textContent = text; host.appendChild(n);
     setTimeout(()=> n.remove(), ms);
   };
 
+  // ===== state =====
   let rows = [];
-  let sortBy = 'created_at';
-  let sortDir = 'desc';
+  let sortBy  = localStorage.getItem('promo.sortBy')  || 'created_at';
+  let sortDir = localStorage.getItem('promo.sortDir') || 'desc';
 
+  // для «бережного» обновления uses_left между перезагрузками
+  const usesCache = new Map(); // code -> {uses_left, uses_total}
+
+  // ===== helpers =====
+  async function GET(url){
+    const r=await fetch(url,{cache:'no-store'});
+    const j=await r.json().catch(()=>({ok:false,error:'bad json'}));
+    if(!j.ok) throw new Error(j.error||('GET '+url));
+    return j.data;
+  }
+  async function POST(url, body){
+    const r=await fetch(url,{method:'POST',headers:xheaders({'Content-Type':'application/json'}),body:JSON.stringify(body||{})});
+    const j=await r.json().catch(()=>({ok:false,error:'bad json'}));
+    if(!j.ok) throw new Error(j.error||('POST '+url));
+    return j.data;
+  }
+
+  // ===== kits select =====
   async function loadKitsToSelect(){
     try{
-      const r = await fetch('/admin/promocode/api/kits/list',{cache:'no-store'});
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'kits');
-      kitSel.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+      const data = await GET('/admin/promocode/api/kits/list');
+      kitSel.innerHTML = `<option value="">— без кита —</option>` + (data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
     }catch(e){ /* silent */ }
   }
 
+  // ===== groups parser (LuckPerms) =====
+  // Ожидаемый формат в #pc-groups (textarea / input):
+  //   group1, vip:3600, hero:86400@server=anarchy@world=world_nether
+  // где :<seconds> — временная выдача, @server=..., @world=... — контексты
+  function parseGroupsInput(){
+    const el = $('pc-groups');
+    if(!el) return [];
+    const raw = (el.value||'').trim();
+    if(!raw) return [];
+    return raw.split(',').map(s=>s.trim()).filter(Boolean).map(tok=>{
+      // разбираем контексты
+      let server=null, world=null, name=tok, temp=null;
+      const ctx = [];
+      const atPos = tok.indexOf('@');
+      if(atPos>=0){ name = tok.slice(0,atPos); ctx.push(...tok.slice(atPos+1).split('@')); }
+      ctx.forEach(c=>{
+        const [k,v] = c.split('=',2).map(x=>x?.trim());
+        if(k==='server') server=v||null;
+        if(k==='world')  world=v||null;
+      });
+      // время
+      const m = name.match(/:(\d+)$/);
+      if(m){ temp = parseInt(m[1],10)||null; name = name.slice(0, name.lastIndexOf(':')); }
+      name = name.trim();
+      return name ? {group_name:name, temp_seconds: temp, context_server: server, context_world: world} : null;
+    }).filter(Boolean);
+  }
+
+  // ===== table render/sort =====
   function renderTable(){
-    if(!rows.length){ listBody.innerHTML = `<tr><td colspan="8" class="text-secondary small">Нет данных</td></tr>`; return; }
+    if(!rows.length){
+      listBody.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`;
+      return;
+    }
     const out = rows.map(x=>{
       const expired = x.expires_at ? (Date.parse(x.expires_at) < Date.now()) : false;
+      const uses    = ((x.uses_left ?? usesCache.get(x.code)?.uses_left) ?? 0);
+      const total   = ((x.uses_total ?? usesCache.get(x.code)?.uses_total) ?? 0);
+      // кэшируем актуальные значения
+      usesCache.set(x.code, {uses_left:uses, uses_total:total});
+
+      const kitBadge = x.kit_name ? `<span class="badge text-bg-secondary">${x.kit_name}</span>` : '';
       return `
         <tr class="${expired?'expired':''}">
           <td class="fw-semibold">${x.code}</td>
           <td class="text-end">${x.amount!=null? (+x.amount).toFixed(2) : ''}</td>
           <td>${x.currency_key||''}</td>
           <td>${x.realm||'<span class="text-secondary">all</span>'}</td>
-          <td>${x.kit_name? `<span class="badge text-bg-secondary">${x.kit_name}</span>` : ''}</td>
-          <td class="text-end">${x.uses_left}/${x.uses_total}</td>
+          <td>${kitBadge}</td>
+          <td class="text-end">${uses}/${total}</td>
           <td>${x.expires_at||''}</td>
           <td class="text-secondary">${x.created_at||''}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-secondary" data-action="redeems" data-code="${x.code}"><i class="bi bi-people me-1"></i>Активации</button>
+              <button class="btn btn-outline-danger" data-action="delete" data-code="${x.code}"><i class="bi bi-trash"></i></button>
+            </div>
+          </td>
         </tr>`;
     }).join('');
     listBody.innerHTML = out;
@@ -43,48 +112,139 @@
 
   function resort(){
     const cmp = (a,b)=>{
-      const aa = (a[sortBy] ?? ''), bb = (b[sortBy] ?? '');
-      if(sortBy==='amount' || sortBy==='uses_left'){ return (Number(aa)||0) - (Number(bb)||0); }
-      return String(aa).localeCompare(String(bb));
+      let aa = a[sortBy], bb = b[sortBy];
+      if(sortBy==='amount' || sortBy==='uses_left' || sortBy==='uses_total'){
+        aa = Number(aa)||0; bb = Number(bb)||0; return aa-bb;
+      }
+      // дата — сортируем по времени если ISO
+      if(sortBy==='created_at' || sortBy==='expires_at'){
+        const ta = aa ? Date.parse(aa) : 0, tb = bb ? Date.parse(bb) : 0;
+        return ta - tb;
+      }
+      return String(aa??'').localeCompare(String(bb??''));
     };
     rows.sort(cmp);
     if(sortDir==='desc') rows.reverse();
     renderTable();
+    localStorage.setItem('promo.sortBy',  sortBy);
+    localStorage.setItem('promo.sortDir', sortDir);
   }
 
+  // ===== data io =====
   async function loadPromos(){
-    listBody.innerHTML = `<tr><td colspan="8" class="text-secondary small">Загрузка…</td></tr>`;
+    listBody.innerHTML = `<tr><td colspan="9" class="text-secondary small">Загрузка…</td></tr>`;
     try{
-      const r = await fetch('/admin/promocode/api/promo/list',{cache:'no-store'});
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'list');
-      rows = j.data||[];
+      const data = await GET('/admin/promocode/api/promo/list');
+      rows = Array.isArray(data) ? data : [];
       resort();
-    }catch(e){ listBody.innerHTML = `<tr><td colspan="8" class="text-danger">${e.message||e}</td></tr>`; }
+    }catch(e){
+      listBody.innerHTML = `<tr><td colspan="9" class="text-danger">${e.message||e}</td></tr>`;
+    }
   }
 
-  $('pc-create').addEventListener('click', async ()=>{
+  async function createPromo(){
     const body = {
-      code: ($('pc-code').value||'').trim().toUpperCase(),
-      amount: parseFloat($('pc-amount').value||'0'),
-      uses: parseInt($('pc-uses').value||'1',10)||1,
-      currency_key: $('pc-currency').value||'rubs',
-      realm: ($('pc-realm').value||'').trim()||null,
-      kit_id: $('pc-kit').value || null,
-      expires_at: $('pc-exp').value || null,
+      code:        ($('pc-code').value||'').trim().toUpperCase(),
+      amount:      parseFloat($('pc-amount').value||'0'),
+      uses:        parseInt($('pc-uses').value||'1',10)||1,
+      currency_key:$('pc-currency').value||'rubs',
+      realm:       ($('pc-realm').value||'').trim()||null,
+      kit_id:      $('pc-kit').value || null,
+      expires_at:  $('pc-exp').value || null,
+      groups:      parseGroupsInput() // <-- добавили группы
     };
+    if(!body.code){ flash('Укажите код','error'); return; }
     try{
-      const r = await fetch('/admin/promocode/api/promo/create',{
-        method:'POST',headers:xheaders({'Content-Type':'application/json'}),body:JSON.stringify(body)});
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'create failed');
-      flash(`Создан промокод: ${j.data.code}`,'success');
+      const data = await POST('/admin/promocode/api/promo/create', body);
+      flash(`Создан промокод: ${data.code}`,'success');
       await loadPromos();
+      // очистка только полей с риском случайной «массовой» генерации
+      $('pc-code').value=''; $('pc-amount').value=''; $('pc-uses').value='1'; $('pc-exp').value='';
     }catch(e){ flash('Ошибка: '+(e.message||e),'error',3200); }
-  });
+  }
 
+  async function deletePromo(code){
+    if(!confirm(`Удалить промокод ${code}?`)) return;
+    try{
+      await POST('/admin/promocode/api/promo/delete', {code});
+      flash('Удалено','success');
+      await loadPromos();
+    }catch(e){ flash('Не удалось удалить: '+(e.message||e),'error',3200); }
+  }
+
+  // ===== redeems modal =====
+  function ensureModal(){
+    let m = $('promo-redeems-modal');
+    if(m) return m;
+    m = document.createElement('div');
+    m.id = 'promo-redeems-modal';
+    m.innerHTML = `
+      <div class="modal fade" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Активации: <span class="code"></span></h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+              <div class="table-responsive">
+                <table class="table table-dark table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Игрок</th><th>UUID</th><th>IP</th><th>Дата</th>
+                    </tr>
+                  </thead>
+                  <tbody class="redeems-body">
+                    <tr><td colspan="4" class="text-secondary small p-3">Загрузка…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+    return m;
+  }
+
+  async function showRedeems(code){
+    const host = ensureModal();
+    const modalEl = qs('.modal', host);
+    qs('.code', host).textContent = code;
+    const body = qs('.redeems-body', host);
+    body.innerHTML = `<tr><td colspan="4" class="text-secondary small p-3">Загрузка…</td></tr>`;
+    try{
+      const data = await GET('/admin/promocode/api/promo/redeems?code='+encodeURIComponent(code));
+      const list = Array.isArray(data) ? data : (data.items||[]);
+      if(!list.length){
+        body.innerHTML = `<tr><td colspan="4" class="text-secondary small p-3">Пока нет активаций</td></tr>`;
+      }else{
+        body.innerHTML = list.map(r=>`
+          <tr>
+            <td class="fw-semibold">${r.username||''}</td>
+            <td class="text-secondary small">${r.uuid||''}</td>
+            <td class="text-secondary small">${r.ip||''}</td>
+            <td>${r.created_at||''}</td>
+          </tr>
+        `).join('');
+      }
+    }catch(e){
+      body.innerHTML = `<tr><td colspan="4" class="text-danger p-3">${e.message||e}</td></tr>`;
+    }
+    // bootstrap modal
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+  }
+
+  // ===== events =====
+  $('pc-create')?.addEventListener('click', createPromo);
   $('pc-refresh')?.addEventListener('click', loadPromos);
 
   // сортировка по клику на заголовок
-  document.querySelectorAll('[data-sort]').forEach(th=>{
+  qsa('[data-sort]').forEach(th=>{
     th.style.cursor='pointer';
     th.addEventListener('click', ()=>{
       const k = th.getAttribute('data-sort');
@@ -93,6 +253,20 @@
     });
   });
 
+  // делегирование действий в таблице
+  listBody?.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-action]');
+    if(!btn) return;
+    const code = btn.dataset.code;
+    const act  = btn.dataset.action;
+    if(act==='delete')  deletePromo(code);
+    if(act==='redeems') showRedeems(code);
+  });
+
+  // автообновление при возвращении на вкладку — чтобы uses_* «не терялись»
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') loadPromos(); });
+
+  // ===== boot =====
   await loadKitsToSelect();
   await loadPromos();
 })();

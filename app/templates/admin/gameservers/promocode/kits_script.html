@@ -1,5 +1,5 @@
 <script>
-/* Kits module + автокомплит через портал + CRUD киты */
+/* Kits module + автокомплит + CRUD киты (исправлено под .items-grid) */
 (function(){
   'use strict';
 
@@ -123,9 +123,9 @@
   }
 
   function setButtons(){
-    if(btnSave) btnSave.disabled = !state.dirty;
-    if(btnDel)  btnDel.disabled  = !(state.kit.id);
-    if(btnDup)  btnDup.disabled  = !(state.kit.id);
+    btnSave && (btnSave.disabled = !state.dirty || !(nameInput.value||'').trim());
+    btnDel  && (btnDel.disabled  = !(state.kit.id));
+    btnDup  && (btnDup.disabled  = !(state.kit.id));
   }
   function markDirty(v=true){
     state.dirty = !!v;
@@ -141,9 +141,18 @@
       const arr = Array.isArray(data) ? data : [];
       const map=new Map();
       for(const it of arr){
-        if(!it||!it.id) continue;
-        const id=String(it.id);
-        map.set(id,{id,name: it.name || id.replaceAll('_',' '),icon:it.icon});
+        if(!it) continue;
+        const idRaw = it.id || it.item_id || '';
+        if(!idRaw) continue;
+        const ns = it.ns || it.namespace || 'minecraft';
+        const id = String(idRaw);
+        const full = (ns && ns!=='minecraft') ? `${ns}:${id}` : id;
+        map.set(full,{
+          id: full,
+          ns,
+          name: it.name || full.replaceAll('_',' '),
+          icon: it.icon || version.imgUrl(id)
+        });
       }
       state.items = Array.from(map.values());
       renderItems();
@@ -154,33 +163,44 @@
     }
   }
   function renderItems(filter=''){
-    const q=filter.trim().toLowerCase();
+    const q=String(filter).trim().toLowerCase();
     const list = !q ? state.items : state.items.filter(x =>
       x.id.toLowerCase().includes(q) || (x.name||'').toLowerCase().includes(q));
+
     itemsWrap.innerHTML=''; itemsEmpty.hidden = list.length>0;
+
     for(const it of list){
-      const col=document.createElement('div'); col.className='col';
-      const icon = it.icon || state.version.imgUrl(it.id.includes(':')?it.id.split(':',2)[1]:it.id);
-      col.innerHTML = `
-        <div class="item" draggable="true" title="${it.name}\n${it.id}">
-          <img class="icon" src="${icon}" alt="" onerror="this.style.visibility='hidden'">
-          <div class="n">${it.name}</div>
-        </div>`;
-      const div = col.firstElementChild;
-      div.addEventListener('dragstart', (e)=>{
-        const payload=JSON.stringify({id:it.id,name:it.name});
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.setAttribute('draggable','true');
+      el.dataset.ns = it.ns || 'minecraft';
+      el.dataset.id = it.id.includes(':') ? it.id.split(':',2)[1] : it.id;
+      el.title = `${it.name}\n${it.id}`;
+      el.innerHTML = `
+        <img class="icon" src="${it.icon}" alt="" onerror="this.style.visibility='hidden'">
+        <div class="n">${it.ns}:${el.dataset.id}</div>
+      `;
+      el.addEventListener('dragstart', (e)=>{
+        const payload = JSON.stringify({ns:el.dataset.ns, id:el.dataset.id, name:it.name});
         e.dataTransfer.setData('application/json', payload);
         e.dataTransfer.setData('text/plain', payload);
       });
-      div.addEventListener('click', ()=>{ const idx = state.active>=0 ? state.active : 0; putItemToSlot(idx, it); });
-      itemsWrap.appendChild(col);
+      el.addEventListener('dblclick', ()=>{
+        const idx = state.active>=0 ? state.active : (state.slots.findIndex(x=>!x) >= 0 ? state.slots.findIndex(x=>!x) : 0);
+        putItemToSlot(idx, {ns:el.dataset.ns, id:el.dataset.id, name:it.name});
+      });
+      itemsWrap.appendChild(el);
     }
   }
 
   /* ===== SLOTS ===== */
   function updateStats(){
     const c = state.slots.filter(Boolean).length;
-    if(statsPill) statsPill.textContent=`${c} item${c===1?'':'s'}`;
+    statsPill && (statsPill.textContent=`${c} item${c===1?'':'s'}`);
+    btnDup && (btnDup.disabled = !(state.kit.id));
+    btnDel && (btnDel.disabled = !(state.kit.id));
+    btnSave && (btnSave.disabled = !state.dirty || !(nameInput.value||'').trim());
+    slotClearBtn && (slotClearBtn.disabled = state.active<0 || !state.slots[state.active]);
   }
   function buildSlots(){
     grid.innerHTML='';
@@ -211,17 +231,19 @@
       s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`;
       return;
     }
-    const baseId = info.id.includes(':') ? info.id.split(':',2)[1] : info.id;
+    const baseId = info.id;
     const img=state.version.imgUrl(baseId);
     const qty=info.qty ?? 1;
     s.innerHTML = `
       <img class="icon" src="${img}" alt="" onerror="this.style.visibility='hidden'">
-      <div class="name">${info.display || info.name || baseId}</div>
+      <div class="name">${info.display || `${info.ns}:${info.id}`}</div>
       <div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
     s.classList.toggle('active', state.active===i);
   }
   function putItemToSlot(i,item){
-    state.slots[i] = { id:String(item.id), name:item.name, qty:1, extra:{ench:[], attr:[]} };
+    const ns = item.ns || 'minecraft';
+    const id = item.id.includes(':') ? item.id.split(':',2)[1] : item.id;
+    state.slots[i] = { ns, id, qty:1, name:item.name||id, display:'', extra:{ench:[], attr:[]} };
     renderSlot(i); selectSlot(i); updateStats(); markDirty(true);
   }
   function selectSlot(i){
@@ -323,10 +345,6 @@
       `<div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}" style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">`+
       `<span style="color:#e5e7eb">${x.id}</span><small style="color:#94a3b8">${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small></div>`
     )).join('');
-    ddPortal.querySelectorAll('.kits-dd-item').forEach(el=>{
-      el.addEventListener('mouseenter',()=>el.style.background='rgba(96,165,250,.12)');
-      el.addEventListener('mouseleave',()=>el.style.background='transparent');
-    });
     ddPortal.style.display = 'block';
     state.dd.open = true;
     placeDD();
@@ -343,15 +361,13 @@
     for(let i=0;i<SLOT_COUNT;i++){
       const s = state.slots[i];
       if(!s) continue;
-      const hasNs = String(s.id).includes(':');
-      const ns = hasNs ? s.id.split(':',2)[0] : 'minecraft';
-      const iid = hasNs ? s.id.split(':',2)[1] : s.id;
       items.push({
-        ns, id:iid,
-        amount: Number(s.qty||1),
+        namespace: s.ns || 'minecraft',
+        item_id:   s.id,
+        amount:    Number(s.qty||1),
         display_name: s.display||'',
-        enchants: (s.extra?.ench)||[],
-        nbt: (s.extra?.attr)||[],
+        enchants:  (s.extra?.ench)||[],
+        nbt:       (s.extra?.attr)||[],
         slot: i
       });
     }
@@ -379,11 +395,10 @@
       const ns = it.namespace || it.ns || 'minecraft';
       const iid = it.item_id || it.id;
       if(!iid) continue;
-      const fullId = (ns && ns!=='minecraft') ? `${ns}:${iid}` : String(iid);
       const ench = it.enchants || it.enchants_json || [];
       const nbt  = it.nbt || it.nbt_json || [];
       state.slots[idx] = {
-        id: fullId, name: it.display_name || iid, qty: Number(it.amount||1),
+        ns, id:iid, qty: Number(it.amount||1),
         display: it.display_name || '',
         extra:{ ench:Array.isArray(ench)?ench:[], attr:Array.isArray(nbt)?nbt:[] }
       };
@@ -397,7 +412,7 @@
   function renderKitsList(){
     if(!listWrap) return;
     const list = Array.isArray(state.kitsCache)? state.kitsCache : [];
-    if(kitsCountLbl) kitsCountLbl.textContent = list.length ? `${list.length}` : '—';
+    kitsCountLbl && (kitsCountLbl.textContent = list.length ? `${list.length}` : '—');
     listWrap.innerHTML = list.map(k => `
       <div class="kit-row${state.kit.id===k.id?' sel':''}" data-id="${k.id}" title="${k.description||''}">
         <div class="ttl">${k.name}</div>
@@ -446,6 +461,9 @@
       markDirty(false);
       await loadKitsList();
       highlightSelected(state.kit.id);
+      // повторно открыть по id (точно тот же)
+      const fresh = state.kitsCache.find(k=>Number(k.id)===Number(state.kit.id));
+      if(fresh) kitLoadToUI(fresh);
     }catch(e){
       console.error(e);
       toast('Ошибка при сохранении кита', false);
@@ -471,6 +489,7 @@
   }
 
   function newKit(){
+    if(state.dirty && !confirm('Есть несохранённые изменения. Очистить форму?')) return;
     state.kit = {id:null,name:'',description:''};
     nameInput.value=''; descInput.value='';
     state.slots = Array(SLOT_COUNT).fill(null); buildSlots(); updateStats();
@@ -490,7 +509,10 @@
     // версии/поиск/обновить items
     verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
     verSelect.value = state.version.id;
-    verSelect.addEventListener('change', ()=>{ const v = VERSIONS.find(x=>x.id===verSelect.value) || VERSIONS[0]; loadItemsFor(v); });
+    verSelect.addEventListener('change', ()=>{
+      const v = VERSIONS.find(x=>x.id===verSelect.value) || VERSIONS[0];
+      loadItemsFor(v);
+    });
     $('#item-search',root)?.addEventListener('input', (e)=>renderItems(e.target.value));
     $('#item-refresh',root)?.addEventListener('click', ()=>loadItemsFor(state.version));
 
@@ -498,7 +520,11 @@
     slotClearBtn?.addEventListener('click', clearActiveSlot);
     dnameClear?.addEventListener('click', ()=>{ slotDName.value=''; applySlotEditor(); });
     $$('#slot-editor [data-qty]', root).forEach(btn=>{
-      btn.addEventListener('click', ()=>{ let v=Number(slotQty.value||1) + (btn.dataset.qty==='+1'?1:-1); v=Math.max(1, Math.min(64, v)); slotQty.value=String(v); applySlotEditor(); });
+      btn.addEventListener('click', ()=>{
+        let v=Number(slotQty.value||1) + (btn.dataset.qty==='+1'?1:-1);
+        v=Math.max(1, Math.min(64, v));
+        slotQty.value=String(v); applySlotEditor();
+      });
     });
     slotQty?.addEventListener('input', applySlotEditor);
     slotDName?.addEventListener('input', applySlotEditor);
@@ -563,7 +589,7 @@
     loadEnchData();
     loadKitsList();
     markDirty(false);
-    setButtons(); // выставить начальные состояния
+    setButtons();
   }
 
   window.kitsInit = init;
