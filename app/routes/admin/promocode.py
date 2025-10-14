@@ -5,9 +5,10 @@ import os
 import re
 import json
 import random
+from datetime import datetime
 from typing import Optional, Iterable, List, Tuple
 
-from flask import Blueprint, render_template, request, jsonify, current_app
+from flask import Blueprint, render_template, request, jsonify, current_app, g, session
 
 from ...decorators import login_required
 from ...database import get_db_connection, MySQLConnection, init_db
@@ -19,21 +20,41 @@ bp = Blueprint("promocode", __name__, url_prefix="/promocode")
 # utils
 # =========================================================
 
-def _ok(data=None, **kw):
-    out = {"ok": True}
+def _ok(data=None, **extra):
+    res = {"ok": True}
     if data is not None:
-        out["data"] = data
-    out.update(kw)
-    return jsonify(out)
+        res["data"] = data
+    res.update(extra)
+    return jsonify(res)
 
-def _err(msg: str, **kw):
-    out = {"ok": False, "error": str(msg)}
-    out.update(kw)
-    return jsonify(out), 400
+def _err(msg: str, code: int = 400, **extra):
+    res = {"ok": False, "error": msg}
+    if extra:
+        res.update(extra)
+    return jsonify(res), code
+
+def _actor_name() -> str:
+    for key in ("username", "name", "login"):
+        if isinstance(getattr(g, "user", None), dict) and key in g.user:
+            return str(g.user[key])
+        if key in session:
+            return str(session[key])
+    u = getattr(g, "user", None)
+    if u is not None:
+        for key in ("username", "name", "login"):
+            if hasattr(u, key):
+                return str(getattr(u, key))
+    return "admin"
 
 def _rand_code(n: int = 10) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return "".join(random.choice(alphabet) for _ in range(max(4, n)))
+
+def _json(v):
+    try:
+        return json.dumps(v, ensure_ascii=False)
+    except Exception:
+        return "[]"
 
 def _rows(conn: MySQLConnection, sql: str, params: Iterable = ()):
     return conn.query_all(sql, params)
@@ -45,17 +66,11 @@ _JSONC_LINE = re.compile(r"^\s*//.*$", re.MULTILINE)
 _JSONC_BLOCK = re.compile(r"/\*.*?\*/", re.DOTALL)
 
 def _read_jsonc(text: str):
-    """Разобрать JSON, допускающий комментарии // и /* ... */."""
     text = _JSONC_BLOCK.sub("", _JSONC_LINE.sub("", text))
     return json.loads(text or "[]")
 
 def _try_open_candidates(candidates: List[str]) -> Tuple[Optional[str], Optional[list]]:
-    """
-    Пытается открыть JSON/JSONC по списку относительных путей.
-    Возвращает (abs_path, data) или (None, None).
-    """
     tried: List[str] = []
-    # 1) Через open_resource — ищет внутри пакета/blueprint
     for rel in candidates:
         try:
             with current_app.open_resource(rel) as f:
@@ -67,7 +82,6 @@ def _try_open_candidates(candidates: List[str]) -> Tuple[Optional[str], Optional
         except Exception as e:
             current_app.logger.warning("Items file load error (open_resource %s): %s", rel, e)
 
-    # 2) Абсолютные варианты
     roots = [
         current_app.root_path,
         getattr(current_app, "static_folder", None) or os.path.join(current_app.root_path, "static"),
@@ -88,18 +102,6 @@ def _try_open_candidates(candidates: List[str]) -> Tuple[Optional[str], Optional
     current_app.logger.warning("Items file not found. Tried %s", ", ".join(tried))
     return None, None
 
-# -------- ленивое создание схемы (idempotent) --------
-_SCHEMA_READY = False
-def _ensure_schema(conn: MySQLConnection) -> None:
-    global _SCHEMA_READY
-    if _SCHEMA_READY:
-        return
-    try:
-        init_db(conn)  # создаст promo_* таблицы, если их нет
-        _SCHEMA_READY = True
-    except Exception as e:
-        current_app.logger.error("init_db failed: %s", e)
-
 def _kit_items(conn: MySQLConnection, kit_id: int) -> List[dict]:
     items = _rows(
         conn,
@@ -113,13 +115,45 @@ def _kit_items(conn: MySQLConnection, kit_id: int) -> List[dict]:
         (kit_id,),
     )
     for it in items:
-        # корректно разворачиваем *_json в объекты
         for col in ("enchants_json", "nbt_json"):
             try:
-                it[col.replace("_json", "")] = json.loads(it.get(col) or "[]")
+                it[col[:-5] + "s"] = json.loads(it[col] or "[]")
             except Exception:
-                it[col.replace("_json", "")] = []
+                it[col[:-5] + "s"] = []
     return items
+
+# -------- schema guard --------
+_SCHEMA_READY = False
+def _ensure_schema(conn: MySQLConnection) -> None:
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    try:
+        init_db(conn)
+        _ensure_groups_table(conn)
+        _SCHEMA_READY = True
+    except Exception as e:
+        current_app.logger.error("init_db failed: %s", e)
+
+def _ensure_groups_table(conn: MySQLConnection) -> None:
+    # максимально безопасно: IF NOT EXISTS
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS promo_groups (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          code_id INT NOT NULL,
+          group_name VARCHAR(191) NOT NULL,
+          temp_seconds INT NULL,
+          context_server VARCHAR(64) NULL,
+          context_world  VARCHAR(64) NULL,
+          priority INT NOT NULL DEFAULT 1,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_code (code_id),
+          CONSTRAINT fk_groups_code FOREIGN KEY (code_id) REFERENCES promo_codes(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+    conn.commit()
 
 # =========================================================
 # UI
@@ -128,7 +162,6 @@ def _kit_items(conn: MySQLConnection, kit_id: int) -> List[dict]:
 @bp.get("/")
 @login_required
 def ui_index():
-    # полный редактор Promocodes & Kits
     return render_template("admin/gameservers/promocode/index.html")
 
 # =========================================================
@@ -138,9 +171,6 @@ def ui_index():
 @bp.get("/api/items/vanilla")
 @login_required
 def api_items_vanilla():
-    """
-    Возвращает список ванильных предметов 1.20.6: [{id, name, icon, ns='minecraft'}]
-    """
     rel = "data/vanilla-items-1.20.6.json"
     candidates = [f"static/{rel}", rel]
     _abs, items = _try_open_candidates(candidates)
@@ -154,26 +184,17 @@ def api_items_vanilla():
         if not iid:
             continue
         name = it.get("name") or iid.replace("_", " ").title()
-        out.append({
-            "id": iid,
-            "name": name,
-            "icon": f"{base}/{iid}.png",
-            "ns": "minecraft",
-        })
+        out.append({"id": iid, "name": name, "icon": f"{base}/{iid}.png", "ns": "minecraft"})
     return _ok(out)
 
 @bp.get("/api/items/custom")
 @login_required
 def api_items_custom():
-    """
-    Кастомные предметы (ItemsAdder).
-    Формат файла:
-      [{"id":"itemsadder:my_sword","name":"My Sword"}, ...]
-    """
     rel = "data/itemsadder-items.json"
     candidates = [f"static/{rel}", rel]
     _abs, items = _try_open_candidates(candidates)
-    items = items or []
+    if not items:
+        items = []
 
     base = "/static/mc/itemsadder"
     out = []
@@ -186,13 +207,7 @@ def api_items_custom():
         else:
             ns, iid = "itemsadder", raw
         name = it.get("name") or iid.replace("_", " ").title()
-        out.append({
-            "id": iid,
-            "name": name,
-            "icon": f"{base}/{ns}.{iid}.png",
-            "ns": ns,
-            "full": f"{ns}:{iid}",
-        })
+        out.append({"id": iid, "name": name, "icon": f"{base}/{ns}.{iid}.png", "ns": ns, "full": f"{ns}:{iid}"})
     return _ok(out)
 
 # =========================================================
@@ -212,21 +227,6 @@ def api_kits_list():
 @bp.post("/api/kits/save")
 @login_required
 def api_kits_save():
-    """
-    Сохранение кита. Формат JSON:
-    {
-      "id": null|<int>,
-      "name": "...",
-      "description": "...",
-      "items": [
-        {
-          "namespace":"minecraft","item_id":"diamond_sword","amount":1,
-          "display_name":"&bМеч", "enchants":[{"id":"sharpness","lvl":5}],
-          "nbt": [], "slot": 0
-        }, ...
-      ]
-    }
-    """
     js = request.get_json(silent=True) or {}
     kit_id = js.get("id")
     name = (js.get("name") or "").strip()
@@ -238,6 +238,7 @@ def api_kits_save():
 
     with get_db_connection() as conn:
         _ensure_schema(conn)
+
         if kit_id:
             conn.execute("UPDATE promo_kits SET name=?, description=? WHERE id=?", (name, desc, int(kit_id)))
             conn.execute("DELETE FROM promo_kit_items WHERE kit_id=?", (int(kit_id),))
@@ -247,329 +248,488 @@ def api_kits_save():
             conn.commit()
             kid = int(conn.lastrowid)
 
-        # вставляем предметы
-        ins_sql = """
-        INSERT INTO promo_kit_items(kit_id, namespace, item_id, amount, display_name, enchants_json, nbt_json, slot)
-        VALUES (?,?,?,?,?,?,?,?)
-        """
-        for idx, it in enumerate(items):
-            ns = (it.get("namespace") or "minecraft").strip()
-            iid = (it.get("item_id") or "").strip()
+        bulk = []
+        pos = 0
+        for it in items:
+            ns = (it.get("ns") or it.get("namespace") or "minecraft").strip()
+            iid = (it.get("id") or it.get("item_id") or "").strip()
             if not iid:
                 continue
-            amount = int(it.get("amount") or 1)
-            disp = it.get("display_name")
-            ench = it.get("enchants") or it.get("enchantments") or []
-            nbt  = it.get("nbt") or []
-            slot = it.get("slot") if it.get("slot") is not None else idx
-            conn.execute(
-                ins_sql,
-                (kid, ns, iid, amount, disp, json.dumps(ench, ensure_ascii=False), json.dumps(nbt, ensure_ascii=False), slot),
+            amount = int(it.get("amount") or it.get("qty") or 1)
+            display_name = (it.get("display_name") or "").strip() or None
+            ench = _json(it.get("enchants") or [])
+            nbt = _json(it.get("nbt") or [])
+            slot = it.get("slot")
+            try:
+                slot = int(slot) if slot is not None else None
+            except Exception:
+                slot = None
+            bulk.append((kid, ns, iid, amount, display_name, ench, nbt, slot if slot is not None else pos))
+            pos += 1
+
+        if bulk:
+            conn.executemany(
+                """
+                INSERT INTO promo_kit_items(
+                  kit_id, namespace, item_id, amount, display_name, enchants_json, nbt_json, slot
+                ) VALUES (?,?,?,?,?,?,?,?)
+                """,
+                bulk,
             )
         conn.commit()
-
-        out = _row(conn, "SELECT id, name, description, created_at FROM promo_kits WHERE id=?", (kid,))
-        out["items"] = _kit_items(conn, kid)
-        return _ok(out)
+        return _ok({"id": kid}, id=kid)
 
 @bp.post("/api/kits/delete")
 @login_required
 def api_kits_delete():
     js = request.get_json(silent=True) or {}
-    kid = js.get("id")
-    if not kid:
-        return _err("id required")
+    kit_id = js.get("id")
+    if not kit_id:
+        return _err("id is required")
     with get_db_connection() as conn:
         _ensure_schema(conn)
-        conn.execute("DELETE FROM promo_kits WHERE id=?", (int(kid),))
+        conn.execute("DELETE FROM promo_kit_items WHERE kit_id=?", (int(kit_id),))
+        conn.execute("DELETE FROM promo_kits WHERE id=?", (int(kit_id),))
         conn.commit()
-        return _ok({"deleted": int(kid)})
+    return _ok()
 
 # =========================================================
-# API: promo codes (CRUD + views)
+# API: promocodes (CRUD + details)
 # =========================================================
 
-@bp.get("/api/codes/list")
+@bp.post("/api/promo/create")
 @login_required
-def api_codes_list():
-    """
-    Возвращает список промокодов + статистика.
-    ?q= фильтр по коду
-    """
-    q = (request.args.get("q") or "").strip()
-    where = ""
-    params: list = []
-    if q:
-        where = "WHERE c.code LIKE ?"
-        params.append(f"%{q}%")
+def api_promo_create():
+    js = request.get_json(silent=True) or {}
+    code = (js.get("code") or "").strip().upper() or _rand_code()
+    amount = float(js.get("amount") or 0)
+    currency = (js.get("currency_key") or os.getenv("POINTS_KEY", "rubs")).strip()
+    realm = (js.get("realm") or "").strip() or None
+    kit_id = js.get("kit_id")
+    uses = int(js.get("uses") or 1)
+    expires_at = (js.get("expires_at") or "").strip() or None
+    created_by = _actor_name()
 
+    if amount <= 0 and not kit_id:
+        return _err("amount > 0 or kit_id required")
+
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        if kit_id:
+            kit = _row(conn, "SELECT id FROM promo_kits WHERE id=?", (int(kit_id),))
+            if not kit:
+                return _err("kit_id not found")
+
+        conn.execute(
+            """
+            INSERT INTO promo_codes(code, amount, currency_key, realm, kit_id, uses_total, uses_left, expires_at, created_by)
+            VALUES (?,?,?,?,?,?,?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              amount=VALUES(amount),
+              currency_key=VALUES(currency_key),
+              realm=VALUES(realm),
+              kit_id=VALUES(kit_id),
+              uses_total=VALUES(uses_total),
+              uses_left=VALUES(uses_left),
+              expires_at=VALUES(expires_at),
+              created_by=VALUES(created_by)
+            """,
+            (code, amount, currency, realm, int(kit_id) if kit_id else None, uses, uses, expires_at, created_by),
+        )
+        conn.commit()
+        pid = int(_row(conn, "SELECT id FROM promo_codes WHERE code=?", (code,))["id"])
+    return _ok({"id": pid, "code": code})
+
+@bp.post("/api/promo/update")
+@login_required
+def api_promo_update():
+    js = request.get_json(silent=True) or {}
+    pid = js.get("id")
+    if not pid:
+        return _err("id required")
+    fields = {
+        "code": (js.get("code") or "").strip().upper(),
+        "enabled": int(js.get("enabled") or 1),
+        "realm": (js.get("realm") or "").strip() or None,
+        "expires_at": (js.get("expires_at") or "").strip() or None,
+        "amount": js.get("amount"),
+        "currency_key": (js.get("currency_key") or "").strip() or None,
+        "uses_total": js.get("uses_total"),
+        "per_player_uses": js.get("per_player_uses"),
+        "cooldown_seconds": js.get("cooldown_seconds"),
+        "kit_id": js.get("kit_id"),
+    }
+    sets, params = [], []
+    for k, v in fields.items():
+        if v is None and k in ("uses_total", "per_player_uses", "cooldown_seconds", "kit_id", "expires_at", "realm", "currency_key"):
+            sets.append(f"{k}=NULL")
+        elif v is not None and v != "":
+            sets.append(f"{k}=?")
+            params.append(v)
+    if not sets:
+        return _ok()
+    params.append(int(pid))
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        conn.execute(f"UPDATE promo_codes SET {', '.join(sets)} WHERE id=?", tuple(params))
+        conn.commit()
+    return _ok()
+
+@bp.post("/api/promo/delete")
+@login_required
+def api_promo_delete():
+    js = request.get_json(silent=True) or {}
+    code = (js.get("code") or "").strip().upper()
+    pid = js.get("id")
+    if not code and not pid:
+        return _err("code or id required")
+
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        if pid:
+            conn.execute("DELETE FROM promo_codes WHERE id=?", (int(pid),))
+        else:
+            conn.execute("DELETE FROM promo_codes WHERE code=?", (code,))
+        conn.commit()
+    return _ok()
+
+@bp.get("/api/promo/details")
+@login_required
+def api_promo_details():
+    """Детальная инфа по id (или code), вместе с именем кита."""
+    pid = request.args.get("id")
+    code = (request.args.get("code") or "").strip().upper()
+    if not pid and not code:
+        return _err("id or code required")
+
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        if pid:
+            p = _row(
+                conn,
+                """
+                SELECT p.*, k.name AS kit_name
+                FROM promo_codes p
+                LEFT JOIN promo_kits k ON k.id = p.kit_id
+                WHERE p.id=?
+                """,
+                (int(pid),),
+            )
+        else:
+            p = _row(
+                conn,
+                """
+                SELECT p.*, k.name AS kit_name
+                FROM promo_codes p
+                LEFT JOIN promo_kits k ON k.id = p.kit_id
+                WHERE p.code=?
+                """,
+                (code,),
+            )
+        if not p:
+            return _err("not found", 404)
+        return _ok(p)
+
+@bp.get("/api/promo/info")
+@login_required
+def api_promo_info():
+    code = (request.args.get("code") or "").strip().upper()
+    if not code:
+        return _err("code required")
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        p = _row(
+            conn,
+            """
+            SELECT p.*, k.name AS kit_name
+            FROM promo_codes p
+            LEFT JOIN promo_kits k ON k.id = p.kit_id
+            WHERE p.code = ?
+            """,
+            (code,),
+        )
+        if not p:
+            return _err("code not found", 404)
+        p["expired"] = bool(p.get("expires_at") and str(p["expires_at"]) and datetime.utcnow() > datetime.fromisoformat(str(p["expires_at"]).replace(" ", "T")))
+        p["kit_items"] = _kit_items(conn, int(p["kit_id"])) if p.get("kit_id") else []
+        return _ok(p)
+
+@bp.get("/api/promo/list")
+@login_required
+def api_promo_list():
     with get_db_connection() as conn:
         _ensure_schema(conn)
         rows = _rows(
             conn,
-            f"""
-            SELECT c.id, c.code, c.enabled, c.amount, c.currency_key, c.realm,
-                   c.uses_total, c.uses_left, c.per_player_uses, c.cooldown_seconds,
-                   c.expires_at, c.kit_id, c.created_at,
-                   COALESCE(r.cnt, 0) AS redemptions
-            FROM promo_codes c
-            LEFT JOIN (
-              SELECT code_id, COUNT(*) AS cnt
-              FROM promo_redemptions
-              GROUP BY code_id
-            ) r ON r.code_id = c.id
-            {where}
-            ORDER BY c.id DESC
+            """
+            SELECT p.id, p.code, p.amount, p.currency_key, p.realm, p.kit_id,
+                   p.enabled, p.uses_total, p.uses_left, p.expires_at, p.created_by, p.created_at,
+                   k.name AS kit_name
+            FROM promo_codes p
+            LEFT JOIN promo_kits k ON k.id = p.kit_id
+            ORDER BY p.id DESC
+            LIMIT 500
             """,
-            params,
         )
-        return _ok(rows)
-
-@bp.get("/api/codes/one")
-@login_required
-def api_codes_one():
-    code_id = request.args.get("id")
-    code = (request.args.get("code") or "").strip()
-    if not code_id and not code:
-        return _err("id or code required")
-    with get_db_connection() as conn:
-        _ensure_schema(conn)
-        if code_id:
-            row = _row(conn, "SELECT * FROM promo_codes WHERE id=?", (int(code_id),))
-        else:
-            row = _row(conn, "SELECT * FROM promo_codes WHERE code=?", (code,))
-        if not row:
-            return _err("not found", code=code, id=code_id)
-        # группы/команды
-        groups = _rows(conn, "SELECT id, group_name, temp_seconds, context_server, context_world, priority FROM promo_code_groups WHERE code_id=? ORDER BY priority ASC, id ASC", (row["id"],))
-        cmds   = _rows(conn, "SELECT id, run_as, realm, command_text, run_delay_ms, priority FROM promo_code_cmds WHERE code_id=? ORDER BY priority ASC, id ASC", (row["id"],))
-        row["groups"] = groups
-        row["cmds"]   = cmds
-        return _ok(row)
-
-@bp.post("/api/codes/save")
-@login_required
-def api_codes_save():
-    """
-    Создание/редактирование промокода.
-    ВАЖНО: uses_left не обнуляется при апдейте; при изменении uses_total корректируется дельтой.
-    JSON:
-    {
-      "id": null|int,
-      "code": "ABC123",
-      "enabled": true,
-      "amount": 100.0, "currency_key": "rubs",
-      "realm": "anarchy",
-      "uses_total": 10, "per_player_uses": 1, "cooldown_seconds": 0,
-      "expires_at": "2025-12-31 23:59:59" | null,
-      "kit_id": null|int
-    }
-    """
-    js = request.get_json(silent=True) or {}
-    code_id = js.get("id")
-    code = (js.get("code") or "").strip()
-    if not code:
-        return _err("code is required")
-
-    enabled = 1 if js.get("enabled", True) else 0
-    amount = js.get("amount")
-    currency_key = (js.get("currency_key") or None) or None
-    realm = (js.get("realm") or "").strip() or None
-    uses_total = int(js.get("uses_total") or 0)
-    per_player = js.get("per_player_uses")
-    per_player = int(per_player) if per_player is not None else None
-    cooldown = js.get("cooldown_seconds")
-    cooldown = int(cooldown) if cooldown is not None else None
-    expires_at = js.get("expires_at")  # строка в формате '%Y-%m-%d %H:%M:%S' или None
-    kit_id = js.get("kit_id")
-    kit_id = int(kit_id) if kit_id is not None else None
-
-    with get_db_connection() as conn:
-        _ensure_schema(conn)
-
-        # Вставка/апдейт с сохранением uses_left.
-        # Логика:
-        #  - при первом создании uses_left = uses_total
-        #  - при апдейте: uses_left НЕ перезаписывается;
-        #    если изменили uses_total, то:
-        #      uses_left := GREATEST(0, LEAST(new_total, uses_left + (new_total - old_total)))
-        sql = """
-        INSERT INTO promo_codes (id, code, enabled, amount, currency_key, realm,
-                                 uses_total, uses_left, per_player_uses, cooldown_seconds, expires_at, kit_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          code = VALUES(code),
-          enabled = VALUES(enabled),
-          amount = VALUES(amount),
-          currency_key = VALUES(currency_key),
-          realm = VALUES(realm),
-          -- пересчёт uses_left с учётом дельты uses_total
-          uses_left = GREATEST(0, LEAST(VALUES(uses_total), COALESCE(uses_left, 0) + (VALUES(uses_total) - uses_total))),
-          uses_total = VALUES(uses_total),
-          per_player_uses = VALUES(per_player_uses),
-          cooldown_seconds = VALUES(cooldown_seconds),
-          expires_at = VALUES(expires_at),
-          kit_id = VALUES(kit_id)
-        """
-        params = (
-            int(code_id) if code_id else None,
-            code, enabled, amount, currency_key, realm,
-            uses_total, uses_total, per_player, cooldown, expires_at, kit_id
-        )
-        conn.execute(sql, params)
-        conn.commit()
-
-        row = _row(conn, "SELECT * FROM promo_codes WHERE code=?", (code,))
-        return _ok(row)
-
-@bp.post("/api/codes/delete")
-@login_required
-def api_codes_delete():
-    """
-    Удаление промокода по id или code.
-    Связанные promo_code_groups / promo_code_cmds / promo_redemptions должны удалиться каскадом (FK ON DELETE CASCADE).
-    """
-    js = request.get_json(silent=True) or {}
-    code_id = js.get("id")
-    code = (js.get("code") or "").strip() if js.get("code") is not None else None
-    if not code_id and not code:
-        return _err("id or code required")
-
-    with get_db_connection() as conn:
-        _ensure_schema(conn)
-        if code_id:
-            conn.execute("DELETE FROM promo_codes WHERE id=?", (int(code_id),))
-        else:
-            conn.execute("DELETE FROM promo_codes WHERE code=?", (code,))
-        conn.commit()
-        return _ok({"deleted": code_id or code})
+    return _ok(rows)
 
 # =========================================================
-# API: groups (LuckPerms bindings per code)
+# API: LuckPerms groups for a code
 # =========================================================
 
-@bp.get("/api/groups/list")
+@bp.get("/api/promo/groups/list")
 @login_required
-def api_groups_list():
-    code_id = request.args.get("code_id")
+def api_promo_groups_list():
+    code_id = request.args.get("code_id", type=int)
     if not code_id:
         return _err("code_id required")
     with get_db_connection() as conn:
         _ensure_schema(conn)
         rows = _rows(
             conn,
-            "SELECT id, group_name, temp_seconds, context_server, context_world, priority "
-            "FROM promo_code_groups WHERE code_id=? ORDER BY priority ASC, id ASC",
-            (int(code_id),)
+            """
+            SELECT id, code_id, group_name, temp_seconds, context_server, context_world, priority, created_at
+            FROM promo_groups
+            WHERE code_id=?
+            ORDER BY priority ASC, id ASC
+            """,
+            (code_id,),
         )
-        return _ok(rows)
+    return _ok(rows)
 
-@bp.post("/api/groups/save")
+@bp.post("/api/promo/groups/save")
 @login_required
-def api_groups_save():
-    """
-    Полная замена набора групп у промокода.
-    JSON:
-    {
-      "code_id": 123,
-      "groups": [
-        {"group_name":"vip","temp_seconds":0,"context_server":null,"context_world":null,"priority":0},
-        ...
-      ]
-    }
-    """
+def api_promo_groups_save():
     js = request.get_json(silent=True) or {}
     code_id = js.get("code_id")
     groups = js.get("groups") or []
     if not code_id:
         return _err("code_id required")
 
+    # sanitize
+    bulk = []
+    for i, g in enumerate(groups, start=1):
+        name = (g.get("group_name") or "").strip()
+        if not name:
+            continue
+        tmp = g.get("temp_seconds")
+        try:
+            tmp = int(tmp) if tmp is not None and str(tmp) != "" else None
+        except Exception:
+            tmp = None
+        srv = (g.get("context_server") or "").strip() or None
+        wrd = (g.get("context_world") or "").strip() or None
+        pr  = g.get("priority")
+        try:
+            pr = int(pr) if pr is not None and str(pr) != "" else i
+        except Exception:
+            pr = i
+        bulk.append((int(code_id), name, tmp, srv, wrd, pr))
+
     with get_db_connection() as conn:
         _ensure_schema(conn)
-        conn.execute("DELETE FROM promo_code_groups WHERE code_id=?", (int(code_id),))
-        ins = "INSERT INTO promo_code_groups(code_id, group_name, temp_seconds, context_server, context_world, priority) VALUES (?,?,?,?,?,?)"
-        for idx, g in enumerate(groups):
-            name = (g.get("group_name") or "").strip()
-            if not name:
-                continue
-            temp = g.get("temp_seconds")
-            temp = int(temp) if temp is not None else None
-            sctx = (g.get("context_server") or None)
-            wctx = (g.get("context_world") or None)
-            prio = int(g.get("priority") if g.get("priority") is not None else idx)
-            conn.execute(ins, (int(code_id), name, temp, sctx, wctx, prio))
+        conn.execute("DELETE FROM promo_groups WHERE code_id=?", (int(code_id),))
+        if bulk:
+            conn.executemany(
+                """
+                INSERT INTO promo_groups(code_id, group_name, temp_seconds, context_server, context_world, priority)
+                VALUES (?,?,?,?,?,?)
+                """,
+                bulk,
+            )
         conn.commit()
-        rows = _rows(conn, "SELECT * FROM promo_code_groups WHERE code_id=? ORDER BY priority ASC, id ASC", (int(code_id),))
-        return _ok(rows)
+    return _ok({"count": len(bulk)})
 
-@bp.post("/api/groups/delete")
+# =========================================================
+# API: redemptions (preview + redeem + history)
+# =========================================================
+
+def _load_code_for_update(conn: MySQLConnection, code: str) -> Optional[dict]:
+    return _row(conn, "SELECT * FROM promo_codes WHERE code=? FOR UPDATE", (code,))
+
+def _validate_code_row(p: dict, *, realm: Optional[str]) -> Optional[str]:
+    if not p:
+        return "code not found"
+    if int(p.get("uses_left") or 0) <= 0:
+        return "no uses left"
+    if p.get("expires_at"):
+        try:
+            exp = datetime.fromisoformat(str(p["expires_at"]).replace(" ", "T"))
+            if datetime.utcnow() > exp:
+                return "code expired"
+        except Exception:
+            pass
+    if p.get("realm") and realm and str(p["realm"]).strip() != str(realm).strip():
+        return "code is restricted to another realm"
+    return None
+
+@bp.post("/api/promo/redeem_preview")
 @login_required
-def api_groups_delete():
+def api_promo_redeem_preview():
     js = request.get_json(silent=True) or {}
-    gid = js.get("id")
-    if not gid:
-        return _err("id required")
+    code = (js.get("code") or "").strip().upper()
+    realm = (js.get("realm") or "").strip() or None
+    if not code:
+        return _err("code required")
+
     with get_db_connection() as conn:
         _ensure_schema(conn)
-        conn.execute("DELETE FROM promo_code_groups WHERE id=?", (int(gid),))
-        conn.commit()
-        return _ok({"deleted": int(gid)})
+        p = _row(conn, "SELECT * FROM promo_codes WHERE code=?", (code,))
+        err = _validate_code_row(p, realm=realm)
+        if err:
+            return _err(err, 400, code=code)
 
-# =========================================================
-# API: redemptions (players)
-# =========================================================
+        out = {
+            "code_id": int(p["id"]),
+            "code": code,
+            "amount": float(p["amount"] or 0),
+            "currency_key": p["currency_key"],
+            "kit_id": p.get("kit_id"),
+            "uses_left": int(p.get("uses_left") or 0),
+            "uses_total": int(p.get("uses_total") or 0),
+            "realm": p.get("realm"),
+            "expires_at": p.get("expires_at"),
+            "kit_items": _kit_items(conn, int(p["kit_id"])) if p.get("kit_id") else [],
+        }
+        out["uses_left_after"] = max(0, int(out["uses_left"]) - 1)
+        return _ok(out)
 
-@bp.get("/api/redemptions")
+@bp.post("/api/promo/redeem")
 @login_required
-def api_redemptions():
-    """
-    Список активаций игроков.
-    Параметры:
-      - code_id (int) | code (str) | player (like)
-      - limit (int, default 100)
-      - offset (int, default 0)
-    """
-    code_id = request.args.get("code_id")
-    code = (request.args.get("code") or "").strip()
-    player = (request.args.get("player") or "").strip()
+def api_promo_redeem():
+    js = request.get_json(silent=True) or {}
+    code = (js.get("code") or "").strip().upper()
+    uuid = (js.get("uuid") or "").strip()
+    username = (js.get("username") or "").strip() or None
+    realm = (js.get("realm") or "").strip() or None
+    ip = (js.get("ip") or request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+
+    if not code:
+        return _err("code required")
+    if not uuid:
+        return _err("uuid required")
+
+    with get_db_connection() as conn:
+        _ensure_schema(conn)
+        p = _load_code_for_update(conn, code)
+        err = _validate_code_row(p, realm=realm)
+        if err:
+            return _err(err, 400, code=code)
+
+        code_id = int(p["id"])
+        amount = float(p.get("amount") or 0.0)
+        currency_key = p.get("currency_key")
+        kit_id = p.get("kit_id")
+        kit_items = _kit_items(conn, int(kit_id)) if kit_id else []
+
+        conn.execute(
+            """
+            INSERT INTO promo_redemptions(code_id, uuid, username, realm, granted_amount, kit_id, granted_items_json, ip)
+            VALUES (?,?,?,?,?,?,?,?)
+            """,
+            (
+                code_id, uuid, username, realm,
+                amount if amount > 0 else None,
+                int(kit_id) if kit_id else None,
+                _json(kit_items),
+                ip or None,
+            ),
+        )
+        conn.execute("UPDATE promo_codes SET uses_left = uses_left - 1 WHERE id = ? AND uses_left > 0", (code_id,))
+        conn.commit()
+
+        return _ok({
+            "code": code,
+            "code_id": code_id,
+            "uses_left": int(p["uses_left"]) - 1,
+            "amount": amount,
+            "currency_key": currency_key,
+            "kit_id": kit_id,
+            "kit_items": kit_items,
+        })
+
+@bp.get("/api/promo/redemptions")
+@login_required
+def api_promo_redemptions():
+    code = (request.args.get("code") or "").strip().upper()
+    code_id = request.args.get("code_id", type=int)
+    uuid = (request.args.get("uuid") or "").strip()
+    username = (request.args.get("username") or "").strip()
+    q = (request.args.get("q") or "").strip()
     limit = max(1, min(500, int(request.args.get("limit") or 100)))
-    offset = max(0, int(request.args.get("offset") or 0))
 
     where = []
-    params: List = []
+    params: List[object] = []
+    if code_id:
+        where.append("r.code_id = ?")
+        params.append(code_id)
+    elif code:
+        where.append("r.code_id = (SELECT id FROM promo_codes WHERE code = ?)")
+        params.append(code)
+    if uuid:
+        where.append("r.uuid = ?")
+        params.append(uuid)
+    if username:
+        where.append("r.username = ?")
+        params.append(username)
+    if q:
+        where.append("(r.username LIKE ? OR r.uuid LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     with get_db_connection() as conn:
         _ensure_schema(conn)
-        if code_id:
-            where.append("r.code_id = ?")
-            params.append(int(code_id))
-        elif code:
-            row = _row(conn, "SELECT id FROM promo_codes WHERE code=?", (code,))
-            if row:
-                where.append("r.code_id = ?")
-                params.append(int(row["id"]))
-            else:
-                return _ok({"items": [], "total": 0})
-        if player:
-            where.append("(r.username LIKE ? OR r.uuid = ?)")
-            params.extend([f"%{player}%", player])
-
-        where_sql = "WHERE " + " AND ".join(where) if where else ""
-        items = _rows(
+        rows = _rows(
             conn,
             f"""
-            SELECT r.id, r.code_id, r.uuid, r.username, r.realm,
-                   r.granted_amount, r.currency_key, r.kit_id,
-                   r.ip, r.created_at
+            SELECT r.id, r.code_id, (SELECT code FROM promo_codes WHERE id=r.code_id) AS code,
+                   r.uuid, r.username, r.realm, r.granted_amount, r.kit_id, r.ip, r.created_at
             FROM promo_redemptions r
             {where_sql}
             ORDER BY r.id DESC
-            LIMIT ? OFFSET ?
+            LIMIT ?
             """,
-            params + [limit, offset],
+            (*params, limit),
         )
-        total = _row(conn, f"SELECT COUNT(*) AS c FROM promo_redemptions r {where_sql}", params)["c"]
-        return _ok({"items": items, "total": total})
+    return _ok(rows)
 
+# короткий алиас под фронтовой путь /api/promo/reds
+@bp.get("/api/promo/reds")
+@login_required
+def api_promo_reds_alias():
+    return api_promo_redemptions()
+
+# =========================================================
+# Register under /admin
 # =========================================================
 
 admin_bp.register_blueprint(bp)
+
+# UI aliases
+admin_bp.add_url_rule("/gameservers/promocode", view_func=ui_index, methods=["GET"], endpoint="gameservers_promocode_index_no_slash")
+admin_bp.add_url_rule("/gameservers/promocode/", view_func=ui_index, methods=["GET"], endpoint="gameservers_promocode_index")
+
+# items
+admin_bp.add_url_rule("/gameservers/promocode/api/items/vanilla", view_func=api_items_vanilla, methods=["GET"], endpoint="gameservers_promocode_api_items_vanilla")
+admin_bp.add_url_rule("/gameservers/promocode/api/items/custom",  view_func=api_items_custom,  methods=["GET"], endpoint="gameservers_promocode_api_items_custom")
+
+# kits
+admin_bp.add_url_rule("/gameservers/promocode/api/kits/list",   view_func=api_kits_list,   methods=["GET"],  endpoint="gameservers_promocode_api_kits_list")
+admin_bp.add_url_rule("/gameservers/promocode/api/kits/save",   view_func=api_kits_save,   methods=["POST"], endpoint="gameservers_promocode_api_kits_save")
+admin_bp.add_url_rule("/gameservers/promocode/api/kits/delete", view_func=api_kits_delete, methods=["POST"], endpoint="gameservers_promocode_api_kits_delete")
+
+# promo CRUD + details
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/create",  view_func=api_promo_create,  methods=["POST"], endpoint="gameservers_promocode_api_promo_create")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/update",  view_func=api_promo_update,  methods=["POST"], endpoint="gameservers_promocode_api_promo_update")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/delete",  view_func=api_promo_delete,  methods=["POST"], endpoint="gameservers_promocode_api_promo_delete")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/details", view_func=api_promo_details, methods=["GET"],  endpoint="gameservers_promocode_api_promo_details")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/info",    view_func=api_promo_info,    methods=["GET"],  endpoint="gameservers_promocode_api_promo_info")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/list",    view_func=api_promo_list,    methods=["GET"],  endpoint="gameservers_promocode_api_promo_list")
+
+# promo groups
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/groups/list", view_func=api_promo_groups_list, methods=["GET"],  endpoint="gameservers_promocode_api_promo_groups_list")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/groups/save", view_func=api_promo_groups_save, methods=["POST"], endpoint="gameservers_promocode_api_promo_groups_save")
+
+# redemptions
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/redemptions", view_func=api_promo_redemptions, methods=["GET"], endpoint="gameservers_promocode_api_promo_redemptions")
+admin_bp.add_url_rule("/gameservers/promocode/api/promo/reds",        view_func=api_promo_reds_alias,  methods=["GET"], endpoint="gameservers_promocode_api_promo_reds")
