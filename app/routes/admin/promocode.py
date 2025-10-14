@@ -125,11 +125,13 @@ def _kit_items(conn: MySQLConnection, kit_id: int) -> List[dict]:
         (kit_id,),
     )
     for it in items:
+        # корректно разворачиваем *_json => без _json
         for col in ("enchants_json", "nbt_json"):
+            key = col.replace("_json", "")
             try:
-                it[col[:-5] + "s"] = json.loads(it[col] or "[]")
+                it[key] = json.loads(it.get(col) or "[]")
             except Exception:
-                it[col[:-5] + "s"] = []
+                it[key] = []
     return items
 
 # =========================================================
@@ -280,7 +282,8 @@ def api_kits_save():
                 bulk,
             )
         conn.commit()
-        return _ok({"id": kid})
+        # возвращаем id в двух местах: и в data, и на корне — для совместимости фронтов
+        return _ok({"id": kid}, id=kid)
 
 @bp.post("/api/kits/delete")
 @login_required
@@ -616,3 +619,85 @@ def api_promo_redemptions():
 
 # Регистрация под /admin
 admin_bp.register_blueprint(bp)
+
+# ===== Совместимые алиасы под /admin/gameservers/promocode =====
+# UI дергает эти пути — маппим их на те же view-функции
+admin_bp.add_url_rule(
+    "/gameservers/promocode", view_func=ui_index,
+    methods=["GET"], endpoint="gameservers_promocode_index_no_slash"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/", view_func=ui_index,
+    methods=["GET"], endpoint="gameservers_promocode_index"
+)
+
+# items
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/items/vanilla",
+    view_func=api_items_vanilla, methods=["GET"],
+    endpoint="gameservers_promocode_api_items_vanilla"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/items/custom",
+    view_func=api_items_custom, methods=["GET"],
+    endpoint="gameservers_promocode_api_items_custom"
+)
+
+# kits
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/kits/list",
+    view_func=api_kits_list, methods=["GET"],
+    endpoint="gameservers_promocode_api_kits_list"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/kits/save",
+    view_func=api_kits_save, methods=["POST"],
+    endpoint="gameservers_promocode_api_kits_save"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/kits/delete",
+    view_func=api_kits_delete, methods=["POST"],
+    endpoint="gameservers_promocode_api_kits_delete"
+)
+
+# promo codes
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/promo/create",
+    view_func=api_promo_create, methods=["POST"],
+    endpoint="gameservers_promocode_api_promo_create"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/promo/bulk_create",
+    view_func=api_promo_bulk_create, methods=["POST"],
+    endpoint="gameservers_promocode_api_promo_bulk_create"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/promo/delete",
+    view_func=api_promo_delete, methods=["POST"],
+    endpoint="gameservers_promocode_api_promo_delete"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/promo/info",
+    view_func=api_promo_info, methods=["GET"],
+    endpoint="gameservers_promocode_api_promo_info"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/promo/list",
+    view_func=api_promo_list, methods=["GET"],
+    endpoint="gameservers_promocode_api_promo_list"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/promo/redeem_preview",
+    view_func=api_promo_redeem_preview, methods=["POST"],
+    endpoint="gameservers_promocode_api_promo_redeem_preview"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/promo/redeem",
+    view_func=api_promo_redeem, methods=["POST"],
+    endpoint="gameservers_promocode_api_promo_redeem"
+)
+admin_bp.add_url_rule(
+    "/gameservers/promocode/api/promo/redemptions",
+    view_func=api_promo_redemptions, methods=["GET"],
+    endpoint="gameservers_promocode_api_promo_redemptions"
+)

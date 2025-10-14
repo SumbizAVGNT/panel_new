@@ -17,11 +17,11 @@ __all__ = ["admin_bp"]
 
 # ВАЖНО: импорты оставляем внизу, чтобы модули увидели уже созданный admin_bp
 # и зарегистрировали на нём свои маршруты.
-from . import users      # noqa: E402,F401
-from . import settings   # noqa: E402,F401
-from . import bots       # noqa: E402,F401
-from . import servers    # noqa: E402,F401
-from . import support    # noqa: E402,F401
+from . import users        # noqa: E402,F401
+from . import settings     # noqa: E402,F401
+from . import bots         # noqa: E402,F401
+from . import servers      # noqa: E402,F401
+from . import support      # noqa: E402,F401
 from . import gameservers  # noqa: E402,F401
 from . import accounts     # noqa: E402,F401
-from . import promocode    # NEW
+from . import promocode    # noqa: E402,F401  # NEW
