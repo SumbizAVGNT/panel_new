@@ -1,27 +1,60 @@
 {% extends "layout/base.html" %}
-{% block title %}Promocode & Kits{% endblock %}
+{% block title %}Promocodes & Kits Management{% endblock %}
 {% block content %}
 <style>
 /* tabs */
-.tabs{display:flex;gap:8px;margin:8px 0 14px}
-.tabs .tab-btn{border-radius:12px;border:1px solid rgba(148,163,184,.22);
-  background:rgba(13,17,23,.55);color:#e5e7eb;padding:.5rem .9rem;font-weight:600;letter-spacing:.015em;
-  transition:.2s}
-.tabs .tab-btn:hover{transform:translateY(-1px)}
-.tabs .tab-btn.active{background:#0f172a;border-color:rgba(148,163,184,.35)}
-.tab-pane{display:none;opacity:0;transform:translateY(6px);transition:.2s}
-.tab-pane.active{display:block;opacity:1;transform:none}
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+.tabs .tab-btn {
+  border-radius: 12px;
+  border: 1px solid rgba(148,163,184,.22);
+  background: rgba(13,17,23,.55);
+  color: #e5e7eb;
+  padding: .5rem .9rem;
+  font-weight: 600;
+  letter-spacing: .015em;
+  transition: .2s;
+}
+.tabs .tab-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(13,17,23,.7);
+}
+.tabs .tab-btn.active {
+  background: #0f172a;
+  border-color: rgba(148,163,184,.35);
+}
+.tab-pane {
+  display: none;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: .2s;
+}
+.tab-pane.active {
+  display: block;
+  opacity: 1;
+  transform: none;
+}
 </style>
 
 <div class="container-xxl py-3">
   <div class="d-flex align-items-center justify-content-between mb-2">
-    <h2 class="m-0">Promocode</h2>
-    <a class="btn btn-sm btn-outline-light" href="/admin"><i class="bi bi-house"></i></a>
+    <h2 class="m-0">Promocodes & Kits Management</h2>
+    <a class="btn btn-sm btn-outline-light" href="/admin" title="Back to Admin Dashboard">
+      <i class="bi bi-house"></i>
+      <span class="d-none d-sm-inline ms-1">Dashboard</span>
+    </a>
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" data-tab="promo"><i class="bi bi-megaphone me-1"></i>Promocodes</button>
-    <button class="tab-btn" data-tab="kits"><i class="bi bi-box-seam me-1"></i>Kits</button>
+    <button class="tab-btn active" data-tab="promo">
+      <i class="bi bi-megaphone me-1"></i>Promocodes
+    </button>
+    <button class="tab-btn" data-tab="kits">
+      <i class="bi bi-box-seam me-1"></i>Kits
+    </button>
   </div>
 
   <div id="tab-promo" class="tab-pane active">
@@ -34,17 +67,34 @@
 </div>
 
 <script>
-document.querySelectorAll('.tab-btn').forEach(b=>{
-  b.addEventListener('click', ()=>{
-    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-    document.getElementById('tab-'+b.dataset.tab).classList.add('active');
+document.addEventListener('DOMContentLoaded', function() {
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabPanes = document.querySelectorAll('.tab-pane');
+
+  function switchTab(tabId) {
+    tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabId));
+    tabPanes.forEach(pane => pane.classList.toggle('active', pane.id === `tab-${tabId}`));
+
+    // Call init function for the active tab if it exists
+    const initFuncName = `${tabId}Init`;
+    if (typeof window[initFuncName] === 'function') {
+      window[initFuncName]();
+    }
+  }
+
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
+
+  // Initialize the active tab
+  const activeTab = document.querySelector('.tab-btn.active');
+  if (activeTab) {
+    switchTab(activeTab.dataset.tab);
+  }
 });
 </script>
 
-{# Модули (пути важны!) #}
+{# Modules (paths are important!) #}
 {% include "admin/gameservers/promocode/promocode_script.html" %}
 {% include "admin/gameservers/promocode/kits_script.html" %}
 {% endblock %}

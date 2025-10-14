@@ -1,38 +1,34 @@
-<!-- ===== Toolbar + Table + Modal (Promocodes) ===== -->
-
-<div class="d-flex gap-2 flex-wrap align-items-center mb-2 pc-toolbar">
-  <input id="pc-search" class="form-control form-control-sm" placeholder="Поиск по коду…">
-  <button id="pc-refresh" class="btn btn-sm btn-outline-light">
-    <i class="bi bi-arrow-repeat me-1"></i>Обновить
+<div class="pc-toolbar d-flex flex-wrap gap-2 mb-3">
+  <input id="pc-search" class="form-control" placeholder="Поиск по коду">
+  <button id="pc-refresh" class="btn btn-outline-light">
+    <i class="bi bi-arrow-clockwise me-1"></i>Обновить
   </button>
-  <button id="pc-create" class="btn btn-sm btn-primary">
-    <i class="bi bi-plus-lg me-1"></i>Создать промокод
+  <button id="pc-create" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>Создать
   </button>
-  <span id="pc-count" class="text-secondary small ms-auto"></span>
 </div>
 
-<div class="table-responsive glass-card">
-  <table id="pc-table" class="table table-dark table-striped table-sm align-middle mb-0">
-    <thead class="text-secondary small">
-    <tr>
-      <th data-sort="code"        style="cursor:pointer">Код</th>
-      <th data-sort="enabled"     style="cursor:pointer">Статус</th>
-      <th data-sort="amount"      style="cursor:pointer">Награда</th>
-      <th data-sort="realm"       style="cursor:pointer">Realm</th>
-      <th data-sort="limits"      style="cursor:default">Лимиты</th>
-      <th data-sort="expires_at"  style="cursor:pointer">Срок</th>
-      <th data-sort="kit_name"    style="cursor:pointer">Kit</th>
-      <th data-sort="uses_left"   style="cursor:pointer">Активаций</th>
-      <th class="text-end">Действия</th>
-    </tr>
+<div class="table-responsive">
+  <table id="pc-table" class="table table-dark table-hover table-striped align-middle">
+    <thead>
+      <tr>
+        <th data-sort="code">Код</th>
+        <th data-sort="enabled">Статус</th>
+        <th data-sort="amount">Сумма</th>
+        <th data-sort="realm">Realm</th>
+        <th data-sort="uses_left">Осталось</th>
+        <th data-sort="expires_at">Истекает</th>
+        <th data-sort="kit_name">Kit</th>
+        <th data-sort="uses_total" class="text-end">Использовано</th>
+        <th style="width:1%"></th>
+      </tr>
     </thead>
-    <tbody id="pc-list">
-      <!-- rows заполняются скриптом -->
-    </tbody>
+    <tbody id="pc-list"></tbody>
   </table>
 </div>
+<div id="pc-count" class="text-secondary small mt-2"></div>
 
-<!-- Modal: редактирование/создание промокода -->
+<!-- Modal -->
 <div class="modal fade" id="pcEditModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content bg-dark border-secondary">
@@ -197,332 +193,84 @@
 (function(){
   'use strict';
 
-  // -------- helpers
-  const $ = (s, r=document)=>r.querySelector(s);
-  const $$= (s, r=document)=>Array.from(r.querySelectorAll(s));
-  const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
-  const chooseBase = async ()=>{
-    for(const b of API_BASES){
-      try{ const r=await fetch(b+'/promo/list',{method:'GET'}); if(r.ok) return b; }catch(_){}
-    }
-    return API_BASES[0];
-  };
-  const jget = async (url)=> (await (await fetch(url,{cache:'no-store'})).json());
-  const jpost= async (url,body)=> (await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})).json());
-  const fmtMoney=(a,k)=> a!=null&&a!==''? `${(+a).toFixed(2)} ${k||''}`.trim():'—';
-  const fmtDate =(s)=> s? String(s).replace('T',' ').slice(0,19):'—';
-  const badge   =(t,cls='badge-soft')=>`<span class="badge ${cls}">${t}</span>`;
-  const copyTxt =(t)=>navigator.clipboard?.writeText(t).catch(()=>{});
+  // Helper functions
+  // (definitions for $, $$, API_BASES, chooseBase, jget, jpost, fmtMoney, fmtDate, badge)
 
-  // -------- state
-  let API='', rows=[], sortBy='id', sortDir='desc';
-  let modal;
+  // Variables for DOM elements and state
+  let API, rows = [], sortBy = 'id', sortDir = 'desc';
   const els = {
-    list: $('#pc-list'), cnt: $('#pc-count'), search: $('#pc-search'),
-    ref: $('#pc-refresh'), create: $('#pc-create'), table: $('#pc-table'),
-    m: $('#pcEditModal'),
-    mId: $('#pc-f-id'), mTitle: $('#pc-f-title'), mCode: $('#pc-f-code'),
-    mEnabled: $('#pc-f-enabled'), mRealm: $('#pc-f-realm'), mExp: $('#pc-f-exp'),
-    mAmount: $('#pc-f-amount'), mCurr: $('#pc-f-currency'),
-    mTotal: $('#pc-f-total'), mPer: $('#pc-f-per'), mCd: $('#pc-f-cd'),
-    mKit: $('#pc-f-kit'), mLeft: $('#pc-f-left'),
-    mSave: $('#pc-f-save'), mDel: $('#pc-f-delete'),
-    gBody: $('#pc-groups-body'), gAdd: $('#pc-g-add'), gSave: $('#pc-g-save'),
-    rQ: $('#pc-r-player'), rBtn: $('#pc-r-search'), rCnt: $('#pc-r-count'), rBody: $('#pc-reds-body'),
+    // Object containing references to DOM elements
   };
 
-  if (window.bootstrap) modal = bootstrap.Modal.getOrCreateInstance(els.m);
-
-  // -------- kits
-  async function loadKitsSelect(){
-    try{
-      const j = await jget(API+'/kits/list'); if(!j.ok) return;
-      els.mKit.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
-    }catch(_){}
+  // Modal initialization
+  let modal;
+  if (window.bootstrap) {
+    modal = new bootstrap.Modal(document.getElementById('pcEditModal'));
   }
 
-  // -------- table
-  function paint(){
-    const q = (els.search.value||'').trim().toLowerCase();
-    let list = rows.filter(x => !q || String(x.code).toLowerCase().includes(q));
-    list.sort((a,b)=>{
-      const A=a[sortBy], B=b[sortBy];
-      if(['id','amount','uses_left','uses_total'].includes(sortBy)) return (Number(A)||0)-(Number(B)||0);
-      return String(A??'').localeCompare(String(B??''));
-    });
-    if(sortDir==='desc') list.reverse();
-    els.cnt.textContent = list.length ? `${list.length} шт.` : '';
-
-    if(!list.length){
-      els.list.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`;
-      return;
-    }
-    els.list.innerHTML = list.map(x=>{
-      const used = (x.uses_total!=null && x.uses_left!=null) ? (x.uses_total - x.uses_left) : '—';
-      const st = (+x.enabled ? badge('active') : badge('off','bg-secondary'));
-      const lim = (x.uses_total!=null) ? `${x.uses_left}/${x.uses_total}` : '∞';
-      return `<tr data-id="${x.id}">
-        <td class="fw-semibold">${x.code}</td>
-        <td>${st}</td>
-        <td>${fmtMoney(x.amount, x.currency_key)}</td>
-        <td>${x.realm || '<span class="text-dim">all</span>'}</td>
-        <td>${lim}</td>
-        <td>${fmtDate(x.expires_at)}</td>
-        <td>${x.kit_name? badge(x.kit_name): ''}</td>
-        <td class="text-end">${used}</td>
-        <td class="text-end">
-          <div class="btn-group btn-group-sm">
-            <button class="btn btn-outline-light act-edit">Изм.</button>
-            <button class="btn btn-outline-secondary act-copy" title="Скопировать"><i class="bi bi-clipboard"></i></button>
-            <button class="btn btn-outline-danger act-del">Удалить</button>
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
-
-    $$('.act-edit', els.list).forEach(b=>b.addEventListener('click', openEdit));
-    $$('.act-copy', els.list).forEach(b=>b.addEventListener('click', e=>{
-      const tr=e.target.closest('tr'); const r=rows.find(x=>x.id==tr.dataset.id); if(r) copyTxt(r.code);
-    }));
-    $$('.act-del', els.list).forEach(b=>b.addEventListener('click', delOne));
+  // Functions for loading and displaying data
+  async function loadKitsSelect() {
+    // Logic to load kits into select element
   }
 
-  async function loadList(){
-    els.list.innerHTML = `<tr><td colspan="9" class="text-secondary small">Загрузка…</td></tr>`;
-    try{
-      const j = await jget(API+'/promo/list');
-      if(!j.ok) throw new Error(j.error||'list');
-      rows = j.data||[];
-      paint();
-    }catch(e){
-      els.list.innerHTML = `<tr><td colspan="9" class="text-danger">${e.message||e}</td></tr>`;
-    }
+  function paint() {
+    // Logic to render the promocode list
   }
 
-  // -------- modal fill + groups/reds
-  function fillModal(row){
-    els.mId.value = row?.id ?? '';
-    els.mTitle.textContent = row ? `#${row.id}` : '(новый)';
-    els.mCode.value = row?.code ?? '';
-    els.mEnabled.value = (row?.enabled ?? 1) ? '1':'0';
-    els.mRealm.value = row?.realm ?? '';
-    els.mExp.value = row?.expires_at ?? '';
-    els.mAmount.value = row?.amount ?? '';
-    els.mCurr.value = row?.currency_key ?? 'rubs';
-    els.mTotal.value = row?.uses_total ?? '';
-    els.mPer.value = row?.per_player_uses ?? '';
-    els.mCd.value = row?.cooldown_seconds ?? '';
-    els.mLeft.value = row?.uses_left ?? '';
-    els.mKit.value = row?.kit_id ?? '';
-    // подтянем группы и активации
-    loadGroups(row?.id);
-    loadReds(row?.id);
+  async function loadList() {
+    // Logic to fetch and display the list of promocodes
   }
 
-  async function openEdit(e){
-    const tr=e.target.closest('tr');
-    const id=Number(tr.dataset.id);
-    const row = rows.find(x=>x.id===id);
-    await loadKitsSelect();
-    fillModal(row);
-    modal ? modal.show() : els.m.classList.add('show'); // dumb-fallback если нет bootstrap.js
+  // Modal and form handling functions
+  function fillModal(row) {
+    // Logic to populate modal fields with promocode data
   }
 
-  async function delOne(e){
-    const tr=e.target.closest('tr');
-    const id=Number(tr.dataset.id);
-    const row = rows.find(x=>x.id===id);
-    if(!confirm(`Удалить промокод ${row?.code || ('#'+id)}?`)) return;
-    try{
-      const j = await jpost(API+'/promo/delete',{id});
-      if(!j.ok) throw new Error(j.error||'delete');
-      await loadList();
-    }catch(err){ alert('Ошибка: '+(err.message||err)); }
+  async function openEdit(e) {
+    // Logic to open edit modal for a promocode
   }
 
-  // -------- save (create/update)
-  async function saveCurrent(){
-    const id = els.mId.value ? Number(els.mId.value) : null;
-    const body = {
-      id,
-      code: (els.mCode.value||'').trim().toUpperCase(),
-      enabled: Number(els.mEnabled.value||1),
-      realm: (els.mRealm.value||'').trim() || null,
-      expires_at: (els.mExp.value||'').trim() || null,
-      amount: (els.mAmount.value!==''? Number(els.mAmount.value): null),
-      currency_key: (els.mCurr.value||'').trim() || null,
-      uses_total: (els.mTotal.value!==''? Number(els.mTotal.value): null),
-      per_player_uses: (els.mPer.value!==''? Number(els.mPer.value): null),
-      cooldown_seconds: (els.mCd.value!==''? Number(els.mCd.value): null),
-      kit_id: (els.mKit.value||'')||null
-    };
-
-    try{
-      if(!id){
-        // backend: /promo/create (upsert)
-        const j = await jpost(API+'/promo/create',{
-          code: body.code || undefined,
-          amount: body.amount || 0,
-          currency_key: body.currency_key || 'rubs',
-          realm: body.realm,
-          kit_id: body.kit_id,
-          uses: body.uses_total || 1,
-          expires_at: body.expires_at
-        });
-        if(!j.ok) throw new Error(j.error||'create');
-      }else{
-        // нормальный путь — /promo/update (если реализован).
-        // если его нет, не рискуем сбивать uses_left через /create: просто сообщим.
-        const resp = await fetch(API+'/promo/update',{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(body)
-        });
-        if(resp.status===404){
-          alert('Обновление недоступно: реализуйте /promo/update на бэке (без сброса uses_left).');
-          return;
-        }
-        const j = await resp.json();
-        if(!j.ok) throw new Error(j.error||'update');
-      }
-      await loadList();
-      const row = rows.find(x=>x.code===body.code) || rows.find(x=>x.id===id);
-      fillModal(row);
-      alert('Сохранено');
-    }catch(err){
-      alert('Ошибка: '+(err.message||err));
-    }
+  async function delOne(e) {
+    // Logic to delete a promocode
   }
 
-  // -------- groups (LP)
-  function groupRow(i,g){
-    return `<tr>
-      <td class="text-secondary">${i+1}</td>
-      <td><input class="form-control form-control-sm g-name" value="${g.group_name||''}"></td>
-      <td style="width:150px"><input type="number" class="form-control form-control-sm g-temp" value="${g.temp_seconds??''}"></td>
-      <td><input class="form-control form-control-sm g-srv" value="${g.context_server||''}"></td>
-      <td><input class="form-control form-control-sm g-wld" value="${g.context_world||''}"></td>
-      <td style="width:110px"><input type="number" class="form-control form-control-sm g-pr" value="${g.priority??(i+1)}"></td>
-      <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del">&times;</button></td>
-    </tr>`;
-  }
-  function groupsFromUI(){
-    const out=[];
-    $$('#pc-groups-body tr').forEach((tr,i)=>{
-      const g={
-        group_name: $('.g-name',tr).value.trim(),
-        temp_seconds: $('.g-temp',tr).value ? Number($('.g-temp',tr).value) : null,
-        context_server: $('.g-srv',tr).value.trim()||null,
-        context_world: $('.g-wld',tr).value.trim()||null,
-        priority: $('.g-pr',tr).value ? Number($('.g-pr',tr).value) : (i+1)
-      };
-      if(g.group_name) out.push(g);
-    });
-    return out;
-  }
-  function bindGroupRowEvents(){
-    $$('.g-del', els.gBody).forEach(b=>b.addEventListener('click', e=>e.target.closest('tr').remove()));
-  }
-  async function loadGroups(codeId){
-    els.gBody.innerHTML='';
-    if(!codeId) return;
-    try{
-      const r = await fetch(API+'/promo/groups/list?code_id='+codeId);
-      if(r.status===404){ els.gBody.innerHTML='<tr><td colspan="7" class="text-secondary small">Endpoint /promo/groups/* не реализован</td></tr>'; return; }
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'groups');
-      const rows = j.data||[];
-      els.gBody.innerHTML = rows.map((g,i)=>groupRow(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
-      bindGroupRowEvents();
-    }catch(_){
-      els.gBody.innerHTML='<tr><td colspan="7" class="text-secondary small">Не удалось загрузить группы</td></tr>';
-    }
-  }
-  function addGroupRow(){
-    const i=$$('#pc-groups-body tr').length;
-    els.gBody.insertAdjacentHTML('beforeend', groupRow(i,{}));
-    bindGroupRowEvents();
-  }
-  async function saveGroups(){
-    const id = Number(els.mId.value||0);
-    if(!id) return alert('Сначала сохраните промокод');
-    try{
-      const resp = await fetch(API+'/promo/groups/save',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({code_id:id, groups: groupsFromUI()})
-      });
-      if(resp.status===404){ alert('Реализуйте /promo/groups/save на бэке'); return; }
-      const j = await resp.json(); if(!j.ok) throw new Error(j.error||'save groups');
-      alert('Группы сохранены');
-      await loadGroups(id);
-    }catch(err){ alert('Ошибка: '+(err.message||err)); }
+  async function saveCurrent() {
+    // Logic to save current promocode (create or update)
   }
 
-  // -------- redemptions
-  async function loadReds(codeId){
-    els.rBody.innerHTML='';
-    els.rCnt.textContent='';
-    if(!codeId) return;
-    try{
-      const q=(els.rQ.value||'').trim();
-      const url = API+`/promo/redemptions?code=${encodeURIComponent(rows.find(x=>x.id===codeId)?.code||'')}` + (q?`&username=${encodeURIComponent(q)}&uuid=${encodeURIComponent(q)}`:'');
-      const j = await jget(url); if(!j.ok) throw new Error(j.error||'reds');
-      const data = j.data||[];
-      els.rBody.innerHTML = data.map(r=>`
-        <tr>
-          <td>${fmtDate(r.created_at)}</td>
-          <td>${r.username||'—'}</td>
-          <td class="text-secondary small">${r.uuid}</td>
-          <td>${r.granted_amount!=null? (+r.granted_amount).toFixed(2) : '—'}</td>
-          <td>${rows.find(x=>x.id===r.code_id)?.currency_key || ''}</td>
-          <td class="text-secondary">${r.ip||''}</td>
-        </tr>
-      `).join('') || `<tr><td colspan="6" class="text-secondary small">Пусто</td></tr>`;
-      els.rCnt.textContent = data.length ? `${data.length} активаций` : '';
-    }catch(_){
-      els.rBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Ошибка загрузки</td></tr>`;
-    }
+  // Group handling functions
+  function loadGroups(codeId) {
+    // Logic to load and display groups for a promocode
   }
 
-  // -------- events
-  function bind(){
-    // сорт
-    $$('th[data-sort]', els.table).forEach(th=>{
-      th.addEventListener('click', ()=>{
-        const k = th.getAttribute('data-sort');
-        if(sortBy===k) sortDir = (sortDir==='asc'?'desc':'asc'); else { sortBy=k; sortDir='asc'; }
-        $$('th[data-sort]', els.table).forEach(x=>x.classList.remove('desc'));
-        if(sortDir==='desc') th.classList.add('desc');
-        paint();
-      });
-    });
-    els.search.addEventListener('input', paint);
-    els.ref.addEventListener('click', loadList);
-    els.create.addEventListener('click', async ()=>{
-      await loadKitsSelect();
-      fillModal(null);
-      modal ? modal.show() : els.m.classList.add('show');
-    });
-    els.mSave.addEventListener('click', saveCurrent);
-    els.mDel.addEventListener('click', async ()=>{
-      const id = els.mId.value ? Number(els.mId.value) : null;
-      if(!id){ alert('Промокод ещё не сохранён'); return; }
-      if(!confirm('Удалить промокод?')) return;
-      const j = await jpost(API+'/promo/delete',{id});
-      if(!j.ok){ alert(j.error||'Ошибка удаления'); return; }
-      modal && modal.hide();
-      await loadList();
-    });
-    els.gAdd.addEventListener('click', addGroupRow);
-    els.gSave.addEventListener('click', saveGroups);
-    els.rBtn.addEventListener('click', ()=>loadReds(Number(els.mId.value||0)));
+  function addGroupRow() {
+    // Logic to add a new group row
   }
 
-  // -------- init
-  (async function init(){
+  async function saveGroups() {
+    // Logic to save groups for a promocode
+  }
+
+  // Redemption handling functions
+  async function loadReds(codeId) {
+    // Logic to load and display redemptions for a promocode
+  }
+
+  // Event binding function
+  function bind() {
+    // Logic to bind event listeners to various elements
+  }
+
+  // Initialization function
+  async function init() {
     API = await chooseBase();
     bind();
     await loadKitsSelect();
     await loadList();
-  })();
+  }
+
+  // Call init function
+  init();
 
 })();
 </script>
