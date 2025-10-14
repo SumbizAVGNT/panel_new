@@ -1,0 +1,17 @@
+<aside class="gs-side">
+  <div class="card glass p-2">
+    {% set sections = [
+      ('overview','Overview'),
+      ('maintenance','Maintenance'),
+      ('players','Players'),
+      ('worlds','Worlds'),
+      ('console','Console')
+    ] %}
+    {% for key, title in sections %}
+      <a class="nav-link px-3 py-2" href="#{{ key }}"><span class="dot"></span>{{ title }}</a>
+    {% endfor %}
+    <a class="nav-link px-3 py-2" href="{{ url_for('admin.accounts.index') }}">
+      <span class="dot"></span>Accounts
+    </a>
+  </div>
+</aside>

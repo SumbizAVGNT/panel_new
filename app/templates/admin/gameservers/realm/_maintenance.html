@@ -1,0 +1,37 @@
+<section id="maintenance" class="card glass mb-3">
+  <div class="card-body maint">
+    <div class="head">
+      <h5 class="m-0 d-flex align-items-center gap-2">
+        <i class="bi bi-cone-striped text-warning"></i> Maintenance
+      </h5>
+      <div id="maint-state" class="stat-dot o"><span class="d"></span><span>state: online</span></div>
+    </div>
+
+    <div class="mrow">
+      <div class="switch-big">
+        <input class="form-check-input" type="checkbox" id="maint-toggle">
+        <label for="maint-toggle" class="form-check-label">Технические работы</label>
+      </div>
+      <div class="msg" title="Сообщение кика (необязательно)">
+        <input id="maint-msg" placeholder="Kick message (optional)">
+      </div>
+      <div class="pills">
+        <button class="btn btn-sm btn-outline-warning" data-maint-preset="15">15m</button>
+        <button class="btn btn-sm btn-outline-warning" data-maint-preset="30">30m</button>
+        <button class="btn btn-sm btn-outline-warning" data-maint-preset="60">1h</button>
+        <button class="btn btn-sm btn-outline-warning" data-maint-preset="120">2h</button>
+        <span class="caption">Авто-выключение через: <span id="maint-countdown">—</span></span>
+      </div>
+    </div>
+
+    <div class="mrow">
+      <div class="input-group" style="max-width:480px">
+        <span class="input-group-text"><i class="bi bi-shield-check"></i> Whitelist</span>
+        <input id="wl-player" class="form-control" placeholder="Player">
+        <button id="wl-add" class="btn btn-outline-light"><i class="bi bi-plus-lg"></i></button>
+        <button id="wl-remove" class="btn btn-outline-danger"><i class="bi bi-dash-lg"></i></button>
+      </div>
+      <div class="caption">Whitelist работает только в режиме техработ</div>
+    </div>
+  </div>
+</section>

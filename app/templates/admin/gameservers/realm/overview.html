@@ -1,0 +1,67 @@
+<section id="overview" class="card glass mb-3">
+  <div class="card-body">
+    <div class="g-tiles">
+      <button class="tile span-3 text-start" type="button" data-click data-metric="mspt" title="История MSPT (по БД)">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-speedometer2"></i> MSPT</div>
+        <div class="kpi d-flex align-items-baseline gap-2">
+          <div id="t-mspt" class="value skel" style="height:20px;width:64px"></div>
+          <div class="text-secondary small">ms</div>
+        </div>
+        <div class="caption">Среднее время тика</div>
+      </button>
+
+      <button class="tile span-3 text-start" type="button" data-click data-metric="tps" title="История TPS (по БД)">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-graph-up-arrow"></i> TPS (avg)</div>
+        <div id="t-tps" class="value skel" style="height:20px;width:64px"></div>
+        <div class="caption">Среднее 1m/5m/15m</div>
+      </button>
+
+      <button id="players-tile" class="tile span-3 text-start" type="button" data-click data-metric="players">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-people"></i> Players</div>
+        <div id="t-players" class="value skel text-light" style="height:20px;width:80%"></div>
+        <div class="small text-secondary">open list ⟶</div>
+      </button>
+
+      <button class="tile span-3 text-start" type="button" data-click data-metric="online" title="История онлайн (по БД)">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-person-check"></i> Online</div>
+        <div id="t-online" class="value skel" style="height:20px;width:64px"></div>
+        <div class="caption">Онлайн игроков</div>
+      </button>
+
+      <button class="tile span-4 text-start" type="button" data-click data-metric="cpu" title="История загрузки CPU (по БД)">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-cpu"></i> CPU</div>
+        <div class="d-flex justify-content-between sub"><span>system</span><span id="cpu-system-lbl">—</span></div>
+        <div class="meter mb-2"><span id="cpu-system" style="width:0%"></span></div>
+        <div class="d-flex justify-content-between sub"><span>process</span><span id="cpu-proc-lbl">—</span></div>
+        <div class="meter"><span id="cpu-proc" style="width:0%"></span></div>
+      </button>
+
+      <button class="tile span-4 text-start" type="button" data-click data-metric="heap" title="История памяти (по БД)">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-memory"></i> Heap</div>
+        <div class="d-flex justify-content-between sub"><span id="heap-used-lbl">—</span><span id="heap-max-lbl">—</span></div>
+        <div class="meter"><span id="heap-bar" style="width:0%"></span></div>
+        <div class="sub mt-1">Non-heap: <span id="nonheap-lbl">—</span></div>
+      </button>
+
+      <button class="tile span-4 text-start" type="button" data-click data-metric="disk" title="История диска (по БД)">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-hdd"></i> Disk</div>
+        <div class="sub">Root free: <span id="fs-free">—</span></div>
+        <div class="sub">Root total: <span id="fs-total">—</span></div>
+        <div class="tcap mt-2 d-flex align-items-center gap-1"><i class="bi bi-clock-history"></i> Uptime</div>
+        <div class="sub"><span id="uptime">—</span></div>
+      </button>
+
+      <button class="tile span-6 text-start" type="button" data-click data-metric="tps1m" title="Открыть график TPS (1m) по БД">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-activity"></i> TPS (1m) Sparkline</div>
+        <canvas id="tpsChart" height="92"></canvas>
+        <div class="form-text">Последние значения TPS (1m)</div>
+      </button>
+
+      <button class="tile span-6 text-start" type="button" data-click data-metric="entities" title="Топ сущностей (последний снимок)">
+        <div class="tcap d-flex align-items-center gap-1"><i class="bi bi-diagram-3"></i> Top Entities</div>
+        <canvas id="entChart" height="120"></canvas>
+        <div class="sub">Топ типов сущностей за снимок</div>
+      </button>
+    </div>
+  </div>
+</section>

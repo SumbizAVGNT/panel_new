@@ -2,10 +2,10 @@
 {% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
-/* === 1) Стили аккаунтов должны быть первыми === */
+/* === 1) Стили аккаунтов подключаем первыми (если нужны общие токены) === */
 @import url("{{ url_for('static', filename='css/accounts.css') }}");
 
-/* === 2) Токены / палитра === */
+/* === 2) Палитра и токены интерфейса === */
 :root{
   --ui-surface : rgba(12,16,24,.62);
   --ui-surface-2: rgba(10,14,22,.85);
@@ -16,7 +16,7 @@
   --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --muted:#94a3b8;
 }
 
-/* === 3) Табы (неоновая кромка) === */
+/* === 3) Табы (мягкая неоновая кромка) === */
 .tabs{display:flex;gap:10px;margin:8px 0 14px;flex-wrap:wrap}
 .tabs .tab-btn{
   position:relative;
@@ -48,12 +48,12 @@
   padding:16px; display:flex; flex-direction:column; gap:12px;
   transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
-.tile::before{ /* тонкая «аура» рамки */
+.tile::before{ /* «аура» рамки */
   content:""; position:absolute; inset:-1px; border-radius:inherit; z-index:-1;
   background:linear-gradient(140deg, #60a5fa33, #38bdf833 45%, #8b5cf633 80%);
   filter:blur(10px); opacity:.7; transition:opacity .25s ease;
 }
-.tile::after{ /* лёгкая засветка в углу */
+.tile::after{ /* засветка в углу */
   content:""; position:absolute; right:-12px; top:-12px; width:120px; height:120px; pointer-events:none;
   background:radial-gradient(50% 50% at 70% 30%, #60a5fa3a 0%, transparent 60%),
              radial-gradient(45% 45% at 60% 60%, #38bdf836 0%, transparent 60%);
@@ -73,7 +73,7 @@
 .realm-dot.on{background:#22c55e; box-shadow:0 0 0 3px #22c55e28, 0 0 12px #22c55e7a}
 .realm-dot.off{background:#ef4444; box-shadow:0 0 0 3px #ef444428}
 
-/* === 5) Блок ключевых метрик === */
+/* === 5) Ключевые метрики === */
 .kstrip{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
 .gauge{
   --v: 0; --c: var(--ok);
@@ -130,6 +130,10 @@
   <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="m-0">Game Servers</h2>
     <div class="d-flex align-items-center gap-2">
+      <div class="form-check form-switch me-1">
+        <input class="form-check-input" type="checkbox" id="autoIndex" checked>
+        <label class="form-check-label small" for="autoIndex">Auto</label>
+      </div>
       <button id="refresh" class="btn btn-sm btn-outline-secondary">
         <i id="refreshIco" class="bi bi-arrow-repeat me-1"></i>Обновить
       </button>
@@ -147,7 +151,7 @@
 
   <!-- Servers -->
   <div id="tab-servers" class="tab-pane active">
-    <div id="realms" class="grid-realms">
+    <div id="realms" class="grid-realms" aria-live="polite">
       <div class="tile">
         <div class="cap">Loading</div>
         <div class="row2">
@@ -193,19 +197,26 @@
 </div>
 
 <script>
-/* ===== Tabs ===== */
-document.querySelectorAll('.tab-btn').forEach(b=>{
+/* ===== Tabs + ленивые инициализации ===== */
+const tabBtns = document.querySelectorAll('.tab-btn');
+const panes   = document.querySelectorAll('.tab-pane');
+const lazyInits = {
+  accounts: () => { if (window.accInit)   try{ window.accInit(); }catch(e){} },
+  promocode:() => { if (window.promoInit) try{ window.promoInit(); }catch(e){} },
+  kits:     () => { if (window.kitsInit)  try{ window.kitsInit(); }catch(e){} },
+};
+tabBtns.forEach(b=>{
   b.addEventListener('click', ()=>{
-    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+    tabBtns.forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     const k = b.dataset.tab;
-    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+    panes.forEach(p=>p.classList.remove('active'));
     document.getElementById('tab-'+k)?.classList.add('active');
-    if(k==='accounts' && window.accInit) window.accInit();
+    if (lazyInits[k]) lazyInits[k]();
   });
 });
 
-/* ===== Visual utils ===== */
+/* ===== Визуальные утилиты ===== */
 function badge(isOnline, text){
   return `<span class="badge badge-cap ${isOnline?'bg-success':'bg-secondary'}">${text || (isOnline?'online':'offline')}</span>`;
 }
@@ -233,7 +244,7 @@ function gaugeSet(el, value=0, max=20){
 }
 const flash = (node)=>{ if(!node) return; node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); };
 
-/* ===== Servers grid ===== */
+/* ===== Скелет и плитки ===== */
 function tileSkeleton(){
   return `<div class="tile">
     <div class="cap">Realm</div>
@@ -276,38 +287,9 @@ function realmTileHtml(name, plugins){
   </a>`;
 }
 
-async function loadRealms(){
-  const box = document.getElementById('realms');
-  document.getElementById('refreshIco')?.classList.add('spin');
-  box.innerHTML = tileSkeleton();
-  let data = {};
-  try{
-    const r = await fetch('/admin/gameservers/api/list',{cache:'no-store'});
-    const j = await r.json(); if(!j.ok) throw new Error(j.error||'bridge error');
-    data = j.data || {};
-  }catch(e){
-    box.innerHTML = `<div class="tile"><div class="cap">Error</div><div class="small small-dim">${e.message||e}</div></div>`;
-    document.getElementById('refreshIco')?.classList.remove('spin');
-    return;
-  }
-  const realms = Object.keys(data).sort((a,b)=>a.localeCompare(b));
-  if(!realms.length){
-    box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`;
-    document.getElementById('refreshIco')?.classList.remove('spin');
-    return;
-  }
-  box.innerHTML = '';
-  realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
-
-  for(const name of realms){
-    try{
-      const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
-      const j = await r.json(); if(!j.ok || !j.data) continue; fillTile(name, normalize(j.data));
-    }catch(_){}
-  }
-  document.getElementById('refreshIco')?.classList.remove('spin');
-}
-
+/* ===== Данные ===== */
+let indexTimer=null, lastController=null;
+const LS_INDEX_AUTO="gs_index_auto";
 function normalize(d){
   d=d||{}; const t=d.tps||{}, p=d.players||{}, j=d.jvm||{};
   return { tps1: t["1m"] ?? d.tps_1m ?? null, mspt: t.mspt ?? d.mspt ?? null,
@@ -360,8 +342,65 @@ function humanMs(ms){
   const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
 }
 
+async function loadRealms(){
+  const box = document.getElementById('realms');
+  const ico = document.getElementById('refreshIco');
+  ico?.classList.add('spin');
+
+  // отменяем предыдущий fetch, если ещё идёт
+  try{ lastController?.abort(); }catch(_){}
+  lastController = new AbortController();
+
+  box.innerHTML = tileSkeleton();
+  let data = {};
+  try{
+    const r = await fetch('/admin/gameservers/api/list',{cache:'no-store', signal:lastController.signal});
+    const j = await r.json(); if(!j.ok) throw new Error(j.error||'bridge error');
+    data = j.data || {};
+  }catch(e){
+    const msg = (e.name === 'AbortError') ? 'Отменено' : (e.message||e);
+    box.innerHTML = `<div class="tile"><div class="cap">Error</div><div class="small small-dim">${msg}</div>
+      <div class="mt-2"><button class="btn btn-sm btn-outline-light" onclick="(${loadRealms.toString()})()">Повторить</button></div></div>`;
+    ico?.classList.remove('spin');
+    return;
+  }
+
+  const realms = Object.keys(data).sort((a,b)=>a.localeCompare(b));
+  if(!realms.length){
+    box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`;
+    ico?.classList.remove('spin');
+    return;
+  }
+  box.innerHTML = '';
+  realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
+
+  await Promise.allSettled(realms.map(async (name)=>{
+    try{
+      const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store', signal:lastController.signal});
+      const j = await r.json(); if(!j.ok || !j.data) return; fillTile(name, normalize(j.data));
+    }catch(_){}
+  }));
+  ico?.classList.remove('spin');
+}
+
+/* ===== Автообновление списка ===== */
+function applyIndexTimer(){
+  clearInterval(indexTimer);
+  const auto = document.getElementById('autoIndex').checked;
+  localStorage.setItem(LS_INDEX_AUTO, auto?'1':'0');
+  if(auto){
+    indexTimer = setInterval(loadRealms, 5000);
+  }
+}
+document.getElementById('autoIndex').checked = (localStorage.getItem(LS_INDEX_AUTO) ?? '1') !== '0';
+
+/* ===== Binds ===== */
 document.getElementById('refresh').addEventListener('click', loadRealms);
+document.getElementById('autoIndex').addEventListener('change', applyIndexTimer);
+
+/* ===== Init ===== */
 loadRealms();
+applyIndexTimer();
 </script>
 
 {# Accounts JS #}

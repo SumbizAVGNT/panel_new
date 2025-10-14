@@ -1,0 +1,56 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ realm }} — Game Server{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/gameservers/realm.css') }}">
+
+<div class="container-xxl gs-scope py-4" data-realm="{{ realm }}">
+  <!-- header -->
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-3">
+      <div class="rounded-circle iconwrap">
+        <i class="bi bi-hdd-network text-info"></i>
+      </div>
+      <div>
+        <h2 class="m-0">{{ realm|capitalize }}</h2>
+        <div class="text-secondary small">Minecraft (Paper) · realm: <code class="text-light">{{ realm }}</code></div>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span id="status-badge" class="badge badge-cap bg-secondary"><i class="bi bi-activity me-1"></i>unknown</span>
+      <div class="form-check form-switch ms-2">
+        <input class="form-check-input" type="checkbox" id="autorefresh">
+        <label class="form-check-label small" for="autorefresh">Авто-обновление</label>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <label class="small text-secondary">интервал</label>
+        <input id="refresh-interval" type="range" min="2" max="15" step="1" value="3">
+        <span id="refresh-interval-label" class="small text-secondary">3s</span>
+      </div>
+      <button id="refresh" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Обновить</button>
+      <a href="{{ url_for('admin.gameservers_index') }}" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left"></i> Назад</a>
+    </div>
+  </div>
+
+  <div class="gs-layout">
+    <!-- sidebar -->
+    {% include "admin/gameservers/realm/_sidebar.html" %}
+
+    <!-- main -->
+    <main class="gs-main">
+      {% include "admin/gameservers/realm/_overview.html" %}
+      {% include "admin/gameservers/realm/_maintenance.html" %}
+      {% include "admin/gameservers/realm/_players.html" %}
+      {% include "admin/gameservers/realm/_worlds.html" %}
+      {% include "admin/gameservers/realm/_console.html" %}
+    </main>
+  </div>
+</div>
+
+{% include "admin/gameservers/realm/_players_modal.html" %}
+{% include "admin/gameservers/realm/_metrics_modal.html" %}
+{% endblock %}
+
+{% block body_extra %}
+<script defer src="{{ url_for('static', filename='js/gameservers/realm.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,34 @@
+<div class="modal fade" id="metricsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-xl">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h5 class="modal-title" id="metricsTitle">Metrics</h5>
+        <div class="d-flex align-items-center gap-2">
+          <select id="m-range" class="form-select form-select-sm">
+            <option value="60">1h</option>
+            <option value="180" selected>3h</option>
+            <option value="720">12h</option>
+            <option value="1440">24h</option>
+            <option value="4320">3d</option>
+          </select>
+          <select id="m-step" class="form-select form-select-sm">
+            <option value="30">30s</option>
+            <option value="60" selected>60s</option>
+            <option value="120">2m</option>
+            <option value="300">5m</option>
+          </select>
+        </div>
+        <button type="button" class="btn-close ms-2" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <canvas id="metricsChart" height="280" style="width:100%"></canvas>
+        <div class="small text-secondary mt-2">Данные берутся из БД (/api/stats/series). Если сервер офлайн — можно смотреть историю.</div>
+        <div id="metricsLegend" class="small mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="exportCsv" type="button" class="btn btn-outline-info btn-sm"><i class="bi bi-download"></i> CSV</button>
+        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
