@@ -1,13 +1,7 @@
 <section id="kits-root" class="vstack gap-3">
-  {% raw %}
   <style>
     /* ===== Kits (scoped) ===== */
-    #kits-root .glass{
-      background:rgba(13,17,23,.55);
-      border:1px solid rgba(148,163,184,.18);
-      backdrop-filter:blur(8px);
-      border-radius:16px;
-    }
+    #kits-root .glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px);border-radius:16px}
     #kits-root .head-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
     #kits-root .pill{border:1px solid rgba(148,163,184,.25);border-radius:999px;padding:.2rem .6rem;color:#cbd5e1;background:rgba(2,6,23,.35);font-size:.78rem}
     #kits-root .hint{color:#94a3b8;font-size:.86rem}
@@ -16,7 +10,7 @@
 
     /* Builder grid */
     #kits-root .builder{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
-    @media (max-width: 1100px){ #kits-root .builder{grid-template-columns:1fr} }
+    @media (max-width: 1100px){#kits-root .builder{grid-template-columns:1fr}}
     #kits-root .slot-grid{display:grid;grid-template-columns:repeat(9,1fr);gap:10px}
     #kits-root .slot{position:relative;background:rgba(2,6,23,.5);border:1px dashed rgba(148,163,184,.3);border-radius:12px;min-height:62px;display:grid;place-items:center;color:#cbd5e1;cursor:pointer;transition:.15s}
     #kits-root .slot:hover{border-color:rgba(148,163,184,.5);transform:translateY(-1px)}
@@ -27,18 +21,14 @@
 
     /* Items catalog */
     #kits-root .items-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
-    @media (max-width:1400px){ #kits-root .items-grid{grid-template-columns:repeat(6,1fr)} }
-    @media (max-width:1100px){ #kits-root .items-grid{grid-template-columns:repeat(5,1fr)} }
-    @media (max-width:900px){  #kits-root .items-grid{grid-template-columns:repeat(4,1fr)} }
-    @media (max-width:680px){  #kits-root .items-grid{grid-template-columns:repeat(3,1fr)} }
+    @media (max-width:1400px){#kits-root .items-grid{grid-template-columns:repeat(6,1fr)}}
+    @media (max-width:1100px){#kits-root .items-grid{grid-template-columns:repeat(5,1fr)}}
+    @media (max-width:900px){#kits-root .items-grid{grid-template-columns:repeat(4,1fr)}}
+    @media (max-width:680px){#kits-root .items-grid{grid-template-columns:repeat(3,1fr)}}
     #kits-root .item{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(13,17,23,.55);cursor:grab}
     #kits-root .item:active{cursor:grabbing}
     #kits-root .item .icon{width:28px;height:28px;image-rendering:pixelated;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6)}
     #kits-root .item .n{font-size:.86rem;color:#e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-    /* Quick picks */
-    #kits-root .qpick{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .55rem;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.45);cursor:pointer}
-    #kits-root .qpick:hover{background:rgba(96,165,250,.10);}
 
     /* Saved kits list */
     #kits-root .kit-row{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:rgba(13,17,23,.45)}
@@ -54,26 +44,23 @@
     #kits-root .skeleton::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:sk 1.05s infinite}
     @keyframes sk{to{transform:translateX(100%)}}
 
-    /* Autocomplete (portal) + chips */
-    /* сам список рендерится в body — #ench-dd-portal */
-    #ench-dd-portal{
-      position:fixed; z-index:9999; left:0; top:0; width:260px;
-      background:#0b1220; border:1px solid rgba(148,163,184,.25); border-radius:10px;
-      box-shadow:0 10px 24px rgba(0,0,0,.35); max-height:260px; overflow:auto;
+    /* Autocomplete + chips */
+    #kits-root .dd{position:relative;z-index:50}              /* свой контекст */
+    #kits-root .dd-list{
+      position:absolute;left:0;right:0;top:calc(100% + 6px);
+      background:#0b1220;border:1px solid rgba(148,163,184,.25);border-radius:10px;
+      box-shadow:0 10px 24px rgba(0,0,0,.45);max-height:260px;overflow:auto;
+      z-index:5000; pointer-events:auto;
     }
-    #ench-dd-portal.d-none{display:none}
     #kits-root .dd-item{padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer}
     #kits-root .dd-item small{color:#94a3b8}
     #kits-root .dd-item:hover,#kits-root .dd-item.act{background:rgba(96,165,250,.12)}
-    #kits-root .chip{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .5rem;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.5);margin:.2rem .25rem 0 0}
+    #kits-root .chips{position:relative;z-index:51}
+    #kits-root .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.6);margin:.25rem .25rem 0 0}
     #kits-root .chip .lvl{font-weight:700}
-    #kits-root .chip .btn{border:0;background:transparent;color:#e5e7eb;line-height:1;padding:0 .15rem;cursor:pointer}
-    #kits-root #ench-input{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.55);color:#e5e7eb;border-radius:10px;padding:.45rem .6rem;width:100%}
-    #kits-root .toastx{background:rgba(13,17,23,.96);border:1px solid rgba(148,163,184,.28);color:#e2e8f0;padding:10px 12px;border-radius:12px;margin-top:8px;transition:.2s}
-    #kits-root .toastx.ok{border-color:rgba(34,197,94,.6)}
-    #kits-root .toastx.err{border-color:rgba(239,68,68,.6)}
+    #kits-root .chip .x{border:0;background:transparent;color:#e5e7eb;line-height:1;padding:0 .1rem;cursor:pointer}
+    #kits-root #ench-input{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.55);color:#e5e7eb;border-radius:10px;padding:.48rem .6rem;width:100%}
   </style>
-  {% endraw %}
 
   <!-- Header -->
   <div class="glass p-3 head-bar">
@@ -130,24 +117,25 @@
             </div>
             <div class="col-md-8">
               <label class="form-label mb-1">Отображаемое имя (опц.)</label>
-              <input id="slot-dname" class="form-control" placeholder="Напр. &aStarter &fSword">
+              <div class="input-group">
+                <input id="slot-dname" class="form-control" placeholder="Напр. &aStarter &fSword">
+                <button id="dname-clear" class="btn btn-outline-secondary" title="Очистить имя"><i class="bi bi-eraser"></i></button>
+              </div>
             </div>
 
+            <!-- Enchants / attributes with autocomplete -->
             <div class="col-12">
-              <label class="form-label mb-1 d-flex align-items-center justify-content-between">
-                <span>Enchant / Attr</span>
-                <button id="ench-clear" type="button" class="btn btn-sm btn-outline-light">
-                  <i class="bi bi-eraser"></i> Очистить
-                </button>
-              </label>
+              <label class="form-label mb-1">Enchant / Attr</label>
               <div class="dd">
-                <input id="ench-input" placeholder="Начните печатать: sharp..., prot..., attack_damage..." autocomplete="off" aria-expanded="false" aria-haspopup="listbox">
+                <input id="ench-input" placeholder="Начните печатать: sharp..., prot..., attack_damage..." autocomplete="off">
+                <div id="ench-dd" class="dd-list d-none"></div>
               </div>
-              <div id="slot-enchants" class="mt-2"></div>
+              <div id="slot-enchants" class="chips mt-2"></div>
+              <div class="d-flex justify-content-between mt-1">
+                <div class="form-text text-secondary">Enter — добавить выбранную подсказку; Backspace на пустом поле — удалить последний чип.</div>
+                <button id="ench-clear" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-octagon me-1"></i>Очистить</button>
+              </div>
               <input id="slot-extra" type="hidden" value="">
-              <div class="form-text text-secondary">
-                Enter — добавить выбранную подсказку; Backspace на пустом поле — удалить последний чип; «Очистить» — удалить все.
-              </div>
             </div>
           </div>
         </div>
@@ -158,25 +146,14 @@
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div class="sec-title">Каталог предметов</div>
           <div class="d-flex align-items-center gap-2">
-            <select id="ver-select" class="form-select form-select-sm" style="min-width:200px">
-              <option value="">Загрузка версий…</option>
-            </select>
+            <select id="ver-select" class="form-select form-select-sm" style="min-width:220px"></select>
             <div class="input-group input-group-sm" style="min-width:320px">
               <span class="input-group-text"><i class="bi bi-search"></i></span>
               <input id="item-search" class="form-control" placeholder="Поиск (id / name)">
-              <button id="item-refresh" class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></button>
+              <button id="item-refresh" class="btn btn-outline-secondary" title="Обновить"><i class="bi bi-arrow-repeat"></i></button>
             </div>
           </div>
         </div>
-
-        <!-- Quick picks -->
-        <div class="hstack gap-2 flex-wrap mb-2" id="quick-picks">
-          <span class="qpick" data-id="stone"><img class="icon" width="18" height="18" src="/static/mc/1.20.6/items/stone.png" alt=""> Stone</span>
-          <span class="qpick" data-id="dirt"><img class="icon" width="18" height="18" src="/static/mc/1.20.6/items/dirt.png" alt=""> Dirt</span>
-          <span class="qpick" data-id="oak_log"><img class="icon" width="18" height="18" src="/static/mc/1.20.6/items/oak_log.png" alt=""> Oak Log</span>
-          <span class="qpick" data-id="diamond_sword"><img class="icon" width="18" height="18" src="/static/mc/1.20.6/items/diamond_sword.png" alt=""> Diamond Sword</span>
-        </div>
-
         <div id="items-wrap" class="items-grid"></div>
         <div id="items-empty" class="text-secondary small mt-2" hidden>Ничего не найдено.</div>
       </div>
@@ -209,300 +186,4 @@
 
   <!-- toast zone -->
   <div id="kits-toasts" class="position-fixed bottom-0 end-0 p-3" style="z-index:1080"></div>
-
-  <!-- портал для подсказок (в body) -->
-  <div id="ench-dd-portal" class="d-none" role="listbox" aria-label="ench-attr-suggestions"></div>
-
-  <script>
-  (function(){
-    'use strict';
-
-    /* ===== Config ===== */
-    const SLOT_COUNT = 27;
-    const VERSIONS = [
-      { id:'1.20.6', label:'Vanilla 1.20.6',
-        itemsUrl:'/static/data/vanilla-items-1.20.6.json',
-        imgUrl:(id)=>`/static/mc/1.20.6/items/${id}.png` }
-    ];
-    const ENCH_FILE = '/static/data/enchantments-1.20.6.json';
-    const ITEMSADDER_FILE = '/static/data/itemsadder-items.json';
-
-    /* ===== State ===== */
-    const state = {
-      inited:false, items:[], version:VERSIONS[0],
-      slots:Array(SLOT_COUNT).fill(null), active:-1,
-      ench:{list:[], attrs:[]}, dd:{open:false, idx:-1, data:[]}
-    };
-
-    /* ===== DOM ===== */
-    const $=(s,r=document)=>r.querySelector(s);
-    const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
-    let root, grid, itemsWrap, itemsEmpty, verSelect, kitsToasts, statsPill;
-    let slotEditor, slotNo, slotQty, slotDName, slotExtra, slotClearBtn;
-    let enchInput, enchWrap, enchClearBtn, ddPortal;
-
-    function grab(){
-      root = document.getElementById('kits-root'); if(!root) return false;
-      grid=$('#slot-grid',root); itemsWrap=$('#items-wrap',root); itemsEmpty=$('#items-empty',root);
-      verSelect=$('#ver-select',root); kitsToasts=$('#kits-toasts',root); statsPill=$('#kit-stats',root);
-      slotEditor=$('#slot-editor',root); slotNo=$('#slot-no',root); slotQty=$('#slot-qty',root);
-      slotDName=$('#slot-dname',root); slotExtra=$('#slot-extra',root); slotClearBtn=$('#slot-clear',root);
-      enchInput=$('#ench-input',root); enchWrap=$('#slot-enchants',root); enchClearBtn=$('#ench-clear',root);
-      ddPortal=document.getElementById('ench-dd-portal');
-      return true;
-    }
-
-    /* ===== Toast ===== */
-    function toast(msg, ok=true){
-      if(!kitsToasts) return;
-      const el=document.createElement('div');
-      el.className='toastx '+(ok?'ok':'err');
-      el.innerHTML=`<div class="small">${msg}</div>`;
-      kitsToasts.appendChild(el);
-      setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2000);
-    }
-
-    /* ===== Items ===== */
-    const uniqById = (arr)=>[...new Map(arr.map(x=>[x.id,x])).values()];
-    async function tryFetchJson(url){
-      try{
-        const r=await fetch(url,{cache:'no-store'});
-        if(!r.ok) throw 0; return await r.json();
-      }catch(_){ return null; }
-    }
-    async function loadItemsFor(version){
-      state.version=version;
-      const [vanilla, ia] = await Promise.all([
-        tryFetchJson(version.itemsUrl),
-        tryFetchJson(ITEMSADDER_FILE)
-      ]);
-      let arr=[];
-      const norm=(j)=>Array.isArray(j) ? j :
-        (Array.isArray(j?.items)? j.items :
-          Object.keys(j||{}).map(k=>({id:k,name:j[k]})));
-      if(vanilla) arr = arr.concat(norm(vanilla));
-      if(ia)      arr = arr.concat(norm(ia));
-      // нормализуем + дедупликация
-      state.items = uniqById(
-        (arr||[])
-          .filter(x=>x && typeof x.id==='string')
-          .map(x=>({id:String(x.id), name:x.name || String(x.id).replaceAll('_',' ')}))
-      );
-      renderItems($('#item-search',root)?.value||'');
-    }
-    function renderItems(filter=''){
-      const q=String(filter||'').trim().toLowerCase();
-      const list=!q?state.items:state.items.filter(x=>x.id.toLowerCase().includes(q)||(x.name||'').toLowerCase().includes(q));
-      itemsWrap.innerHTML=''; itemsEmpty.hidden=list.length>0;
-      for(const it of list){
-        const div=document.createElement('div');
-        div.className='item'; div.title=`${it.name}\n${it.id}`; div.setAttribute('draggable','true');
-        div.innerHTML=`<img class="icon" src="${state.version.imgUrl(it.id)}" alt="" onerror="this.style.visibility='hidden'"><div class="n">${it.name}</div>`;
-        div.addEventListener('dragstart',(e)=>{
-          const payload=JSON.stringify({id:it.id,name:it.name});
-          e.dataTransfer.setData('application/json',payload);
-          e.dataTransfer.setData('text/plain',payload);
-        });
-        div.addEventListener('click',()=>{
-          const idx = state.active>=0 ? state.active : 0;
-          putItemToSlot(idx,it);
-        });
-        itemsWrap.appendChild(div);
-      }
-    }
-
-    /* ===== Slots ===== */
-    function updateStats(){ const n=state.slots.filter(Boolean).length; statsPill.textContent=`${n} item${n===1?'':'s'}`; }
-    function buildSlots(){
-      grid.innerHTML='';
-      for(let i=0;i<SLOT_COUNT;i++){
-        const s=document.createElement('div');
-        s.className='slot'; s.dataset.idx=String(i);
-        s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`;
-        s.addEventListener('click',()=>selectSlot(i));
-        s.addEventListener('dragover',e=>{e.preventDefault();s.classList.add('drag-over');});
-        s.addEventListener('dragleave',()=>s.classList.remove('drag-over'));
-        s.addEventListener('drop',e=>{
-          e.preventDefault(); s.classList.remove('drag-over');
-          try{ const data=e.dataTransfer.getData('application/json')||e.dataTransfer.getData('text/plain'); const item=JSON.parse(data); putItemToSlot(i,item);}catch(_){}
-        });
-        grid.appendChild(s); renderSlot(i);
-      } updateStats();
-    }
-    function renderSlot(i){
-      const s=grid.children[i]; if(!s) return;
-      const info=state.slots[i];
-      if(!info){ s.classList.remove('active'); s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`; return; }
-      const qty=info.qty??1;
-      s.innerHTML=`<img class="icon" src="${state.version.imgUrl(info.id)}" alt="" onerror="this.style.visibility='hidden'"><div class="name">${info.display||info.name||info.id}</div><div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
-      s.classList.toggle('active', state.active===i);
-    }
-    function putItemToSlot(i,item){ state.slots[i]={id:item.id,name:item.name,qty:1,extra:{ench:[],attr:[]}}; renderSlot(i); selectSlot(i); updateStats(); }
-    function selectSlot(i){
-      state.active=i;
-      $$('.slot',grid).forEach(el=>el.classList.toggle('active',Number(el.dataset.idx)===i));
-      const d=state.slots[i];
-      slotEditor.hidden=false; slotNo.textContent=String(i+1);
-      slotQty.value=d?.qty??1; slotDName.value=d?.display??''; slotClearBtn.disabled=!d;
-      enchWrap.innerHTML='';
-      const ex=d?.extra||{ench:[],attr:[]};
-      (ex.ench||[]).forEach(addEnchChip); (ex.attr||[]).forEach(addAttrChip);
-      serializeExtra();
-    }
-    function clearActiveSlot(){ if(state.active<0) return; state.slots[state.active]=null; renderSlot(state.active); selectSlot(state.active); updateStats(); }
-    function applySlotEditor(){
-      if(state.active<0) return;
-      const s=state.slots[state.active]||(state.slots[state.active]={});
-      s.qty=Math.max(1,Math.min(64,Number(slotQty.value||1)));
-      s.display=slotDName.value.trim()||'';
-      s.extra=parseExtraFromChips(); serializeExtra(); renderSlot(state.active); updateStats();
-    }
-
-    /* ===== Enchant/Attr ===== */
-    async function loadEnchData(){
-      try{
-        const r=await fetch(ENCH_FILE,{cache:'no-store'}); const j=await r.json();
-        state.ench.list=(j.enchantments||[]).map(e=>({id:e.id,t:'ench',alias:(e.alias||[]),max:Number(e.max||1),desc:e.desc||''}));
-        state.ench.attrs=(j.attributes||[]).map(a=>({id:a.id,t:'attr',alias:(a.alias||[]),range:a.range||[-2048,2048],def:a.default??1}));
-      }catch(_){ state.ench.list=[]; state.ench.attrs=[]; toast('Не удалось загрузить список зачарований',false); }
-    }
-    function findSuggestions(q){
-      const s=(q||'').toLowerCase();
-      const pool=[...state.ench.list,...state.ench.attrs];
-      if(!s) return pool.slice(0,12);
-      return pool.filter(x=>x.id.includes(s)||(x.alias||[]).some(a=>a.includes(s))).slice(0,12);
-    }
-
-    /* ===== DD portal ===== */
-    function positionPortal(){
-      if(!state.dd.open) return;
-      const r = enchInput.getBoundingClientRect();
-      ddPortal.style.left = `${Math.round(r.left)}px`;
-      ddPortal.style.top  = `${Math.round(r.bottom+4)}px`;
-      ddPortal.style.width= `${Math.round(r.width)}px`;
-    }
-    function openDD(list){
-      ddPortal.innerHTML = list.map((x,i)=>
-        `<div class="dd-item${i===state.dd.idx?' act':''}" data-i="${i}" role="option">
-          <span>${x.id}</span><small>${x.t==='ench'?('max '+x.max):'attr'}</small>
-        </div>`).join('');
-      state.dd.open = list.length>0;
-      enchInput.setAttribute('aria-expanded', state.dd.open?'true':'false');
-      ddPortal.classList.toggle('d-none', !state.dd.open);
-      positionPortal();
-    }
-    function closeDD(){ ddPortal.classList.add('d-none'); state.dd.open=false; state.dd.idx=-1; enchInput.setAttribute('aria-expanded','false'); }
-
-    /* Chips */
-    function addEnchChip(e){
-      const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='ench'; chip.dataset.id=e.id;
-      const max=(state.ench.list.find(x=>x.id===e.id)?.max)||5; const lvl=Math.max(1,Math.min(max,Number(e.lvl||1)));
-      chip.innerHTML=`<span>${e.id}</span><span class="lvl" data-lvl="${lvl}">${lvl}</span><button class="btn" data-act="dec">−</button><button class="btn" data-act="inc">+</button><button class="btn" data-act="del" title="Удалить"><i class="bi bi-x"></i></button>`;
-      chip.addEventListener('click',ev=>{
-        const a=ev.target?.dataset?.act; if(!a) return;
-        const el=chip.querySelector('.lvl'); let v=Number(el.dataset.lvl||1); const mx=(state.ench.list.find(x=>x.id===e.id)?.max)||5;
-        if(a==='inc') v=Math.min(mx,v+1); if(a==='dec') v=Math.max(1,v-1); if(a==='del'){chip.remove(); serializeExtra(); return;}
-        el.dataset.lvl=String(v); el.textContent=String(v); serializeExtra();
-      });
-      enchWrap.appendChild(chip);
-    }
-    function addAttrChip(a){
-      const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='attr'; chip.dataset.id=a.id;
-      let val=(a.val==null)?(state.ench.attrs.find(x=>x.id===a.id)?.def??1):Number(a.val); if(isNaN(val)) val=1;
-      chip.innerHTML=`<span>${a.id}</span><span class="lvl" data-val="${val}">${val}</span><button class="btn" data-act="dec">−</button><button class="btn" data-act="inc">+</button><button class="btn" data-act="del" title="Удалить"><i class="bi bi-x"></i></button>`;
-      chip.addEventListener('click',ev=>{
-        const a=ev.target?.dataset?.act; if(!a) return;
-        const el=chip.querySelector('.lvl'); let v=Number(el.dataset.val||1);
-        const rng=(state.ench.attrs.find(x=>x.id===chip.dataset.id)?.range)||[-2048,2048];
-        const step=Math.abs(rng[1]-rng[0])<=10?0.1:1;
-        if(a==='inc') v=Math.min(rng[1],+(v+step).toFixed(2));
-        if(a==='dec') v=Math.max(rng[0],+(v-step).toFixed(2));
-        if(a==='del'){chip.remove(); serializeExtra(); return;}
-        el.dataset.val=String(v); el.textContent=String(v); serializeExtra();
-      });
-      enchWrap.appendChild(chip);
-    }
-    function parseExtraFromChips(){
-      const ench=[],attr=[];
-      $$('.chip',enchWrap).forEach(ch=>{
-        const id=ch.dataset.id, t=ch.dataset.type;
-        if(t==='ench'){ const lvl=Number(ch.querySelector('.lvl').dataset.lvl||1); ench.push({id,lvl}); }
-        else{ const val=Number(ch.querySelector('.lvl').dataset.val||1); attr.push({id,val}); }
-      });
-      return {ench,attr};
-    }
-    function serializeExtra(){
-      if(state.active<0) return;
-      const s=state.slots[state.active]||{};
-      const extra=parseExtraFromChips(); s.extra=extra; slotExtra.value=JSON.stringify(extra);
-      state.slots[state.active]=s;
-    }
-
-    /* ===== Bindings ===== */
-    function bind(){
-      verSelect.innerHTML=VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
-      verSelect.value=state.version.id;
-      verSelect.addEventListener('change',()=>{ const v=VERSIONS.find(x=>x.id===verSelect.value)||VERSIONS[0]; loadItemsFor(v); });
-      $('#item-search',root).addEventListener('input',e=>renderItems(e.target.value));
-      $('#item-refresh',root).addEventListener('click',()=>loadItemsFor(state.version));
-
-      $('#quick-picks',root).addEventListener('click',e=>{
-        const tag=e.target.closest('.qpick'); if(!tag) return;
-        const id=tag.dataset.id;
-        const it=state.items.find(x=>x.id===id)||{id,name:id.replaceAll('_',' ')};
-        const idx=state.active>=0?state.active:0; putItemToSlot(idx,it);
-      });
-
-      slotClearBtn.addEventListener('click',clearActiveSlot);
-      $$('#slot-editor [data-qty]',root).forEach(btn=>{
-        btn.addEventListener('click',()=>{
-          let v=Number(slotQty.value||1)+(btn.dataset.qty==='+1'?1:-1);
-          v=Math.max(1,Math.min(64,v)); slotQty.value=String(v); applySlotEditor();
-        });
-      });
-      slotQty.addEventListener('input',applySlotEditor);
-      slotDName.addEventListener('input',applySlotEditor);
-
-      enchClearBtn.addEventListener('click',()=>{ enchWrap.innerHTML=''; serializeExtra(); });
-
-      enchInput.addEventListener('input',()=>{ const list=findSuggestions(enchInput.value); state.dd.idx=0; state.dd.data=list; openDD(list); });
-      enchInput.addEventListener('keydown',e=>{
-        if(e.key==='Backspace' && enchInput.value===''){
-          const last=enchWrap.querySelector('.chip:last-of-type');
-          if(last){ last.remove(); serializeExtra(); e.preventDefault(); return; }
-        }
-        if(!state.dd.open){
-          if(e.key==='ArrowDown'){ const list=findSuggestions(enchInput.value); if(list.length){ state.dd.data=list; state.dd.idx=0; openDD(list); } return; }
-          if(e.key==='Escape'){ closeDD(); return; }
-        }else{
-          if(e.key==='ArrowDown'){ e.preventDefault(); state.dd.idx=Math.min(state.dd.data.length-1,state.dd.idx+1); openDD(state.dd.data); }
-          if(e.key==='ArrowUp'){   e.preventDefault(); state.dd.idx=Math.max(0,state.dd.idx-1); openDD(state.dd.data); }
-          if(e.key==='Escape'){ closeDD(); }
-          if(e.key==='Enter'){
-            e.preventDefault(); const it=state.dd.data[state.dd.idx]; if(!it) return;
-            if(it.t==='ench') addEnchChip({id:it.id,lvl:1}); else addAttrChip({id:it.id,val:it.def??1});
-            enchInput.value=''; closeDD(); serializeExtra();
-          }
-        }
-      });
-      ddPortal.addEventListener('click',e=>{
-        const row=e.target.closest('.dd-item'); if(!row) return;
-        const i=Number(row.dataset.i||-1); const it=state.dd.data[i]; if(!it) return;
-        if(it.t==='ench') addEnchChip({id:it.id,lvl:1}); else addAttrChip({id:it.id,val:it.def??1});
-        enchInput.value=''; closeDD(); serializeExtra();
-      });
-      window.addEventListener('resize', positionPortal);
-      window.addEventListener('scroll', positionPortal, true);
-      document.addEventListener('click',e=>{ if(!ddPortal.contains(e.target) && e.target!==enchInput) closeDD(); });
-    }
-
-    /* ===== Init ===== */
-    window.kitsInit=function(){
-      if(!grab()||state.inited) return; state.inited=true;
-      state.slots=Array(SLOT_COUNT).fill(null);
-      buildSlots(); bind(); loadItemsFor(state.version); loadEnchData();
-    };
-    if(document.getElementById('tab-kits')?.classList.contains('active')) window.kitsInit();
-  })();
-  </script>
 </section>

@@ -5,12 +5,21 @@
 
   /* ====== КОНФИГ ====== */
   const SLOT_COUNT = 27;
-  const VERSIONS = [
+  const DATASETS = [
     {
-      id: '1.20.6',
+      id: 'vanilla-1.20.6',
       label: 'Vanilla 1.20.6',
       itemsUrl: '/static/data/vanilla-items-1.20.6.json',
-      imgUrl: (id) => `/static/mc/1.20.6/items/${id}.png`
+      imgUrl: (id) => `/static/mc/1.20.6/items/${id}.png`,
+      kind: 'vanilla'
+    },
+    {
+      id: 'itemsadder',
+      label: 'ItemsAdder',
+      itemsUrl: '/static/data/itemsadder-items.json',
+      // у кастомов иконок может не быть — просто скрываем <img> по onerror
+      imgUrl: (id) => '',
+      kind: 'itemsadder'
     }
   ];
   const ENCH_FILE = '/static/data/enchantments-1.20.6.json';
@@ -19,10 +28,9 @@
   const state = {
     inited:false,
     items:[],
-    version: VERSIONS[0],
-    slots: Array(SLOT_COUNT).fill(null), // {id,name,qty,display,extra:{ench:[{id,lvl}],attr:[{id,val,op}]}}
+    dataset: DATASETS[0],
+    slots: Array(SLOT_COUNT).fill(null), // {id,name,qty,display,extra:{ench:[{id,lvl}],attr:[{id,val}]}}
     active:-1,
-    dirty:false,
     ench: { list:[], attrs:[] }, // из json
     dd:{ open:false, idx:-1, data:[] }
   };
@@ -32,7 +40,7 @@
   const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
   let root, grid, itemsWrap, itemsEmpty, verSelect, nameInput, descInput;
   let slotEditor, slotNo, slotQty, slotDName, slotExtra, slotClearBtn, statsPill, kitsToasts;
-  let enchInput, enchDD, enchWrap;
+  let enchInput, enchDD, enchWrap, enchClear, dnameClear;
 
   function grab(){
     root = document.getElementById('kits-root');
@@ -48,6 +56,7 @@
     slotNo      = $('#slot-no', root);
     slotQty     = $('#slot-qty', root);
     slotDName   = $('#slot-dname', root);
+    dnameClear  = $('#dname-clear', root);
     slotExtra   = $('#slot-extra', root);
     slotClearBtn= $('#slot-clear', root);
     statsPill   = $('#kit-stats', root);
@@ -56,6 +65,7 @@
     enchInput   = $('#ench-input', root);
     enchDD      = $('#ench-dd', root);
     enchWrap    = $('#slot-enchants', root);
+    enchClear   = $('#ench-clear', root);
 
     return true;
   }
@@ -65,23 +75,31 @@
     if(!kitsToasts) return;
     const el=document.createElement('div');
     el.className='toastx '+(ok?'ok':'err');
+    el.style.cssText='background:rgba(2,6,23,.85);border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:.6rem .8rem;color:#e5e7eb;margin-top:.5rem;transition:opacity .25s';
     el.innerHTML=`<div class="small">${msg}</div>`;
     kitsToasts.appendChild(el);
-    setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2000);
+    setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 260); }, 1800);
   }
 
   /* ====== Items ====== */
-  async function loadItemsFor(version){
-    state.version = version;
+  async function loadItemsFor(dataset){
+    state.dataset = dataset;
     try{
-      const r=await fetch(version.itemsUrl,{cache:'no-store'});
+      const r=await fetch(dataset.itemsUrl,{cache:'no-store'});
       const j=await r.json();
       let arr=[];
       if(Array.isArray(j)) arr=j;
       else if(Array.isArray(j.items)) arr=j.items;
       else arr=Object.keys(j||{}).map(k=>({id:k,name:j[k]}));
-      state.items = arr.filter(x=>x && typeof x.id==='string')
-                       .map(x=>({id:x.id, name:x.name || x.id.replaceAll('_',' ')}));
+      // нормализуем + убираем дубли
+      const map=new Map();
+      for(const x of arr){
+        if(!x || typeof x.id!=='string') continue;
+        const id = String(x.id).trim();
+        const name = (x.name||id).replaceAll('_',' ');
+        if(!map.has(id)) map.set(id,{id,name});
+      }
+      state.items = Array.from(map.values());
       renderItems();
     }catch(e){
       state.items=[]; renderItems();
@@ -94,13 +112,14 @@
       x.id.toLowerCase().includes(q) || (x.name||'').toLowerCase().includes(q));
     itemsWrap.innerHTML=''; itemsEmpty.hidden = list.length>0;
     for(const it of list){
-      const col=document.createElement('div'); col.className='col';
-      col.innerHTML = `
-        <div class="d-flex align-items-center gap-2 p-2 glass" draggable="true" title="${it.name}\n${it.id}">
-          <img class="icon" src="${state.version.imgUrl(it.id)}" alt="" onerror="this.style.visibility='hidden'">
-          <div class="small">${it.name}</div>
-        </div>`;
-      const div = col.firstElementChild;
+      const div=document.createElement('div');
+      div.className='item';
+      div.draggable=true;
+      div.title = `${it.name}\n${it.id}`;
+      const imgSrc = state.dataset.imgUrl(it.id);
+      div.innerHTML = `
+        <img class="icon" src="${imgSrc||''}" alt="" onerror="this.style.visibility='hidden'">
+        <div class="n">${it.name}</div>`;
       div.addEventListener('dragstart', (e)=>{
         const payload=JSON.stringify({id:it.id,name:it.name});
         e.dataTransfer.setData('application/json', payload);
@@ -110,7 +129,7 @@
         const idx = state.active>=0 ? state.active : 0;
         putItemToSlot(idx, it);
       });
-      itemsWrap.appendChild(col);
+      itemsWrap.appendChild(div);
     }
   }
 
@@ -144,10 +163,10 @@
     const s=grid.children[i]; if(!s) return;
     const info=state.slots[i];
     if(!info){ s.classList.remove('active'); s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`; return; }
-    const img=state.version.imgUrl(info.id);
+    const img=state.dataset.imgUrl(info.id);
     const qty=info.qty ?? 1;
     s.innerHTML = `
-      <img class="icon" src="${img}" alt="" onerror="this.style.visibility='hidden'">
+      <img class="icon" src="${img||''}" alt="" onerror="this.style.visibility='hidden'">
       <div class="name">${info.display || info.name || info.id}</div>
       <div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
     s.classList.toggle('active', state.active===i);
@@ -164,7 +183,8 @@
     slotQty.value = data?.qty ?? 1;
     slotDName.value = data?.display ?? '';
     slotClearBtn.disabled = !data;
-    // ench chips from extra
+
+    // чары/атрибуты
     enchWrap.innerHTML='';
     const extra = data?.extra || {ench:[],attr:[]};
     (extra.ench||[]).forEach(addEnchChip);
@@ -176,13 +196,11 @@
     state.slots[state.active]=null;
     renderSlot(state.active); selectSlot(state.active); updateStats();
   }
-
   function applySlotEditor(){
     if(state.active<0) return;
     const s = state.slots[state.active] || (state.slots[state.active]={});
     s.qty = Math.max(1, Math.min(64, Number(slotQty.value||1)));
     s.display = slotDName.value.trim() || '';
-    // extra сохраняем из чипсов
     s.extra = parseExtraFromChips();
     serializeExtra();
     renderSlot(state.active); updateStats();
@@ -192,23 +210,18 @@
   async function loadEnchData(){
     try{
       const r=await fetch(ENCH_FILE,{cache:'no-store'}); const j=await r.json();
-      state.ench.list  = (j.enchantments||[]).map(e=>({
-        id:e.id, t:'ench', alias:(e.alias||[]), max:Number(e.max||1), desc:e.desc||''
-      }));
-      state.ench.attrs = (j.attributes||[]).map(a=>({
-        id:a.id, t:'attr', alias:(a.alias||[]), range:a.range||[-2048,2048], def:a.default ?? 1
-      }));
+      state.ench.list  = (j.enchantments||[]).map(e=>({ id:e.id, t:'ench', alias:(e.alias||[]), max:Number(e.max||1) }));
+      state.ench.attrs = (j.attributes||[]).map(a=>({ id:a.id, t:'attr', alias:(a.alias||[]), range:a.range||[-2048,2048], def:a.default ?? 1 }));
     }catch(e){
       state.ench.list=[]; state.ench.attrs=[];
       toast('Не удалось загрузить список зачарований', false);
     }
   }
-
   function findSuggestions(q){
     const s=(q||'').toLowerCase();
     const pool=[...state.ench.list, ...state.ench.attrs];
     if(!s) return pool.slice(0,12);
-    return pool.filter(x => x.id.includes(s) || (x.alias||[]).some(a=>a.includes(s))).slice(0,12);
+    return pool.filter(x => x.id.includes(s) || (x.alias||[]).some(a=>String(a).toLowerCase().includes(s))).slice(0,12);
   }
 
   /* ====== Enchant/Attr: UI (чипсы + дропдаун) ====== */
@@ -227,41 +240,32 @@
     const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='ench'; chip.dataset.id=e.id;
     const max = (state.ench.list.find(x=>x.id===e.id)?.max) || 5;
     const lvl = Math.max(1, Math.min(max, Number(e.lvl||1)));
-    chip.innerHTML = `
-      <span>${e.id}</span>
-      <span class="lvl" data-lvl="${lvl}">${lvl}</span>
-      <button class="btn" data-act="dec">−</button>
-      <button class="btn" data-act="inc">+</button>
-      <button class="btn" data-act="del"><i class="bi bi-x"></i></button>`;
+    chip.innerHTML = `<span>${e.id}</span><span class="lvl" data-lvl="${lvl}">${lvl}</span><button class="x" title="–">−</button><button class="x" title="+">+</button><button class="x" title="Удалить">&times;</button>`;
     chip.addEventListener('click', (ev)=>{
-      const act = ev.target?.dataset?.act; if(!act) return;
+      const t = ev.target; if(!(t instanceof HTMLElement)) return;
+      const txt = t.textContent?.trim();
       const lvlEl = chip.querySelector('.lvl'); let v=Number(lvlEl.dataset.lvl||1);
-      const max = (state.ench.list.find(x=>x.id===e.id)?.max)||5;
-      if(act==='inc') v = Math.min(max, v+1);
-      if(act==='dec') v = Math.max(1, v-1);
-      if(act==='del') { chip.remove(); serializeExtra(); return; }
+      if(txt==='×'){ chip.remove(); serializeExtra(); return; }
+      if(txt==='+'){ v = Math.min(max, v+1); }
+      if(txt==='−'){ v = Math.max(1, v-1); }
       lvlEl.dataset.lvl=String(v); lvlEl.textContent=String(v); serializeExtra();
     });
     enchWrap.appendChild(chip);
   }
-  function addAttrChip(a){ // a: {id,val,op?}
+  function addAttrChip(a){ // a: {id,val}
     const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='attr'; chip.dataset.id=a.id;
     let val = (a.val==null) ? (state.ench.attrs.find(x=>x.id===a.id)?.def ?? 1) : Number(a.val);
     if(isNaN(val)) val=1;
-    chip.innerHTML = `
-      <span>${a.id}</span>
-      <span class="lvl" data-val="${val}">${val}</span>
-      <button class="btn" data-act="dec">−</button>
-      <button class="btn" data-act="inc">+</button>
-      <button class="btn" data-act="del"><i class="bi bi-x"></i></button>`;
+    const rng = (state.ench.attrs.find(x=>x.id===a.id)?.range)||[-2048,2048];
+    chip.innerHTML = `<span>${a.id}</span><span class="lvl" data-val="${val}">${val}</span><button class="x" title="–">−</button><button class="x" title="+">+</button><button class="x" title="Удалить">&times;</button>`;
     chip.addEventListener('click', (ev)=>{
-      const act = ev.target?.dataset?.act; if(!act) return;
+      const t = ev.target; if(!(t instanceof HTMLElement)) return;
+      const txt = t.textContent?.trim();
       const lvlEl = chip.querySelector('.lvl'); let v=Number(lvlEl.dataset.val||1);
-      const rng = (state.ench.attrs.find(x=>x.id===a.id)?.range)||[-2048,2048];
       const step = Math.abs(rng[1]-rng[0])<=10 ? 0.1 : 1;
-      if(act==='inc') v = Math.min(rng[1], +(v+step).toFixed(2));
-      if(act==='dec') v = Math.max(rng[0], +(v-step).toFixed(2));
-      if(act==='del') { chip.remove(); serializeExtra(); return; }
+      if(txt==='×'){ chip.remove(); serializeExtra(); return; }
+      if(txt==='+'){ v = Math.min(rng[1], +(v+step).toFixed(2)); }
+      if(txt==='−'){ v = Math.max(rng[0], +(v-step).toFixed(2)); }
       lvlEl.dataset.val=String(v); lvlEl.textContent=String(v); serializeExtra();
     });
     enchWrap.appendChild(chip);
@@ -286,25 +290,25 @@
     const s = state.slots[state.active] || {};
     const extra = parseExtraFromChips();
     s.extra = extra;
-    slotExtra.value = JSON.stringify(extra); // если где-то нужна сериализация строкой
+    slotExtra.value = JSON.stringify(extra);
     state.slots[state.active] = s;
-    state.dirty = true;
   }
 
   /* ====== Bindings ====== */
   function bind(){
-    // версия + поиск
-    verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
-    verSelect.value = state.version.id;
+    // источники предметов
+    verSelect.innerHTML = DATASETS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
+    verSelect.value = state.dataset.id;
     verSelect.addEventListener('change', ()=>{
-      const v = VERSIONS.find(x=>x.id===verSelect.value) || VERSIONS[0];
+      const v = DATASETS.find(x=>x.id===verSelect.value) || DATASETS[0];
       loadItemsFor(v);
     });
     $('#item-search',root).addEventListener('input', (e)=>renderItems(e.target.value));
-    $('#item-refresh',root).addEventListener('click', ()=>loadItemsFor(state.version));
+    $('#item-refresh',root).addEventListener('click', ()=>loadItemsFor(state.dataset));
 
     // слоты/редактор
     slotClearBtn.addEventListener('click', clearActiveSlot);
+    dnameClear.addEventListener('click', ()=>{ slotDName.value=''; applySlotEditor(); });
     $$('#slot-editor [data-qty]', root).forEach(btn=>{
       btn.addEventListener('click', ()=>{
         let v=Number(slotQty.value||1) + (btn.dataset.qty==='+1'?1:-1);
@@ -314,12 +318,18 @@
     slotQty.addEventListener('input', applySlotEditor);
     slotDName.addEventListener('input', applySlotEditor);
 
-    // автокомплит: ввод
+    // автокомплит
     enchInput.addEventListener('input', ()=>{
       const list = findSuggestions(enchInput.value);
       state.dd.idx = 0; state.dd.data=list; openDD(list);
     });
     enchInput.addEventListener('keydown', (e)=>{
+      if(e.key==='Backspace' && !enchInput.value){
+        // удалить последний чип
+        const chips = $$('.chip',enchWrap); const last = chips[chips.length-1];
+        if(last){ last.remove(); serializeExtra(); }
+        return;
+      }
       if(!state.dd.open) return;
       if(e.key==='ArrowDown'){ e.preventDefault(); state.dd.idx=Math.min(state.dd.data.length-1, state.dd.idx+1); openDD(state.dd.data); }
       if(e.key==='ArrowUp'){   e.preventDefault(); state.dd.idx=Math.max(0, state.dd.idx-1); openDD(state.dd.data); }
@@ -332,7 +342,6 @@
         enchInput.value=''; closeDD(); serializeExtra();
       }
     });
-    // выбор мышкой
     enchDD.addEventListener('click', (e)=>{
       const row = e.target.closest('.dd-item'); if(!row) return;
       const i = Number(row.dataset.i||-1); const it = state.dd.data[i]; if(!it) return;
@@ -340,16 +349,18 @@
       enchInput.value=''; closeDD(); serializeExtra();
     });
     document.addEventListener('click', (e)=>{ if(!enchDD.contains(e.target) && e.target!==enchInput) closeDD(); });
+    enchClear.addEventListener('click', ()=>{
+      enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; closeDD();
+    });
   }
 
   /* ====== INIT ====== */
   window.kitsInit = function kitsInit(){
-    if(state.inited) return;
-    if(!grab()) return;
+    if(!grab() || state.inited) return;
     state.inited=true;
     buildSlots();
     bind();
-    loadItemsFor(state.version);
+    loadItemsFor(state.dataset);
     loadEnchData();
   };
   if(document.getElementById('tab-kits')?.classList.contains('active')) window.kitsInit();
