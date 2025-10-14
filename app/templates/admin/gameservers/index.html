@@ -222,15 +222,8 @@ function badge(isOnline, text){
 }
 function kvClass(val, goodHigh=true){
   if(val==null) return '';
-  if(goodHigh){
-    if(val >= 18) return 'ok';
-    if(val >= 12) return 'warn';
-    return 'bad';
-  }else{
-    if(val < 30) return 'ok';
-    if(val < 50) return 'warn';
-    return 'bad';
-  }
+  if(goodHigh){ if(val>=18) return 'ok'; if(val>=12) return 'warn'; return 'bad'; }
+  else{ if(val<30) return 'ok'; if(val<50) return 'warn'; return 'bad'; }
 }
 function gaugeSet(el, value=0, max=20){
   if(!el) return;
@@ -244,7 +237,7 @@ function gaugeSet(el, value=0, max=20){
 }
 const flash = (node)=>{ if(!node) return; node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); };
 
-/* ===== Скелет и плитки ===== */
+/* ===== Разметка карточек ===== */
 function tileSkeleton(){
   return `<div class="tile">
     <div class="cap">Realm</div>
@@ -287,26 +280,45 @@ function realmTileHtml(name, plugins){
   </a>`;
 }
 
-/* ===== Данные ===== */
-let indexTimer=null, lastController=null;
-const LS_INDEX_AUTO="gs_index_auto";
+/* ===== Загрузка без фликера / без abort ===== */
+let cycle = 0;                  // поколение запросов
+const LS_INDEX_AUTO = "gs_index_auto";
+let indexTimer = null;
+
 function normalize(d){
   d=d||{}; const t=d.tps||{}, p=d.players||{}, j=d.jvm||{};
   return { tps1: t["1m"] ?? d.tps_1m ?? null, mspt: t.mspt ?? d.mspt ?? null,
            online: p.online ?? d.players_online ?? null, uptime_ms: j.uptime_ms ?? d.uptime_ms ?? null,
            ts: d.ts || Math.floor(Date.now()/1000) };
 }
+function humanMs(ms){
+  if(!ms || ms<0) return '—';
+  let s=Math.floor(ms/1000);
+  const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
+  const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
+}
+
+function ensureTile(name, plugins){
+  const box = document.getElementById('realms');
+  const sel = `.tile[data-realm="${CSS.escape(name)}"]`;
+  let el = box.querySelector(sel);
+  if(!el){
+    box.insertAdjacentHTML('beforeend', realmTileHtml(name, plugins||0));
+  }else{
+    const plug = el.querySelector('.meta .pill');
+    if (plug) plug.textContent = `plugins: ${(plugins|0)}`;
+  }
+  return box.querySelector(sel);
+}
 
 function fillTile(name, p){
   const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`); if(!root) return;
   const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta.querySelector(`[data-k="${k}"]`);
 
-  // online / dot
   const dot = root.querySelector('[data-k="dot"]');
   if(q('online')) q('online').textContent = `online: ${p.online ?? '—'}`;
   if(dot){ dot.classList.remove('on','off'); dot.classList.add((p.online>0)?'on':'off'); }
 
-  // tps/mspt
   const tpsB = root.querySelector('[data-k="tps"]');
   const msptB = root.querySelector('[data-k="mspt"]');
   if(tpsB){
@@ -326,61 +338,57 @@ function fillTile(name, p){
     if(prev.trim() !== txt) flash(msptB);
   }
 
-  // gauge
   const g = root.querySelector(`[data-gauge="tps-${CSS.escape(name)}"]`);
   gaugeSet(g, p.tps1 ?? 0, 20);
 
-  // uptime + updated
   const up = root.querySelector('[data-k="uptime"]'); if(up) up.textContent = `uptime: ${humanMs(p.uptime_ms)}`;
   const upd = root.querySelector('[data-k="updated"]');
   if(upd){ const now = Math.floor(Date.now()/1000), ts = p.ts || now; const ago = Math.max(0, now - ts); upd.textContent = `· обновлено: ${ago}s ago`; }
 }
 
-function humanMs(ms){
-  if(!ms || ms<0) return '—'; let s=Math.floor(ms/1000);
-  const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
-  const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
-}
-
 async function loadRealms(){
+  const my = ++cycle; // запоминаем «поколение» этого обновления
   const box = document.getElementById('realms');
   const ico = document.getElementById('refreshIco');
   ico?.classList.add('spin');
 
-  // отменяем предыдущий fetch, если ещё идёт
-  try{ lastController?.abort(); }catch(_){}
-  lastController = new AbortController();
+  // если пусто — покажем один скелет, но не будем чистить при следующих тиках
+  if(!box.querySelector('.tile')) box.insertAdjacentHTML('beforeend', tileSkeleton());
 
-  box.innerHTML = tileSkeleton();
-  let data = {};
   try{
-    const r = await fetch('/admin/gameservers/api/list',{cache:'no-store', signal:lastController.signal});
-    const j = await r.json(); if(!j.ok) throw new Error(j.error||'bridge error');
-    data = j.data || {};
+    const r = await fetch('/admin/gameservers/api/list', {cache:'no-store'});
+    const j = await r.json();
+    if (my !== cycle) return; // устаревший ответ
+    if (!j.ok) throw new Error(j.error||'bridge error');
+
+    const data  = j.data || {};
+    const names = Object.keys(data).sort((a,b)=>a.localeCompare(b));
+
+    // создать/обновить необходимые тайлы
+    const seen = new Set();
+    names.forEach(n => { ensureTile(n, data[n]); seen.add(n); });
+
+    // удалить исчезнувшие реалмы
+    box.querySelectorAll('.tile[data-realm]').forEach(el=>{
+      const n = el.getAttribute('data-realm');
+      if(!seen.has(n)) el.remove();
+    });
+
+    // подкачать статистику
+    await Promise.allSettled(names.map(async (name)=>{
+      try{
+        const r2 = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
+        const j2 = await r2.json();
+        if (my !== cycle) return;
+        if(!j2.ok || !j2.data) return;
+        fillTile(name, normalize(j2.data));
+      }catch{}
+    }));
   }catch(e){
-    const msg = (e.name === 'AbortError') ? 'Отменено' : (e.message||e);
-    box.innerHTML = `<div class="tile"><div class="cap">Error</div><div class="small small-dim">${msg}</div>
-      <div class="mt-2"><button class="btn btn-sm btn-outline-light" onclick="(${loadRealms.toString()})()">Повторить</button></div></div>`;
-    ico?.classList.remove('spin');
-    return;
+    if (my === cycle) console.warn('[realms]', e);
+  }finally{
+    if (my === cycle) ico?.classList.remove('spin');
   }
-
-  const realms = Object.keys(data).sort((a,b)=>a.localeCompare(b));
-  if(!realms.length){
-    box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`;
-    ico?.classList.remove('spin');
-    return;
-  }
-  box.innerHTML = '';
-  realms.forEach(name=> box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0)));
-
-  await Promise.allSettled(realms.map(async (name)=>{
-    try{
-      const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store', signal:lastController.signal});
-      const j = await r.json(); if(!j.ok || !j.data) return; fillTile(name, normalize(j.data));
-    }catch(_){}
-  }));
-  ico?.classList.remove('spin');
 }
 
 /* ===== Автообновление списка ===== */
@@ -388,17 +396,14 @@ function applyIndexTimer(){
   clearInterval(indexTimer);
   const auto = document.getElementById('autoIndex').checked;
   localStorage.setItem(LS_INDEX_AUTO, auto?'1':'0');
-  if(auto){
-    indexTimer = setInterval(loadRealms, 5000);
-  }
+  if(auto) indexTimer = setInterval(loadRealms, 5000);
 }
 document.getElementById('autoIndex').checked = (localStorage.getItem(LS_INDEX_AUTO) ?? '1') !== '0';
 
-/* ===== Binds ===== */
+/* ===== Binds & init ===== */
 document.getElementById('refresh').addEventListener('click', loadRealms);
 document.getElementById('autoIndex').addEventListener('change', applyIndexTimer);
 
-/* ===== Init ===== */
 loadRealms();
 applyIndexTimer();
 </script>
