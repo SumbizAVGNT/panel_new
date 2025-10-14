@@ -1,9 +1,8 @@
 <script>
-/* Kits: список из БД + редактирование/удаление + автокомплит чаров */
+/* Kits module + автокомплит через портал + CRUD киты */
 (function(){
   'use strict';
 
-  /* ===== API ===== */
   const API = {
     itemsVanilla: '/admin/promocode/api/items/vanilla',
     itemsCustom:  '/admin/promocode/api/items/custom',
@@ -12,21 +11,18 @@
     kitsDelete:   '/admin/promocode/api/kits/delete',
   };
 
-  /* ===== CONSTS ===== */
   const SLOT_COUNT = 27;
 
   const VERSIONS = [
     { id:'vanilla-1.20.6', label:'Vanilla 1.20.6',
       itemsUrl: API.itemsVanilla,
-      imgUrl:(id)=>`/static/mc/1.20.6/items/${String(id).includes(':')?String(id).split(':',2)[1]:id}.png` },
+      imgUrl:(id)=>`/static/mc/1.20.6/items/${id}.png` },
     { id:'itemsadder', label:'ItemsAdder',
       itemsUrl: API.itemsCustom,
-      // важно: для IA нужен полный id с namespace, а в пути — точка:
       imgUrl:(id)=>`/static/mc/itemsadder/${String(id).replace(':','.')}.png` }
   ];
 
   const ENCH_FILE = '/static/data/enchantments-1.20.6.json';
-
   const DEFAULT_ENCH = [
     {id:'minecraft:sharpness',max:5},{id:'minecraft:smite',max:5},
     {id:'minecraft:efficiency',max:5},{id:'minecraft:looting',max:3},
@@ -38,7 +34,6 @@
     {id:'minecraft:generic.movement_speed',def:0.1,range:[-1024,1024]}
   ];
 
-  /* ===== STATE ===== */
   const state = {
     inited:false,
     items:[],
@@ -52,43 +47,27 @@
     kitsCache:[]
   };
 
-  /* ===== MINI DOM ===== */
   const $=(s,r=document)=>r.querySelector(s);
   const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+
   let root, grid, itemsWrap, itemsEmpty, verSelect, nameInput, descInput;
   let slotEditor, slotNo, slotQty, slotDName, dnameClear, slotExtra, slotClearBtn, statsPill, kitsToasts;
   let enchInput, enchWrap, enchClearBtn;
   let ddPortal;
-  // управление и список
-  let btnNew, btnDup, btnSave, btnDel, listWrap, btnRefresh;
+  let btnNew, btnDup, btnSave, btnDel, listWrap, btnRefresh, kitsCountLbl;
 
-  /* ===== HELPERS ===== */
   async function GET(url){
     const r=await fetch(url,{cache:'no-store'});
     let j=null; try{ j=await r.json(); }catch(_){}
     return (j && j.ok) ? j.data : j;
   }
   async function POST(url, body){
-    const r=await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body||{}) });
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
     const j=await r.json().catch(()=>({ok:false,error:'bad json'}));
     if(!j.ok) throw new Error(j.error||'Request failed');
     return j.data;
   }
-  function toast(msg, ok=true){
-    if(!kitsToasts) return;
-    const el=document.createElement('div');
-    el.className='toastx '+(ok?'ok':'err');
-    el.innerHTML=`<div class="small">${msg}</div>`;
-    kitsToasts.appendChild(el);
-    setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2000);
-  }
-  function markDirty(v=true){
-    state.dirty = !!v;
-    if(btnSave) btnSave.disabled = !state.dirty;
-  }
-  window.addEventListener('beforeunload', (e)=>{ if(state.dirty){ e.preventDefault(); e.returnValue=''; } });
 
-  /* ===== GRAB ===== */
   function grab(){
     root = document.getElementById('kits-root');
     if(!root) return false;
@@ -114,27 +93,45 @@
     enchWrap     = $('#slot-enchants', root);
     enchClearBtn = $('#ench-clear', root);
 
-    btnNew    = $('#kit-new', root);
-    btnDup    = $('#kit-dup', root);
-    btnSave   = $('#kit-save', root);
-    btnDel    = $('#kit-del', root);
-    listWrap  = $('#kits-list', root);
-    btnRefresh= $('#kits-refresh', root);
+    btnNew      = $('#kit-new', root);
+    btnDup      = $('#kit-dup', root);
+    btnSave     = $('#kit-save', root);
+    btnDel      = $('#kit-del', root);
+    btnRefresh  = $('#kits-refresh', root);
+    listWrap    = $('#kits-list', root);
+    kitsCountLbl= $('#kits-count', root);
 
     if(!ddPortal){
       ddPortal = document.createElement('div');
-      ddPortal.className = 'kits-dd-popover';
-      Object.assign(ddPortal.style, {
-        position:'absolute', zIndex:'4000', left:'0px', top:'0px',
-        minWidth:'240px', background:'#0b1220',
-        border:'1px solid rgba(148,163,184,.25)', borderRadius:'10px',
-        boxShadow:'0 10px 24px rgba(0,0,0,.35)', maxHeight:'260px',
-        overflow:'auto', padding:'4px 0', display:'none'
+      Object.assign(ddPortal.style,{
+        position:'absolute',zIndex:'4000',left:'0px',top:'0px',minWidth:'240px',
+        background:'#0b1220',border:'1px solid rgba(148,163,184,.25)',borderRadius:'10px',
+        boxShadow:'0 10px 24px rgba(0,0,0,.35)',maxHeight:'260px',overflow:'auto',padding:'4px 0',display:'none'
       });
       document.body.appendChild(ddPortal);
     }
     return true;
   }
+
+  function toast(msg, ok=true){
+    if(!kitsToasts) return;
+    const el=document.createElement('div');
+    el.className='toastx '+(ok?'ok':'err');
+    el.innerHTML=`<div class="small">${msg}</div>`;
+    kitsToasts.appendChild(el);
+    setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2000);
+  }
+
+  function setButtons(){
+    if(btnSave) btnSave.disabled = !state.dirty;
+    if(btnDel)  btnDel.disabled  = !(state.kit.id);
+    if(btnDup)  btnDup.disabled  = !(state.kit.id);
+  }
+  function markDirty(v=true){
+    state.dirty = !!v;
+    setButtons();
+  }
+  window.addEventListener('beforeunload',(e)=>{ if(state.dirty){ e.preventDefault(); e.returnValue=''; } });
 
   /* ===== ITEMS ===== */
   async function loadItemsFor(version){
@@ -145,10 +142,8 @@
       const map=new Map();
       for(const it of arr){
         if(!it||!it.id) continue;
-        // сохраняем full id для кастомных предметов (IA)
-        const fullId = it.full || (it.ns && `${it.ns}:${it.id}`) || String(it.id);
-        const name   = it.name || String(it.id).replaceAll('_',' ');
-        map.set(fullId,{id:fullId,name,icon:it.icon,ns:it.ns||'minecraft'});
+        const id=String(it.id);
+        map.set(id,{id,name: it.name || id.replaceAll('_',' '),icon:it.icon});
       }
       state.items = Array.from(map.values());
       renderItems();
@@ -158,7 +153,6 @@
       toast('Не удалось загрузить список предметов', false);
     }
   }
-
   function renderItems(filter=''){
     const q=filter.trim().toLowerCase();
     const list = !q ? state.items : state.items.filter(x =>
@@ -166,7 +160,7 @@
     itemsWrap.innerHTML=''; itemsEmpty.hidden = list.length>0;
     for(const it of list){
       const col=document.createElement('div'); col.className='col';
-      const icon = it.icon || state.version.imgUrl(it.id);
+      const icon = it.icon || state.version.imgUrl(it.id.includes(':')?it.id.split(':',2)[1]:it.id);
       col.innerHTML = `
         <div class="item" draggable="true" title="${it.name}\n${it.id}">
           <img class="icon" src="${icon}" alt="" onerror="this.style.visibility='hidden'">
@@ -174,7 +168,7 @@
         </div>`;
       const div = col.firstElementChild;
       div.addEventListener('dragstart', (e)=>{
-        const payload=JSON.stringify({id:it.id,name:it.name,ns:it.ns});
+        const payload=JSON.stringify({id:it.id,name:it.name});
         e.dataTransfer.setData('application/json', payload);
         e.dataTransfer.setData('text/plain', payload);
       });
@@ -184,8 +178,10 @@
   }
 
   /* ===== SLOTS ===== */
-  function updateStats(){ const c = state.slots.filter(Boolean).length; if(statsPill) statsPill.textContent=`${c} item${c===1?'':'s'}`; }
-
+  function updateStats(){
+    const c = state.slots.filter(Boolean).length;
+    if(statsPill) statsPill.textContent=`${c} item${c===1?'':'s'}`;
+  }
   function buildSlots(){
     grid.innerHTML='';
     for(let i=0;i<SLOT_COUNT;i++){
@@ -207,7 +203,6 @@
     }
     updateStats();
   }
-
   function renderSlot(i){
     const s=grid.children[i]; if(!s) return;
     const info=state.slots[i];
@@ -216,23 +211,19 @@
       s.innerHTML=`<div class="name dim">—</div><div class="qty" hidden>1</div>`;
       return;
     }
-    // ВАЖНО: используем ПОЛНЫЙ id (ns:id) — это чинит иконки ItemsAdder.
-    const img=state.version.imgUrl(info.id);
+    const baseId = info.id.includes(':') ? info.id.split(':',2)[1] : info.id;
+    const img=state.version.imgUrl(baseId);
     const qty=info.qty ?? 1;
     s.innerHTML = `
       <img class="icon" src="${img}" alt="" onerror="this.style.visibility='hidden'">
-      <div class="name">${info.display || info.name || (info.id.includes(':')?info.id.split(':',2)[1]:info.id)}</div>
+      <div class="name">${info.display || info.name || baseId}</div>
       <div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
     s.classList.toggle('active', state.active===i);
   }
-
   function putItemToSlot(i,item){
-    const fullId = item.id || (item.ns && item.iid ? `${item.ns}:${item.iid}` : String(item));
-    const ns = fullId.includes(':') ? fullId.split(':',2)[0] : (item.ns || 'minecraft');
-    state.slots[i] = { id:fullId, ns, name:item.name, qty:1, extra:{ench:[], attr:[]} };
+    state.slots[i] = { id:String(item.id), name:item.name, qty:1, extra:{ench:[], attr:[]} };
     renderSlot(i); selectSlot(i); updateStats(); markDirty(true);
   }
-
   function selectSlot(i){
     state.active=i;
     $$('.slot',grid).forEach(el=>el.classList.toggle('active', Number(el.dataset.idx)===i));
@@ -248,13 +239,11 @@
     (extra.attr||[]).forEach(addAttrChip);
     serializeExtra();
   }
-
   function clearActiveSlot(){
     if(state.active<0) return;
     state.slots[state.active]=null;
     renderSlot(state.active); selectSlot(state.active); updateStats(); markDirty(true);
   }
-
   function applySlotEditor(){
     if(state.active<0) return;
     const s = state.slots[state.active] || (state.slots[state.active]={});
@@ -265,7 +254,7 @@
     renderSlot(state.active); updateStats(); markDirty(true);
   }
 
-  /* ===== ENCHANTS / ATTR ===== */
+  /* ===== ENCHANTS/ATTR ===== */
   async function loadEnchData(){
     try{
       const r=await fetch(ENCH_FILE,{cache:'no-store'});
@@ -319,23 +308,20 @@
     state.slots[state.active] = s;
   }
 
-  /* ===== DROPDOWN ===== */
+  /* ===== DROPDOWN (portal) ===== */
   function placeDD(){
     if(!state.dd.open) return;
     const r = enchInput.getBoundingClientRect();
     const margin = 6;
-    const top = Math.round(r.bottom + margin + window.scrollY);
-    const left= Math.round(r.left + window.scrollX);
-    const width = Math.round(r.width);
-    Object.assign(ddPortal.style,{ top:top+'px', left:left+'px', width:width+'px' });
+    ddPortal.style.top  = Math.round(r.bottom + margin + window.scrollY)+'px';
+    ddPortal.style.left = Math.round(r.left + window.scrollX)+'px';
+    ddPortal.style.width= Math.round(r.width)+'px';
   }
   function openDD(list){
     if(!list || list.length===0){ closeDD(); return; }
     ddPortal.innerHTML = list.map((x,i)=>(
-      `<div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}" style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">` +
-        `<span style="color:#e5e7eb">${x.id}</span>` +
-        `<small style="color:#94a3b8">${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small>` +
-      `</div>`
+      `<div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}" style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">`+
+      `<span style="color:#e5e7eb">${x.id}</span><small style="color:#94a3b8">${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small></div>`
     )).join('');
     ddPortal.querySelectorAll('.kits-dd-item').forEach(el=>{
       el.addEventListener('mouseenter',()=>el.style.background='rgba(96,165,250,.12)');
@@ -345,7 +331,11 @@
     state.dd.open = true;
     placeDD();
   }
-  function closeDD(){ if(!state.dd.open) return; ddPortal.style.display='none'; ddPortal.innerHTML=''; state.dd.open=false; state.dd.idx=-1; state.dd.data=[]; }
+  function closeDD(){
+    if(!state.dd.open) return;
+    ddPortal.style.display='none'; ddPortal.innerHTML='';
+    state.dd.open=false; state.dd.idx=-1; state.dd.data=[];
+  }
 
   /* ===== KITS <-> DB ===== */
   function kitSerializeItems(){
@@ -354,22 +344,25 @@
       const s = state.slots[i];
       if(!s) continue;
       const hasNs = String(s.id).includes(':');
-      const ns  = hasNs ? s.id.split(':',2)[0] : (s.ns || 'minecraft');
-      const iid = hasNs ? s.id.split(':',2)[1] : String(s.id);
+      const ns = hasNs ? s.id.split(':',2)[0] : 'minecraft';
+      const iid = hasNs ? s.id.split(':',2)[1] : s.id;
       items.push({
         ns, id:iid,
         amount: Number(s.qty||1),
         display_name: s.display||'',
         enchants: (s.extra?.ench)||[],
-        nbt: (s.extra?.attr)||[],    // сохраняем «атрибуты» в нашем поле nbt
+        nbt: (s.extra?.attr)||[],
         slot: i
       });
     }
     return items;
   }
 
+  function highlightSelected(id){
+    $$('.kit-row', listWrap).forEach(el=>el.classList.toggle('sel', Number(el.dataset.id)===Number(id)));
+  }
+
   function kitLoadToUI(kit){
-    // очистка
     state.slots = Array(SLOT_COUNT).fill(null);
     buildSlots();
 
@@ -383,29 +376,30 @@
     for(const it of items){
       const idx = (it.slot!=null) ? Number(it.slot) : -1;
       if(idx<0 || idx>=SLOT_COUNT) continue;
-      const ns  = it.namespace || it.ns || 'minecraft';
-      const iid = it.item_id   || it.id;
+      const ns = it.namespace || it.ns || 'minecraft';
+      const iid = it.item_id || it.id;
       if(!iid) continue;
       const fullId = (ns && ns!=='minecraft') ? `${ns}:${iid}` : String(iid);
-      const ench = Array.isArray(it.enchants) ? it.enchants : [];
-      const nbt  = Array.isArray(it.nbt) ? it.nbt : [];
+      const ench = it.enchants || it.enchants_json || [];
+      const nbt  = it.nbt || it.nbt_json || [];
       state.slots[idx] = {
-        id: fullId, ns, name: it.display_name || iid, qty: Number(it.amount||1),
+        id: fullId, name: it.display_name || iid, qty: Number(it.amount||1),
         display: it.display_name || '',
-        extra:{ ench, attr: nbt }
+        extra:{ ench:Array.isArray(ench)?ench:[], attr:Array.isArray(nbt)?nbt:[] }
       };
       renderSlot(idx);
     }
     updateStats();
     markDirty(false);
-    // визуально отметить выбранный ряд
-    $$('.kit-row', listWrap).forEach(el=>el.classList.toggle('sel', Number(el.dataset.id)===state.kit.id));
+    highlightSelected(state.kit.id);
   }
 
   function renderKitsList(){
     if(!listWrap) return;
-    listWrap.innerHTML = (state.kitsCache||[]).map(k => `
-      <div class="kit-row" data-id="${k.id}" title="${(k.description||'').replace(/"/g,'&quot;')}">
+    const list = Array.isArray(state.kitsCache)? state.kitsCache : [];
+    if(kitsCountLbl) kitsCountLbl.textContent = list.length ? `${list.length}` : '—';
+    listWrap.innerHTML = list.map(k => `
+      <div class="kit-row${state.kit.id===k.id?' sel':''}" data-id="${k.id}" title="${k.description||''}">
         <div class="ttl">${k.name}</div>
         <div class="sub">${(k.created_at||'').toString().replace('T',' ').slice(0,19)}</div>
       </div>
@@ -413,7 +407,8 @@
     $$('.kit-row', listWrap).forEach(el=>{
       el.addEventListener('click', ()=>{
         const id = Number(el.dataset.id);
-        const k = state.kitsCache.find(x=>x.id===id);
+        if(state.dirty && !confirm('Есть несохранённые изменения. Переключить без сохранения?')) return;
+        const k = state.kitsCache.find(x=>Number(x.id)===id);
         if(!k) return;
         kitLoadToUI(k);
       });
@@ -428,8 +423,7 @@
       if(state.kit.id==null && state.kitsCache.length){
         kitLoadToUI(state.kitsCache[0]);
       }else{
-        // обновить выделение
-        $$('.kit-row', listWrap).forEach(el=>el.classList.toggle('sel', Number(el.dataset.id)===state.kit.id));
+        highlightSelected(state.kit.id);
       }
     }catch(e){
       console.error('kits list error', e);
@@ -451,6 +445,7 @@
       toast('Кит сохранён');
       markDirty(false);
       await loadKitsList();
+      highlightSelected(state.kit.id);
     }catch(e){
       console.error(e);
       toast('Ошибка при сохранении кита', false);
@@ -468,6 +463,7 @@
       state.slots = Array(SLOT_COUNT).fill(null); buildSlots(); updateStats();
       markDirty(false);
       await loadKitsList();
+      highlightSelected(null);
     }catch(e){
       console.error(e);
       toast('Не удалось удалить кит', false);
@@ -479,15 +475,14 @@
     nameInput.value=''; descInput.value='';
     state.slots = Array(SLOT_COUNT).fill(null); buildSlots(); updateStats();
     markDirty(false);
-    $$('.kit-row', listWrap).forEach(el=>el.classList.remove('sel'));
+    highlightSelected(null);
   }
-
   function duplicateKit(){
     const base = (nameInput.value||'').trim() || 'Kit';
     nameInput.value = base + ' (copy)';
     state.kit.id = null;
     markDirty(true);
-    $$('.kit-row', listWrap).forEach(el=>el.classList.remove('sel'));
+    highlightSelected(null);
   }
 
   /* ===== BINDINGS ===== */
@@ -523,7 +518,6 @@
     function showDD(){ const list = findSuggestions(enchInput.value); state.dd.idx=0; state.dd.data=list; openDD(list); }
     enchInput?.addEventListener('focus', showDD);
     enchInput?.addEventListener('input', showDD);
-
     enchInput?.addEventListener('keydown', (e)=>{
       if(!state.dd.open) return;
       if(e.key==='ArrowDown'){ e.preventDefault(); state.dd.idx=Math.min(state.dd.data.length-1, state.dd.idx+1); openDD(state.dd.data); }
@@ -567,8 +561,9 @@
     bind();
     loadItemsFor(state.version);
     loadEnchData();
-    loadKitsList();     // подключение к БД: тянем список китов
+    loadKitsList();
     markDirty(false);
+    setButtons(); // выставить начальные состояния
   }
 
   window.kitsInit = init;
