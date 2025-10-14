@@ -149,6 +149,7 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
       LUCKPERMS-> AUTHME_ -> DB_
       POINTS_/EASYPAYMENTS_/LITEBANS_/BCASES_/LEADER_ -> DB_
       SSL/SSL_CA also fallback to DB_.
+      NAME falls back to DB_NAME for all prefixes.
     """
     val = os.environ.get(f"{prefix}{key}")
 
@@ -161,6 +162,10 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
     if val is None and prefix in {"POINTS_", "EASYPAYMENTS_", "LITEBANS_", "BCASES_", "LEADER_"} and key in {"HOST", "PORT", "USER", "PASSWORD"}:
         val = os.environ.get(f"DB_{key}")
 
+    # NAME -> DB_NAME fallback (универсально)
+    if val is None and key == "NAME":
+        val = os.environ.get("DB_NAME")
+
     # SSL/SSL_MODE/SSL_CA fallback к DB_
     if val is None and key in {"SSL", "SSL_MODE", "SSL_CA"}:
         base = os.environ.get(f"{prefix}{key}")
@@ -171,16 +176,17 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
 
 
 def _load_env(prefix: str):
+    # дефолтные имена БД, ближе к стандартным плагинам
     if prefix == "AUTHME_":
-        default_db = "authmedb"
+        default_db = "authme"
     elif prefix == "LUCKPERMS_":
-        default_db = "donate"
+        default_db = "luckperms"
     elif prefix == "POINTS_":
         default_db = "points"
     elif prefix == "EASYPAYMENTS_":
         default_db = "easypayments"
     elif prefix == "LITEBANS_":
-        default_db = "litebansBD"
+        default_db = "litebans"
     elif prefix == "BCASES_":
         default_db = "bcases"
     elif prefix == "LEADER_":
@@ -369,12 +375,14 @@ CREATE TABLE IF NOT EXISTS post_targets (
     INDEX idx_pt_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ===== PROMO / KITS =====
+-- ===== PROMO / KITS — base =====
 CREATE TABLE IF NOT EXISTS promo_kits (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(191) NOT NULL,
     description TEXT NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_pkit_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS promo_kit_items (
@@ -384,45 +392,101 @@ CREATE TABLE IF NOT EXISTS promo_kit_items (
     item_id VARCHAR(191) NOT NULL,
     amount INT NOT NULL DEFAULT 1,
     display_name VARCHAR(255) NULL,
-    enchants_json MEDIUMTEXT NULL,
-    nbt_json MEDIUMTEXT NULL,
-    slot INT NULL,
+    enchants_json MEDIUMTEXT NULL,  -- [{"id":"sharpness","lvl":5},...]
+    nbt_json MEDIUMTEXT NULL,       -- произвольный NBT в JSON
+    slot INT NULL,                  -- фиксированный слот, если нужен
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_pkit_kit FOREIGN KEY (kit_id) REFERENCES promo_kits(id) ON DELETE CASCADE,
     INDEX idx_pkit_kit (kit_id),
     INDEX idx_pkit_slot (kit_id, slot)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ===== PROMO codes =====
 CREATE TABLE IF NOT EXISTS promo_codes (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    code VARCHAR(64) NOT NULL UNIQUE,
+    code VARCHAR(64) NOT NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+
+    -- Валюта/поинты (опционально)
     amount DECIMAL(12,2) NULL,
-    currency_key VARCHAR(32) NULL,
-    realm VARCHAR(191) NULL,
+    currency_key VARCHAR(32) NULL,          -- напр. "rubs", "coins"
+
+    -- LP / Киты / Реалм
+    realm VARCHAR(191) NULL,                -- куда слать команды/какой контекст
     kit_id INT NULL,
-    uses_total INT NOT NULL DEFAULT 1,
+
+    -- Ограничения
+    uses_total INT NOT NULL DEFAULT 1,      -- общий лимит
     uses_left INT NOT NULL DEFAULT 1,
+    per_player_uses INT NOT NULL DEFAULT 1, -- лимит на игрока
+    cooldown_seconds INT NOT NULL DEFAULT 0,
     expires_at DATETIME NULL,
+
+    -- Админские поля
     created_by VARCHAR(191) NULL,
+    note VARCHAR(255) NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_promo_kit FOREIGN KEY (kit_id) REFERENCES promo_kits(id) ON DELETE SET NULL,
+    UNIQUE KEY uq_promo_code_ci (code),
     INDEX idx_promo_expires (expires_at),
-    INDEX idx_promo_uses (uses_left)
+    INDEX idx_promo_uses_left (uses_left)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Много LP-групп на один промокод (перманент или временно)
+CREATE TABLE IF NOT EXISTS promo_code_groups (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code_id INT NOT NULL,
+    group_name VARCHAR(36) NOT NULL,        -- имя группы LP
+    temp_seconds INT NULL,                  -- NULL = перманент
+    context_server VARCHAR(36) NOT NULL DEFAULT 'global',
+    context_world  VARCHAR(64) NOT NULL DEFAULT 'global',
+    priority INT NOT NULL DEFAULT 0,        -- порядок применения
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pcg_code FOREIGN KEY (code_id) REFERENCES promo_codes(id) ON DELETE CASCADE,
+    INDEX idx_pcg_code (code_id),
+    INDEX idx_pcg_order (code_id, priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Набор произвольных команд на код (выполняются от CONSOLE/PLAYER)
+CREATE TABLE IF NOT EXISTS promo_code_cmds (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code_id INT NOT NULL,
+    run_as ENUM('CONSOLE','PLAYER') NOT NULL DEFAULT 'CONSOLE',
+    realm VARCHAR(191) NULL,                -- если надо отправлять в другой realm через мост
+    command_text VARCHAR(500) NOT NULL,     -- без слеша, например: "lp user {player} parent add knight"
+    run_delay_ms INT NOT NULL DEFAULT 0,    -- задержка перед выполнением
+    priority INT NOT NULL DEFAULT 0,        -- порядок
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pcc_code FOREIGN KEY (code_id) REFERENCES promo_codes(id) ON DELETE CASCADE,
+    INDEX idx_pcc_code (code_id),
+    INDEX idx_pcc_order (code_id, priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Лог погашений
 CREATE TABLE IF NOT EXISTS promo_redemptions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     code_id INT NOT NULL,
     uuid VARCHAR(36) NOT NULL,
     username VARCHAR(191) NULL,
     realm VARCHAR(191) NULL,
+
     granted_amount DECIMAL(12,2) NULL,
+    currency_key VARCHAR(32) NULL,          -- фактически применённая валюта
     kit_id INT NULL,
-    granted_items_json MEDIUMTEXT NULL,
+
+    granted_items_json MEDIUMTEXT NULL,     -- какие предметы реально выдали
+    granted_groups_json MEDIUMTEXT NULL,    -- [{"group":"knight","temp_seconds":2592000},...]
+    executed_cmds_json MEDIUMTEXT NULL,     -- список выполненных команд и статусов
+
     ip VARCHAR(64) NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_pred_code FOREIGN KEY (code_id) REFERENCES promo_codes(id) ON DELETE CASCADE,
     INDEX idx_pred_uuid (uuid),
-    INDEX idx_pred_code (code_id)
+    INDEX idx_pred_code (code_id),
+    INDEX idx_pred_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
@@ -797,7 +861,7 @@ def stats_get_series(
 # Доменные хелперы по дампу (LuckPerms / EasyPayments / LiteBans / AJLB / BCases)
 # =========================================================
 
-# ---------- LuckPerms (donate) ----------
+# ---------- LuckPerms (обычно отдельная БД) ----------
 def lp_find_uuid(lp: MySQLConnection, username: str) -> Optional[str]:
     """Вернёт UUID по нику из luckperms_players."""
     row = lp.query_one("SELECT uuid FROM luckperms_players WHERE username = ? LIMIT 1", (username,))
@@ -834,15 +898,32 @@ def lp_get_group_permissions(lp: MySQLConnection, group: str) -> List[dict]:
 
 # ---------- EasyPayments ----------
 def ep_get_customer_by_name(ep: MySQLConnection, username: str) -> Optional[dict]:
+    """Возвращает карточку покупателя + его id (нужен для join'ов)."""
     return ep.query_one(
-        "SELECT player_name, player_uuid, created_at, updated_at FROM easypayments_customers WHERE player_name = ?",
+        "SELECT id, player_name, player_uuid, created_at, updated_at FROM easypayments_customers WHERE player_name = ?",
         (username,),
     )
 
-def ep_get_payments_by_customer(ep: MySQLConnection, username: str) -> List[dict]:
+def ep_get_payments_by_customer(ep: MySQLConnection, customer: Any) -> List[dict]:
+    """
+    Заказы покупателя. Аргумент может быть:
+      - числовым id покупателя (int/str цифры)
+      - ником игрока (мы найдём id через easypayments_customers)
+    """
+    customer_id: Optional[int] = None
+    if isinstance(customer, int) or (isinstance(customer, str) and customer.isdigit()):
+        customer_id = int(customer)
+    else:
+        row = ep_get_customer_by_name(ep, str(customer))
+        if row and "id" in row:
+            customer_id = int(row["id"])
+
+    if customer_id is None:
+        return []
+
     return ep.query_all(
         "SELECT * FROM easypayments_payments WHERE customer_id = ? ORDER BY created_at ASC",
-        (username,),
+        (customer_id,),
     )
 
 def ep_get_purchases_by_payment(ep: MySQLConnection, payment_id: int) -> List[dict]:
