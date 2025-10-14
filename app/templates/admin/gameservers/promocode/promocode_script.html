@@ -1,273 +1,443 @@
 <script>
-(async function PromoModule(){
-  const $  = (id)=>document.getElementById(id);
-  const qs = (s, r=document)=>r.querySelector(s);
-  const qsa= (s, r=document)=>Array.from(r.querySelectorAll(s));
+(function(){
+  'use strict';
 
-  const listBody = $('pc-list'),
-        kitSel   = $('pc-kit'),
-        msg      = $('pc-msg');
+  // ====== API endpoints (ожидаемые на бэке) ======
+  const API = {
+    list:        '/admin/promocode/api/promo/list',
+    create:      '/admin/promocode/api/promo/create',
+    update:      '/admin/promocode/api/promo/update',
+    remove:      '/admin/promocode/api/promo/delete',
+    details:     '/admin/promocode/api/promo/details',          // ?id=...
+    reds:        '/admin/promocode/api/promo/reds',             // ?code_id=...&q=
+    groupsList:  '/admin/promocode/api/promo/groups/list',      // ?code_id=...
+    groupsSave:  '/admin/promocode/api/promo/groups/save',
+    kitsList:    '/admin/promocode/api/kits/list'
+  };
+
+  // ====== helpers ======
+  const $  = (sel, root=document)=>root.querySelector(sel);
+  const $$ = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
 
   const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
-  const xheaders = (h={}) => CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
+  const headers = (h={})=> CSRF ? Object.assign({'X-CSRFToken': CSRF}, h) : h;
 
-  const flash = (text,type='info',ms=2200)=>{
+  async function GET(url){
+    const r = await fetch(url, {cache:'no-store'});
+    const j = await r.json().catch(()=>null);
+    if(!j || j.ok===false) throw new Error(j?.error || 'Request failed');
+    return j.data ?? j;
+  }
+  async function POST(url, body){
+    const r = await fetch(url, {method:'POST', headers: headers({'Content-Type':'application/json'}), body: JSON.stringify(body||{})});
+    const j = await r.json().catch(()=>null);
+    if(!j || j.ok===false) throw new Error(j?.error || 'Request failed');
+    return j.data ?? j;
+  }
+
+  function flash(text, type='info', ms=2200){
     const host = document.querySelector('.flash-stack') || (()=>{const d=document.createElement('div');d.className='flash-stack';document.body.appendChild(d);return d})();
     const n = document.createElement('div'); n.className = `flash flash-${type}`; n.textContent = text; host.appendChild(n);
     setTimeout(()=> n.remove(), ms);
-  };
+  }
 
-  // ===== state =====
+  function fmtMoney(v, cur=''){
+    if(v==null||isNaN(v)) return '';
+    const s=(+v).toFixed(2);
+    return cur ? `${s} ${cur}` : s;
+  }
+  function fmtDate(s){
+    if(!s) return '';
+    // допускаем оба вида: "YYYY-MM-DD HH:mm:ss" или ISO
+    const d = isNaN(Date.parse(s)) ? null : new Date(s);
+    if(!d) return s;
+    const pad=n=>String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  // ====== elements ======
+  const table   = $('#pc-table');
+  const tbody   = $('#pc-list');
+  const searchI = $('#pc-search');
+  const btnRef  = $('#pc-refresh');
+  const btnNew  = $('#pc-create');
+  const countLb = $('#pc-count');
+
+  // modal
+  const modalEl = $('#pcEditModal');
+  const modal   = window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+
+  const fId      = $('#pc-f-id');
+  const fTitle   = $('#pc-f-title');
+  const fCode    = $('#pc-f-code');
+  const fEnabled = $('#pc-f-enabled');
+  const fRealm   = $('#pc-f-realm');
+  const fExp     = $('#pc-f-exp');
+  const fAmount  = $('#pc-f-amount');
+  const fCur     = $('#pc-f-currency');
+  const fTotal   = $('#pc-f-total');
+  const fPer     = $('#pc-f-per');
+  const fCD      = $('#pc-f-cd');
+  const fKit     = $('#pc-f-kit');
+  const fLeft    = $('#pc-f-left');
+
+  const btnSave  = $('#pc-f-save');
+  const btnDel   = $('#pc-f-delete');
+  const hintLb   = $('#pc-f-hint');
+
+  // groups
+  const gBody    = $('#pc-groups-body');
+  const gAdd     = $('#pc-g-add');
+  const gSave    = $('#pc-g-save');
+
+  // redemptions
+  const redsQ    = $('#pc-r-player');
+  const redsBtn  = $('#pc-r-search');
+  const redsBody = $('#pc-reds-body');
+  const redsCnt  = $('#pc-r-count');
+
+  // ====== state ======
   let rows = [];
-  let sortBy  = localStorage.getItem('promo.sortBy')  || 'created_at';
-  let sortDir = localStorage.getItem('promo.sortDir') || 'desc';
+  let filtered = [];
+  let sortKey = 'created_at';
+  let sortDir = 'desc';
 
-  // для «бережного» обновления uses_left между перезагрузками
-  const usesCache = new Map(); // code -> {uses_left, uses_total}
+  // сохранение количества активаций между перезагрузками
+  const USED_LS_KEY = 'sp_promo_used_counts';
+  function loadUsedMap(){ try{ return JSON.parse(localStorage.getItem(USED_LS_KEY)||'{}'); }catch(_){ return {}; } }
+  function saveUsedMap(map){ try{ localStorage.setItem(USED_LS_KEY, JSON.stringify(map)); }catch(_){} }
+  let usedMap = loadUsedMap(); // { [code_id]: number }
 
-  // ===== helpers =====
-  async function GET(url){
-    const r=await fetch(url,{cache:'no-store'});
-    const j=await r.json().catch(()=>({ok:false,error:'bad json'}));
-    if(!j.ok) throw new Error(j.error||('GET '+url));
-    return j.data;
-  }
-  async function POST(url, body){
-    const r=await fetch(url,{method:'POST',headers:xheaders({'Content-Type':'application/json'}),body:JSON.stringify(body||{})});
-    const j=await r.json().catch(()=>({ok:false,error:'bad json'}));
-    if(!j.ok) throw new Error(j.error||('POST '+url));
-    return j.data;
-  }
-
-  // ===== kits select =====
+  // ====== kits select ======
   async function loadKitsToSelect(){
     try{
-      const data = await GET('/admin/promocode/api/kits/list');
-      kitSel.innerHTML = `<option value="">— без кита —</option>` + (data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
-    }catch(e){ /* silent */ }
+      const list = await GET(API.kitsList);
+      fKit.innerHTML = `<option value="">— без кита —</option>` + (list||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+    }catch(e){ /* ignore */ }
   }
 
-  // ===== groups parser (LuckPerms) =====
-  // Ожидаемый формат в #pc-groups (textarea / input):
-  //   group1, vip:3600, hero:86400@server=anarchy@world=world_nether
-  // где :<seconds> — временная выдача, @server=..., @world=... — контексты
-  function parseGroupsInput(){
-    const el = $('pc-groups');
-    if(!el) return [];
-    const raw = (el.value||'').trim();
-    if(!raw) return [];
-    return raw.split(',').map(s=>s.trim()).filter(Boolean).map(tok=>{
-      // разбираем контексты
-      let server=null, world=null, name=tok, temp=null;
-      const ctx = [];
-      const atPos = tok.indexOf('@');
-      if(atPos>=0){ name = tok.slice(0,atPos); ctx.push(...tok.slice(atPos+1).split('@')); }
-      ctx.forEach(c=>{
-        const [k,v] = c.split('=',2).map(x=>x?.trim());
-        if(k==='server') server=v||null;
-        if(k==='world')  world=v||null;
-      });
-      // время
-      const m = name.match(/:(\d+)$/);
-      if(m){ temp = parseInt(m[1],10)||null; name = name.slice(0, name.lastIndexOf(':')); }
-      name = name.trim();
-      return name ? {group_name:name, temp_seconds: temp, context_server: server, context_world: world} : null;
-    }).filter(Boolean);
+  // ====== table render/sort/filter ======
+  function computeUsed(x){
+    // приоритет: локальный кэш -> (uses_total - uses_left) когда оба заданы -> 0
+    if(x.id!=null && usedMap[x.id]!=null) return usedMap[x.id];
+    if(x.uses_total!=null && x.uses_left!=null) return Math.max(0, Number(x.uses_total)-Number(x.uses_left));
+    return 0;
   }
 
-  // ===== table render/sort =====
+  function applyFilter(){
+    const q = (searchI.value||'').trim().toLowerCase();
+    filtered = !q ? [...rows] : rows.filter(r => String(r.code||'').toLowerCase().includes(q));
+    applySort();
+  }
+
+  function applySort(){
+    const dir = sortDir==='desc' ? -1 : 1;
+    const k = sortKey;
+    filtered.sort((a,b)=>{
+      let av=a[k], bv=b[k];
+      if(k==='amount' || k==='uses_left' || k==='uses_total'){ av=Number(av||0); bv=Number(bv||0); }
+      else if(k==='expires_at' || k==='created_at'){ av= new Date(av||0).getTime(); bv= new Date(bv||0).getTime(); }
+      return (av>bv?1:av<bv?-1:0) * dir;
+    });
+    renderTable();
+  }
+
   function renderTable(){
-    if(!rows.length){
-      listBody.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`;
-      return;
-    }
-    const out = rows.map(x=>{
-      const expired = x.expires_at ? (Date.parse(x.expires_at) < Date.now()) : false;
-      const uses    = ((x.uses_left ?? usesCache.get(x.code)?.uses_left) ?? 0);
-      const total   = ((x.uses_total ?? usesCache.get(x.code)?.uses_total) ?? 0);
-      // кэшируем актуальные значения
-      usesCache.set(x.code, {uses_left:uses, uses_total:total});
+    countLb.textContent = filtered.length ? `${filtered.length} шт.` : '—';
+    if(!filtered.length){ tbody.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`; return; }
 
-      const kitBadge = x.kit_name ? `<span class="badge text-bg-secondary">${x.kit_name}</span>` : '';
+    tbody.innerHTML = filtered.map(x=>{
+      const enabled = Number(x.enabled??1)===1;
+      const statusBadge = enabled
+        ? '<span class="badge text-bg-success">on</span>'
+        : '<span class="badge text-bg-secondary">off</span>';
+      const reward = (x.amount!=null ? fmtMoney(x.amount, x.currency_key||'') : '');
+      const limits = [
+        (x.uses_total!=null ? `всего: ${x.uses_total}` : 'всего: ∞'),
+        (x.per_player_uses!=null ? `pp: ${x.per_player_uses}` : null),
+        (x.cooldown_seconds!=null ? `cd: ${x.cooldown_seconds}s` : null)
+      ].filter(Boolean).join(', ');
+      const kit = x.kit_name ? `<span class="badge text-bg-secondary">${x.kit_name}</span>` : '';
+      const expires = x.expires_at ? fmtDate(x.expires_at) : '';
+      const used = computeUsed(x);
+
       return `
-        <tr class="${expired?'expired':''}">
+        <tr data-id="${x.id||''}">
           <td class="fw-semibold">${x.code}</td>
-          <td class="text-end">${x.amount!=null? (+x.amount).toFixed(2) : ''}</td>
-          <td>${x.currency_key||''}</td>
+          <td>${statusBadge}</td>
+          <td>${reward}</td>
           <td>${x.realm||'<span class="text-secondary">all</span>'}</td>
-          <td>${kitBadge}</td>
-          <td class="text-end">${uses}/${total}</td>
-          <td>${x.expires_at||''}</td>
-          <td class="text-secondary">${x.created_at||''}</td>
+          <td class="small text-secondary">${limits||''}</td>
+          <td>${expires}</td>
+          <td>${kit}</td>
+          <td>${used}</td>
           <td class="text-end">
             <div class="btn-group btn-group-sm">
-              <button class="btn btn-outline-secondary" data-action="redeems" data-code="${x.code}"><i class="bi bi-people me-1"></i>Активации</button>
-              <button class="btn btn-outline-danger" data-action="delete" data-code="${x.code}"><i class="bi bi-trash"></i></button>
+              <button class="btn btn-outline-light act-edit">Ред.</button>
+              <button class="btn btn-outline-secondary act-players" title="Активации"><i class="bi bi-people"></i></button>
+              <button class="btn btn-outline-danger act-del"><i class="bi bi-trash"></i></button>
             </div>
           </td>
-        </tr>`;
+        </tr>
+      `;
     }).join('');
-    listBody.innerHTML = out;
+
+    // bind row actions
+    $$('.act-edit', tbody).forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const id = Number(e.target.closest('tr')?.dataset.id);
+        openEdit(id);
+      });
+    });
+    $$('.act-del', tbody).forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        const tr = e.target.closest('tr'); const id = Number(tr?.dataset.id);
+        if(!id) return;
+        if(!confirm('Удалить промокод?')) return;
+        try{
+          await POST(API.remove, {id});
+          flash('Промокод удалён','success');
+          await reload();
+        }catch(err){ flash('Ошибка удаления: ' + (err.message||err),'error',3200); }
+      });
+    });
+    $$('.act-players', tbody).forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const id = Number(e.target.closest('tr')?.dataset.id);
+        openEdit(id, {focusRedemptions:true});
+      });
+    });
   }
 
-  function resort(){
-    const cmp = (a,b)=>{
-      let aa = a[sortBy], bb = b[sortBy];
-      if(sortBy==='amount' || sortBy==='uses_left' || sortBy==='uses_total'){
-        aa = Number(aa)||0; bb = Number(bb)||0; return aa-bb;
-      }
-      // дата — сортируем по времени если ISO
-      if(sortBy==='created_at' || sortBy==='expires_at'){
-        const ta = aa ? Date.parse(aa) : 0, tb = bb ? Date.parse(bb) : 0;
-        return ta - tb;
-      }
-      return String(aa??'').localeCompare(String(bb??''));
+  function bindSortHeaders(){
+    $$('th[data-sort]', table).forEach(th=>{
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', ()=>{
+        const k = th.getAttribute('data-sort');
+        if(sortKey===k){ sortDir = (sortDir==='asc' ? 'desc' : 'asc'); }
+        else { sortKey = k; sortDir = 'asc'; }
+        applySort();
+      });
+    });
+  }
+
+  // ====== modal helpers ======
+  function fillForm(x){
+    fId.value      = x?.id ?? '';
+    fTitle.textContent = x?.id ? `#${x.id}` : '(новый)';
+    fCode.value    = x?.code ?? '';
+    fEnabled.value = (x?.enabled ?? 1) ? '1' : '0';
+    fRealm.value   = x?.realm ?? '';
+    fExp.value     = x?.expires_at ? fmtDate(x.expires_at) : '';
+    fAmount.value  = x?.amount ?? '';
+    fCur.value     = x?.currency_key ?? 'rubs';
+    fTotal.value   = x?.uses_total ?? '';
+    fPer.value     = x?.per_player_uses ?? '';
+    fCD.value      = x?.cooldown_seconds ?? '';
+    fKit.value     = (x?.kit_id ?? '') || '';
+    fLeft.value    = x?.uses_left ?? '';
+    hintLb.textContent = '';
+  }
+
+  function collectForm(){
+    const id = fId.value ? Number(fId.value) : null;
+    const body = {
+      id,
+      code: (fCode.value||'').trim().toUpperCase(),
+      enabled: Number(fEnabled.value||'1'),
+      realm: (fRealm.value||'').trim() || null,
+      expires_at: (fExp.value||'').trim() || null,
+      amount: fAmount.value==='' ? null : Number(fAmount.value),
+      currency_key: (fCur.value||'').trim() || null,
+      uses_total: fTotal.value==='' ? null : Number(fTotal.value),
+      per_player_uses: fPer.value==='' ? null : Number(fPer.value),
+      cooldown_seconds: fCD.value==='' ? null : Number(fCD.value),
+      kit_id: !fKit.value ? null : Number(fKit.value)
     };
-    rows.sort(cmp);
-    if(sortDir==='desc') rows.reverse();
-    renderTable();
-    localStorage.setItem('promo.sortBy',  sortBy);
-    localStorage.setItem('promo.sortDir', sortDir);
+    return body;
   }
 
-  // ===== data io =====
-  async function loadPromos(){
-    listBody.innerHTML = `<tr><td colspan="9" class="text-secondary small">Загрузка…</td></tr>`;
+  async function openEdit(id, opts={}){
+    await loadKitsToSelect();
+    if(id){
+      try{
+        const data = await GET(API.details + '?id=' + encodeURIComponent(id));
+        fillForm(data);
+        await loadGroups(id);
+        await loadReds(id, opts.focusRedemptions ? (redsQ.value||'') : '');
+      }catch(e){
+        flash('Ошибка загрузки: ' + (e.message||e),'error',3200);
+        return;
+      }
+    }else{
+      fillForm({enabled:1,currency_key:'rubs'});
+      gBody.innerHTML = '';
+      redsBody.innerHTML = '';
+      redsCnt.textContent = '';
+    }
+    modal?.show();
+    if(opts.focusRedemptions){ redsQ?.focus(); }
+  }
+
+  // ====== groups ======
+  function groupsRender(list){
+    gBody.innerHTML = (list||[]).map((g,i)=>`
+      <tr>
+        <td class="text-secondary">${i+1}</td>
+        <td><input class="form-control form-control-sm g-name" value="${g.group_name||''}"></td>
+        <td style="max-width:140px"><input type="number" class="form-control form-control-sm g-temp" value="${g.temp_seconds??''}" placeholder="null"></td>
+        <td><input class="form-control form-control-sm g-server" value="${g.context_server||''}" placeholder="global"></td>
+        <td><input class="form-control form-control-sm g-world" value="${g.context_world||''}" placeholder="global"></td>
+        <td style="max-width:110px"><input type="number" class="form-control form-control-sm g-prio" value="${g.priority??(i+1)}"></td>
+        <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del" title="Удалить"><i class="bi bi-x"></i></button></td>
+      </tr>
+    `).join('');
+    $$('.g-del', gBody).forEach(btn=>{
+      btn.addEventListener('click', ()=>{ btn.closest('tr')?.remove(); });
+    });
+  }
+  async function loadGroups(codeId){
     try{
-      const data = await GET('/admin/promocode/api/promo/list');
-      rows = Array.isArray(data) ? data : [];
-      resort();
+      const list = await GET(API.groupsList + '?code_id=' + encodeURIComponent(codeId));
+      groupsRender(list||[]);
     }catch(e){
-      listBody.innerHTML = `<tr><td colspan="9" class="text-danger">${e.message||e}</td></tr>`;
+      groupsRender([]);
     }
   }
-
-  async function createPromo(){
-    const body = {
-      code:        ($('pc-code').value||'').trim().toUpperCase(),
-      amount:      parseFloat($('pc-amount').value||'0'),
-      uses:        parseInt($('pc-uses').value||'1',10)||1,
-      currency_key:$('pc-currency').value||'rubs',
-      realm:       ($('pc-realm').value||'').trim()||null,
-      kit_id:      $('pc-kit').value || null,
-      expires_at:  $('pc-exp').value || null,
-      groups:      parseGroupsInput() // <-- добавили группы
-    };
-    if(!body.code){ flash('Укажите код','error'); return; }
-    try{
-      const data = await POST('/admin/promocode/api/promo/create', body);
-      flash(`Создан промокод: ${data.code}`,'success');
-      await loadPromos();
-      // очистка только полей с риском случайной «массовой» генерации
-      $('pc-code').value=''; $('pc-amount').value=''; $('pc-uses').value='1'; $('pc-exp').value='';
-    }catch(e){ flash('Ошибка: '+(e.message||e),'error',3200); }
+  function groupsCollect(){
+    const out=[];
+    $$('#pc-groups-body tr').forEach(tr=>{
+      out.push({
+        group_name: $('.g-name', tr).value.trim(),
+        temp_seconds: (v=> v===''?null:Number(v))($('.g-temp', tr).value),
+        context_server: (v=> v===''?null:v)($('.g-server', tr).value.trim()),
+        context_world:  (v=> v===''?null:v)($('.g-world', tr).value.trim()),
+        priority: (v=> v===''?1:Number(v))($('.g-prio', tr).value)
+      });
+    });
+    return out.filter(x=>x.group_name);
   }
 
-  async function deletePromo(code){
-    if(!confirm(`Удалить промокод ${code}?`)) return;
+  // ====== redemptions ======
+  async function loadReds(codeId, q){
+    redsBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Загрузка…</td></tr>`;
     try{
-      await POST('/admin/promocode/api/promo/delete', {code});
-      flash('Удалено','success');
-      await loadPromos();
-    }catch(e){ flash('Не удалось удалить: '+(e.message||e),'error',3200); }
-  }
-
-  // ===== redeems modal =====
-  function ensureModal(){
-    let m = $('promo-redeems-modal');
-    if(m) return m;
-    m = document.createElement('div');
-    m.id = 'promo-redeems-modal';
-    m.innerHTML = `
-      <div class="modal fade" tabindex="-1">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title">Активации: <span class="code"></span></h5>
-              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-0">
-              <div class="table-responsive">
-                <table class="table table-dark table-sm align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>Игрок</th><th>UUID</th><th>IP</th><th>Дата</th>
-                    </tr>
-                  </thead>
-                  <tbody class="redeems-body">
-                    <tr><td colspan="4" class="text-secondary small p-3">Загрузка…</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    document.body.appendChild(m);
-    return m;
-  }
-
-  async function showRedeems(code){
-    const host = ensureModal();
-    const modalEl = qs('.modal', host);
-    qs('.code', host).textContent = code;
-    const body = qs('.redeems-body', host);
-    body.innerHTML = `<tr><td colspan="4" class="text-secondary small p-3">Загрузка…</td></tr>`;
-    try{
-      const data = await GET('/admin/promocode/api/promo/redeems?code='+encodeURIComponent(code));
-      const list = Array.isArray(data) ? data : (data.items||[]);
+      const data = await GET(API.reds + '?code_id=' + encodeURIComponent(codeId) + (q?('&q='+encodeURIComponent(q)):''));
+      const list = Array.isArray(data) ? data : [];
       if(!list.length){
-        body.innerHTML = `<tr><td colspan="4" class="text-secondary small p-3">Пока нет активаций</td></tr>`;
+        redsBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Нет активаций</td></tr>`;
       }else{
-        body.innerHTML = list.map(r=>`
+        redsBody.innerHTML = list.map(r=>`
           <tr>
-            <td class="fw-semibold">${r.username||''}</td>
+            <td>${fmtDate(r.created_at)}</td>
+            <td>${r.username||''}</td>
             <td class="text-secondary small">${r.uuid||''}</td>
+            <td>${r.granted_amount!=null ? fmtMoney(r.granted_amount, r.currency_key||'') : ''}</td>
+            <td>${r.currency_key||''}</td>
             <td class="text-secondary small">${r.ip||''}</td>
-            <td>${r.created_at||''}</td>
           </tr>
         `).join('');
       }
+      redsCnt.textContent = `${list.length} шт.`;
+      // обновим локальный кэш использований
+      const cid = Number(fId.value||0);
+      if(cid){ usedMap[cid] = list.length; saveUsedMap(usedMap); }
     }catch(e){
-      body.innerHTML = `<tr><td colspan="4" class="text-danger p-3">${e.message||e}</td></tr>`;
+      redsBody.innerHTML = `<tr><td colspan="6" class="text-danger small">${e.message||e}</td></tr>`;
+      redsCnt.textContent = '';
     }
-    // bootstrap modal
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    modal.show();
   }
 
-  // ===== events =====
-  $('pc-create')?.addEventListener('click', createPromo);
-  $('pc-refresh')?.addEventListener('click', loadPromos);
+  // ====== actions ======
+  async function reload(){
+    tbody.innerHTML = `<tr><td colspan="9" class="text-secondary small">Загрузка…</td></tr>`;
+    try{
+      rows = await GET(API.list);
+      applyFilter();
+    }catch(e){
+      tbody.innerHTML = `<tr><td colspan="9" class="text-danger small">${e.message||e}</td></tr>`;
+    }
+  }
 
-  // сортировка по клику на заголовок
-  qsa('[data-sort]').forEach(th=>{
-    th.style.cursor='pointer';
-    th.addEventListener('click', ()=>{
-      const k = th.getAttribute('data-sort');
-      if(sortBy===k){ sortDir = (sortDir==='asc'?'desc':'asc'); } else { sortBy=k; sortDir='asc'; }
-      resort();
-    });
+  // create new
+  btnNew?.addEventListener('click', ()=> openEdit(null));
+
+  // save (create/update)
+  btnSave?.addEventListener('click', async ()=>{
+    const body = collectForm();
+    if(!body.code){ flash('Укажите код','error'); fCode.focus(); return; }
+    try{
+      if(body.id){ await POST(API.update, body); }
+      else { const r = await POST(API.create, body); if(r?.id) fId.value = r.id; }
+      flash('Сохранено','success');
+      await reload();
+      // перезагрузим группы/активации если открыто
+      if(body.id){ await loadGroups(body.id); await loadReds(body.id, redsQ.value||''); }
+    }catch(e){ flash('Ошибка: ' + (e.message||e),'error',3200); }
   });
 
-  // делегирование действий в таблице
-  listBody?.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button[data-action]');
-    if(!btn) return;
-    const code = btn.dataset.code;
-    const act  = btn.dataset.action;
-    if(act==='delete')  deletePromo(code);
-    if(act==='redeems') showRedeems(code);
+  // delete
+  btnDel?.addEventListener('click', async ()=>{
+    const id = Number(fId.value||0);
+    if(!id){ flash('Сначала сохраните промокод','error'); return; }
+    if(!confirm('Удалить промокод?')) return;
+    try{
+      await POST(API.remove, {id});
+      flash('Удалено','success');
+      modal?.hide();
+      await reload();
+    }catch(e){ flash('Ошибка удаления: ' + (e.message||e),'error',3200); }
   });
 
-  // автообновление при возвращении на вкладку — чтобы uses_* «не терялись»
-  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') loadPromos(); });
+  // groups: add/save
+  gAdd?.addEventListener('click', ()=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="text-secondary">#</td>
+      <td><input class="form-control form-control-sm g-name" placeholder="group"></td>
+      <td style="max-width:140px"><input type="number" class="form-control form-control-sm g-temp" placeholder="null"></td>
+      <td><input class="form-control form-control-sm g-server" placeholder="global"></td>
+      <td><input class="form-control form-control-sm g-world" placeholder="global"></td>
+      <td style="max-width:110px"><input type="number" class="form-control form-control-sm g-prio" value="1"></td>
+      <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del"><i class="bi bi-x"></i></button></td>
+    `;
+    gBody.appendChild(tr);
+    $('.g-del', tr).addEventListener('click', ()=> tr.remove());
+  });
 
-  // ===== boot =====
-  await loadKitsToSelect();
-  await loadPromos();
+  gSave?.addEventListener('click', async ()=>{
+    const id = Number(fId.value||0);
+    if(!id){ flash('Сначала сохраните промокод','error'); return; }
+    const groups = groupsCollect();
+    try{
+      await POST(API.groupsSave, {code_id:id, groups});
+      flash('Группы сохранены','success');
+      await loadGroups(id);
+    }catch(e){ flash('Ошибка сохранения групп: ' + (e.message||e),'error',3200); }
+  });
+
+  // redemptions search
+  redsBtn?.addEventListener('click', ()=>{
+    const id = Number(fId.value||0);
+    if(id) loadReds(id, redsQ.value||'');
+  });
+
+  // search + refresh
+  searchI?.addEventListener('input', applyFilter);
+  btnRef?.addEventListener('click', reload);
+
+  // sort headers
+  bindSortHeaders();
+
+  // initial load
+  reload();
+
+  // expose for debug (optional)
+  window.PC = {
+    openEdit,
+    reload,
+    groups:{ load:loadGroups, save:()=>gSave.click(), addRow:()=>gAdd.click() },
+    redemptions:{ reload:()=>redsBtn.click() }
+  };
 })();
 </script>
