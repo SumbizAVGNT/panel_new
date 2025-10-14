@@ -6,7 +6,6 @@
   const $  = (s, r=document)=>r.querySelector(s);
   const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
 
-  // пробуем два базовых пути API
   const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
   const chooseBase = async ()=>{
     for (const base of API_BASES){
@@ -15,7 +14,6 @@
         if (r.ok) return base;
       }catch(_){}
     }
-    // если оба не ответили ok — вернём первый для локалки
     return API_BASES[0];
   };
 
@@ -37,7 +35,48 @@
   let API = '';
   let list = [];
   let sortBy = 'id', sortDir = 'desc';
-  let modal, els = {};
+  let modalBS = null;           // bootstrap instance (если есть)
+  let backdropEl = null;        // fallback backdrop
+  const els = {};
+
+  // ---------- Modal wrapper (BS or fallback) ----------
+  const Modal = {
+    init(){
+      if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m);
+      // навесим закрытие по data-bs-dismiss в любом случае (fallback friendly)
+      $$('[data-bs-dismiss="modal"]', els.m).forEach(btn=>{
+        btn.addEventListener('click', ()=>Modal.hide());
+      });
+      // Esc в fallback
+      document.addEventListener('keydown', (e)=>{
+        if(e.key==='Escape' && Modal.isShown() && !modalBS) Modal.hide();
+      });
+    },
+    isShown(){
+      return modalBS ? !!els.m.classList.contains('show') : els.m.style.display==='block';
+    },
+    show(){
+      if (modalBS) { modalBS.show(); return; }
+      els.m.classList.add('show');
+      els.m.style.display='block';
+      els.m.removeAttribute('aria-hidden');
+      document.body.classList.add('modal-open');
+      if(!backdropEl){
+        backdropEl = document.createElement('div');
+        backdropEl.className='modal-backdrop fade show';
+        document.body.appendChild(backdropEl);
+        backdropEl.addEventListener('click', ()=>Modal.hide());
+      }
+    },
+    hide(){
+      if (modalBS) { modalBS.hide(); return; }
+      els.m.classList.remove('show');
+      els.m.style.display='none';
+      els.m.setAttribute('aria-hidden','true');
+      document.body.classList.remove('modal-open');
+      if(backdropEl){ backdropEl.remove(); backdropEl = null; }
+    }
+  };
 
   // ---------- grab ----------
   function grab(){
@@ -75,9 +114,6 @@
     els.rBtn   = $('#pc-r-search');
     els.rCount = $('#pc-r-count');
     els.rBody  = $('#pc-reds-body');
-
-    // bootstrap modal
-    if (window.bootstrap) modal = bootstrap.Modal.getOrCreateInstance(els.m);
   }
 
   // ---------- kits ----------
@@ -144,7 +180,7 @@
     }));
     $$('.act-del', els.body).forEach(btn=>btn.addEventListener('click', onRowDelete));
 
-    // быстрый копи по клику на первую ячейку
+    // быстрый копи по клику на код
     els.body.addEventListener('click', (e)=>{
       const td = e.target.closest('td'); const tr = e.target.closest('tr');
       if(!td || !tr) return;
@@ -188,7 +224,7 @@
     const row = list.find(x=>x.id===id);
     await loadKitsIntoSelect();
     fillModal(row);
-    modal ? modal.show() : els.m.classList.add('show');
+    Modal.show();
   }
 
   async function onRowDelete(e){
@@ -221,7 +257,6 @@
 
     try{
       if(!id){
-        // create (upsert)
         const created = await json(API+'/promo/create', {method:'POST', body: JSON.stringify({
           code: body.code || undefined,
           amount: body.amount || 0,
@@ -246,7 +281,7 @@
     }
   }
 
-  // ---------- groups (LuckPerms) ----------
+  // ---------- groups ----------
   function rowGroupTpl(i,g){
     return `<tr>
       <td class="text-secondary">${i+1}</td>
@@ -348,7 +383,7 @@
     els.btnCreate.addEventListener('click', async ()=>{
       await loadKitsIntoSelect();
       fillModal(null);
-      modal && modal.show();
+      Modal.show();
     });
 
     els.mSave.addEventListener('click', saveCurrent);
@@ -358,7 +393,7 @@
       if(!confirm('Удалить промокод?')) return;
       try{
         await json(API+'/promo/delete',{method:'POST', body:JSON.stringify({id})});
-        modal && modal.hide();
+        Modal.hide();
         await loadList();
       }catch(err){ alert('Ошибка: '+(err.message||err)); }
     });
@@ -373,6 +408,7 @@
   // ---------- init ----------
   (async function init(){
     grab();
+    Modal.init();
     API = await chooseBase();
     bind();
     await loadKitsIntoSelect();
