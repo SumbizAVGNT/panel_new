@@ -29,7 +29,9 @@ __all__ = [
     "get_points_connection",
     "get_easypayments_connection",
     "get_litebans_connection",
-    # общая схема/настройки
+    "get_bcases_connection",
+    "get_leader_connection",
+    # общая схема/настройки (panel)
     "init_db",
     "get_setting",
     "set_setting",
@@ -48,6 +50,20 @@ __all__ = [
     "stats_save_snapshot",
     "stats_get_latest",
     "stats_get_series",
+    # доменные хелперы (LuckPerms / EasyPayments / LiteBans / Leaderboards / BCases)
+    "lp_find_uuid",
+    "lp_get_player",
+    "lp_get_user_permissions",
+    "lp_get_group_permissions",
+    "ep_get_customer_by_name",
+    "ep_get_payments_by_customer",
+    "ep_get_purchases_by_payment",
+    "lb_list_bans_by_uuid",
+    "lb_list_history_by_uuid",
+    "leader_top_hours",
+    "leader_top_balance",
+    "leader_suffix_by_uuid",
+    "bcases_list_for_uuid_or_name",
     # эксепшены
     "IntegrityError",
 ]
@@ -131,7 +147,7 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
     {prefix}{key} with fallbacks:
       AUTHME_  -> DB_
       LUCKPERMS-> AUTHME_ -> DB_
-      POINTS_/EASYPAYMENTS_/LITEBANS_ -> DB_
+      POINTS_/EASYPAYMENTS_/LITEBANS_/BCASES_/LEADER_ -> DB_
       SSL/SSL_CA also fallback to DB_.
     """
     val = os.environ.get(f"{prefix}{key}")
@@ -140,10 +156,9 @@ def _env_or(prefix: str, key: str, default: Optional[str] = None) -> Optional[st
         val = os.environ.get(f"DB_{key}")
 
     if val is None and prefix == "LUCKPERMS_" and key in {"HOST", "PORT", "USER", "PASSWORD"}:
-        # фикс скобок + переносов
         val = os.environ.get(f"AUTHME_{key}") or os.environ.get(f"DB_{key}")
 
-    if val is None and prefix in {"POINTS_", "EASYPAYMENTS_", "LITEBANS_"} and key in {"HOST", "PORT", "USER", "PASSWORD"}:
+    if val is None and prefix in {"POINTS_", "EASYPAYMENTS_", "LITEBANS_", "BCASES_", "LEADER_"} and key in {"HOST", "PORT", "USER", "PASSWORD"}:
         val = os.environ.get(f"DB_{key}")
 
     # SSL/SSL_MODE/SSL_CA fallback к DB_
@@ -166,6 +181,10 @@ def _load_env(prefix: str):
         default_db = "easypayments"
     elif prefix == "LITEBANS_":
         default_db = "litebansBD"
+    elif prefix == "BCASES_":
+        default_db = "bcases"
+    elif prefix == "LEADER_":
+        default_db = "leader"
     else:
         default_db = "panel"
 
@@ -233,6 +252,12 @@ def get_easypayments_connection() -> MySQLConnection:
 
 def get_litebans_connection() -> MySQLConnection:
     return _mysql_connect(prefix="LITEBANS_", create_if_missing=False)
+
+def get_bcases_connection() -> MySQLConnection:
+    return _mysql_connect(prefix="BCASES_", create_if_missing=False)
+
+def get_leader_connection() -> MySQLConnection:
+    return _mysql_connect(prefix="LEADER_", create_if_missing=False)
 
 
 # -------------------------
@@ -343,8 +368,8 @@ CREATE TABLE IF NOT EXISTS post_targets (
     INDEX idx_pt_status (send_status),
     INDEX idx_pt_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    
-    -- ===== PROMO / KITS =====
+
+-- ===== PROMO / KITS =====
 CREATE TABLE IF NOT EXISTS promo_kits (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(191) NOT NULL,
@@ -497,7 +522,6 @@ def save_server_stats(conn: MySQLConnection, stats: dict, *, collected_at: datet
         tps.get("1m"),
         tps.get("5m"),
         tps.get("15m"),
-        # tps.mspt в твоём норме может быть в tps.mspt или в корне как mspt
         (tps.get("mspt") if isinstance(tps, dict) else None) or stats.get("mspt"),
         heap.get("used"),
         heap.get("max"),
@@ -512,8 +536,7 @@ def save_server_stats(conn: MySQLConnection, stats: dict, *, collected_at: datet
             realm_id, collected_at,
             players_online, players_max,
             tps_1m, tps_5m, tps_15m, mspt,
-            heap_used, heap_max,
-            cpu_sys, cpu_proc,
+            heap_used, heap_max, cpu_sys, cpu_proc,
             payload_json
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
@@ -626,28 +649,31 @@ def purge_old_stats(conn: MySQLConnection, days: int = 30) -> int:
 def _as_dt(x: Any) -> datetime:
     if isinstance(x, datetime):
         return x
-    # ожидаем ISO-строки «YYYY-MM-DD HH:MM:SS» либо «YYYY-MM-DDTHH:MM:SS»
     s = str(x).replace("T", " ")
     return datetime.fromisoformat(s)
+
+def _num(v):
+    try:
+        if v is None: return None
+        if isinstance(v, (int, float)): return v
+        s = str(v).strip()
+        if s == "": return None
+        if "." in s: return float(s)
+        return int(s)
+    except Exception:
+        return None
 
 
 # =========================================================
 # Совместимые функции, которые ожидает gameservers.py
 # =========================================================
 
-# 1) ensure_stats_schema -> init_stats_schema
 def ensure_stats_schema(conn: MySQLConnection) -> None:
     init_stats_schema(conn)
 
-# 2) stats_save_snapshot -> save_server_stats
 def stats_save_snapshot(conn: MySQLConnection, realm: str, data: Dict[str, Any]) -> int:
-    """
-    gameservers.py передаёт нормализованный слепок вместе с realm.
-    Гарантируем, что поле realm есть в объекте.
-    """
     payload = dict(data or {})
     payload["realm"] = payload.get("realm") or realm
-    # ts для совместимости: если нет, фронтирует серверное «сейчас»
     if "ts" not in payload:
         try:
             payload["ts"] = int(time.time())
@@ -655,7 +681,6 @@ def stats_save_snapshot(conn: MySQLConnection, realm: str, data: Dict[str, Any])
             pass
     return save_server_stats(conn, payload)
 
-# 3) stats_get_latest: вернуть последний нормализованный объект для realm
 def stats_get_latest(conn: MySQLConnection, realm: str) -> Optional[Dict[str, Any]]:
     rid = _realm_id(conn, realm)
     row = conn.query_one(
@@ -673,7 +698,6 @@ def stats_get_latest(conn: MySQLConnection, realm: str) -> Optional[Dict[str, An
     if not row:
         return None
 
-    # если есть payload_json — предпочтём его
     if row.get("payload_json"):
         try:
             payload = json.loads(row["payload_json"] or "{}")
@@ -685,7 +709,6 @@ def stats_get_latest(conn: MySQLConnection, realm: str) -> Optional[Dict[str, An
         except Exception:
             pass
 
-    # fallback: собрать норму из плоских полей
     return {
         "realm": realm,
         "ts": int(row.get("ts_unix") or time.time()),
@@ -703,18 +726,6 @@ def stats_get_latest(conn: MySQLConnection, realm: str) -> Optional[Dict[str, An
         "fs": {},
     }
 
-def _num(v):
-    try:
-        if v is None: return None
-        if isinstance(v, (int, float)): return v
-        s = str(v).strip()
-        if s == "": return None
-        if "." in s: return float(s)
-        return int(s)
-    except Exception:
-        return None
-
-# 4) stats_get_series: временной ряд с даунсемплингом
 def stats_get_series(
     conn: MySQLConnection,
     realm: str,
@@ -726,10 +737,9 @@ def stats_get_series(
 ) -> List[Dict[str, Any]]:
     """
     Возвращает [{"ts": <unix>, <field>: value, ...}, ...]
-    Поля соответствуют колонкам stats_samples, но в snake_case как в БД:
+    Разрешённые поля:
       mspt, tps_1m, tps_5m, tps_15m, players_online,
-      heap_used, heap_max, cpu_sys (==cpu_system_load), cpu_proc (==cpu_process_load)
-    Для совместимости с фронтом можно прокинуть cpu_system_load/cpu_process_load — добавим дубликаты в ответе.
+      heap_used, heap_max, cpu_sys, cpu_proc
     """
     allowed = {
         "mspt","tps_1m","tps_5m","tps_15m","players_online",
@@ -751,18 +761,13 @@ def stats_get_series(
         where.append("collected_at >= FROM_UNIXTIME(?)")
         params.append(int(since_ts))
 
-    # агрегатор под поле
     def agg_sql(col: str) -> str:
-        if col in ("heap_max",):
+        if col in ("heap_max", "players_online"):
             return f"MAX({col}) AS {col}"
-        if col in ("players_online",):
-            return f"MAX({col}) AS {col}"
-        # остальное среднее
         return f"AVG({col}) AS {col}"
 
     bucket = f"(FLOOR(UNIX_TIMESTAMP(collected_at)/{step})*{step})"
-    select_cols = [f"{bucket} AS ts"]
-    select_cols += [agg_sql(c) for c in fset]
+    select_cols = [f"{bucket} AS ts"] + [agg_sql(c) for c in fset]
 
     sql = f"""
         SELECT {", ".join(select_cols)}
@@ -773,20 +778,172 @@ def stats_get_series(
         LIMIT ?
     """
     params.append(int(limit or 720))
-
     rows = conn.query_all(sql, params) or []
 
-    # нормализуем типы + добавим cpu_* aliases в стиле фронта (system/process)
     out: List[Dict[str, Any]] = []
     for r in rows:
         item: Dict[str, Any] = {"ts": int(r["ts"])}
         for k in fset:
-            v = r.get(k)
-            item[k] = _num(v)
-        # дубли для фронта:
+            item[k] = _num(r.get(k))
         if "cpu_sys" in item:
             item["cpu_system_load"] = item["cpu_sys"]
         if "cpu_proc" in item:
             item["cpu_process_load"] = item["cpu_proc"]
         out.append(item)
     return out
+
+
+# =========================================================
+# Доменные хелперы по дампу (LuckPerms / EasyPayments / LiteBans / AJLB / BCases)
+# =========================================================
+
+# ---------- LuckPerms (donate) ----------
+def lp_find_uuid(lp: MySQLConnection, username: str) -> Optional[str]:
+    """Вернёт UUID по нику из luckperms_players."""
+    row = lp.query_one("SELECT uuid FROM luckperms_players WHERE username = ? LIMIT 1", (username,))
+    return (row or {}).get("uuid") if row else None
+
+def lp_get_player(lp: MySQLConnection, uuid_or_name: str) -> Optional[dict]:
+    """Инфо о игроке: uuid, username, primary_group + все его user_permissions."""
+    uuid = uuid_or_name
+    if "-" not in uuid_or_name or len(uuid_or_name) != 36:
+        uuid = lp_find_uuid(lp, uuid_or_name) or ""
+    if not uuid:
+        return None
+    p = lp.query_one("SELECT uuid, username, primary_group FROM luckperms_players WHERE uuid = ? LIMIT 1", (uuid,))
+    if not p:
+        return None
+    perms = lp.query_all(
+        "SELECT permission, value, server, world, expiry, contexts FROM luckperms_user_permissions WHERE uuid = ?",
+        (uuid,),
+    )
+    p["permissions"] = perms
+    return p
+
+def lp_get_user_permissions(lp: MySQLConnection, uuid: str) -> List[dict]:
+    return lp.query_all(
+        "SELECT permission, value, server, world, expiry, contexts FROM luckperms_user_permissions WHERE uuid = ?",
+        (uuid,),
+    )
+
+def lp_get_group_permissions(lp: MySQLConnection, group: str) -> List[dict]:
+    return lp.query_all(
+        "SELECT permission, value, server, world, expiry, contexts FROM luckperms_group_permissions WHERE name = ?",
+        (group,),
+    )
+
+# ---------- EasyPayments ----------
+def ep_get_customer_by_name(ep: MySQLConnection, username: str) -> Optional[dict]:
+    return ep.query_one(
+        "SELECT player_name, player_uuid, created_at, updated_at FROM easypayments_customers WHERE player_name = ?",
+        (username,),
+    )
+
+def ep_get_payments_by_customer(ep: MySQLConnection, username: str) -> List[dict]:
+    return ep.query_all(
+        "SELECT * FROM easypayments_payments WHERE customer_id = ? ORDER BY created_at ASC",
+        (username,),
+    )
+
+def ep_get_purchases_by_payment(ep: MySQLConnection, payment_id: int) -> List[dict]:
+    rows = ep.query_all(
+        "SELECT * FROM easypayments_purchases WHERE payment_id = ? ORDER BY id ASC",
+        (int(payment_id),),
+    )
+    # попытка распарсить JSON колонки
+    for r in rows:
+        for key in ("commands", "responses"):
+            try:
+                r[key] = json.loads(r.get(key) or "[]")
+            except Exception:
+                pass
+    return rows
+
+# ---------- LiteBans ----------
+def lb_list_bans_by_uuid(lite: MySQLConnection, uuid: str, *, limit: int = 50) -> List[dict]:
+    return lite.query_all(
+        """
+        SELECT id, uuid, ip, reason, banned_by_uuid, banned_by_name,
+               removed_by_uuid, removed_by_name, removed_by_reason, removed_by_date,
+               time, until, template, server_scope, server_origin,
+               (silent+0) AS silent, (ipban+0) AS ipban, (ipban_wildcard+0) AS ipban_wildcard, (active+0) AS active
+        FROM litebans_bans
+        WHERE uuid = ?
+        ORDER BY time DESC
+        LIMIT ?
+        """,
+        (uuid, int(limit)),
+    )
+
+def lb_list_history_by_uuid(lite: MySQLConnection, uuid: str, *, limit: int = 50) -> List[dict]:
+    return lite.query_all(
+        """
+        SELECT id, date, name, uuid, ip
+        FROM litebans_history
+        WHERE uuid = ?
+        ORDER BY date DESC
+        LIMIT ?
+        """,
+        (uuid, int(limit)),
+    )
+
+# ---------- AJ Leaderboards (leader) ----------
+def leader_top_hours(leader: MySQLConnection, *, limit: int = 10) -> List[dict]:
+    """Топ по наигранным часам (ajlb_statistic_hours_played.value)."""
+    rows = leader.query_all(
+        """
+        SELECT id AS uuid, namecache AS username, value AS hours, suffixcache, prefixcache, displaynamecache
+        FROM ajlb_statistic_hours_played
+        ORDER BY CAST(value AS DECIMAL(65,2)) DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    return rows
+
+def leader_top_balance(leader: MySQLConnection, *, limit: int = 10) -> List[dict]:
+    rows = leader.query_all(
+        """
+        SELECT id AS uuid, namecache AS username, value AS balance, suffixcache, prefixcache, displaynamecache
+        FROM ajlb_vault_eco_balance
+        ORDER BY CAST(value AS DECIMAL(65,2)) DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    return rows
+
+def leader_suffix_by_uuid(leader: MySQLConnection, uuid: str) -> Optional[str]:
+    """Вытянуть кэшированный суффикс из ajlb_extras (placeholder=vault_ranksuffix)."""
+    row = leader.query_one(
+        "SELECT value FROM ajlb_extras WHERE id = ? AND placeholder = 'vault_ranksuffix' LIMIT 1",
+        (uuid,),
+    )
+    return (row or {}).get("value") if row else None
+
+# ---------- BCases ----------
+def bcases_list_for_uuid_or_name(bc: MySQLConnection, uuid_or_name: str, *, limit: int = 100) -> List[dict]:
+    """Строки из bcases_users по uuid или name (сортировка по issue_date)."""
+    if "-" in uuid_or_name and len(uuid_or_name) == 36:
+        rows = bc.query_all(
+            """
+            SELECT name, uuid, id AS case_id, issue_date, removal_date
+            FROM bcases_users
+            WHERE uuid = ?
+            ORDER BY issue_date DESC
+            LIMIT ?
+            """,
+            (uuid_or_name, int(limit)),
+        )
+    else:
+        rows = bc.query_all(
+            """
+            SELECT name, uuid, id AS case_id, issue_date, removal_date
+            FROM bcases_users
+            WHERE name = ?
+            ORDER BY issue_date DESC
+            LIMIT ?
+            """,
+            (uuid_or_name, int(limit)),
+        )
+    return rows

@@ -5,9 +5,10 @@ import os
 import re
 import json
 import random
+from datetime import datetime
 from typing import Optional, Iterable, List, Tuple
 
-from flask import Blueprint, render_template, request, jsonify, current_app
+from flask import Blueprint, render_template, request, jsonify, current_app, g, session
 
 from ...decorators import login_required
 from ...database import get_db_connection, MySQLConnection
@@ -18,6 +19,34 @@ bp = Blueprint("promocode", __name__, url_prefix="/promocode")
 # =========================================================
 # utils
 # =========================================================
+
+def _ok(data=None, **extra):
+    res = {"ok": True}
+    if data is not None:
+        res["data"] = data
+    res.update(extra)
+    return jsonify(res)
+
+def _err(msg: str, code: int = 400, **extra):
+    res = {"ok": False, "error": msg}
+    if extra:
+        res.update(extra)
+    return jsonify(res), code
+
+def _actor_name() -> str:
+    # пробуем вытащить того, кто создаёт код
+    for key in ("username", "name", "login"):
+        if isinstance(getattr(g, "user", None), dict) and key in g.user:
+            return str(g.user[key])
+        if key in session:
+            return str(session[key])
+    # иногда g.user может быть объектом с .username
+    u = getattr(g, "user", None)
+    if u is not None:
+        for key in ("username", "name", "login"):
+            if hasattr(u, key):
+                return str(getattr(u, key))
+    return "admin"
 
 def _rand_code(n: int = 10) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -83,6 +112,26 @@ def _try_open_candidates(candidates: List[str]) -> Tuple[Optional[str], Optional
     current_app.logger.warning("Items file not found. Tried %s", ", ".join(tried))
     return None, None
 
+def _kit_items(conn: MySQLConnection, kit_id: int) -> List[dict]:
+    items = _rows(
+        conn,
+        """
+        SELECT id, namespace, item_id, amount, display_name,
+               enchants_json, nbt_json, slot
+        FROM promo_kit_items
+        WHERE kit_id = ?
+        ORDER BY COALESCE(slot, 999), id
+        """,
+        (kit_id,),
+    )
+    for it in items:
+        for col in ("enchants_json", "nbt_json"):
+            try:
+                it[col[:-5] + "s"] = json.loads(it[col] or "[]")
+            except Exception:
+                it[col[:-5] + "s"] = []
+    return items
+
 # =========================================================
 # UI
 # =========================================================
@@ -127,7 +176,7 @@ def api_items_vanilla():
             "icon": f"{base}/{iid}.png",
             "ns": "minecraft",
         })
-    return jsonify({"ok": True, "data": out})
+    return _ok(out)
 
 @bp.get("/api/items/custom")
 @login_required
@@ -165,7 +214,7 @@ def api_items_custom():
             "ns": ns,
             "full": f"{ns}:{iid}",
         })
-    return jsonify({"ok": True, "data": out})
+    return _ok(out)
 
 # =========================================================
 # API: kits
@@ -177,26 +226,8 @@ def api_kits_list():
     with get_db_connection() as conn:
         kits = _rows(conn, "SELECT id, name, description, created_at FROM promo_kits ORDER BY id DESC")
         for k in kits:
-            items = _rows(
-                conn,
-                """
-                SELECT id, namespace, item_id, amount, display_name,
-                       enchants_json, nbt_json, slot
-                FROM promo_kit_items
-                WHERE kit_id = ?
-                ORDER BY COALESCE(slot, 999), id
-                """,
-                (k["id"],),
-            )
-            for it in items:
-                # enchants / nbt -> lists
-                for col in ("enchants_json", "nbt_json"):
-                    try:
-                        it[col[:-5] + "s"] = json.loads(it[col] or "[]")
-                    except Exception:
-                        it[col[:-5] + "s"] = []
-            k["items"] = items
-        return jsonify({"ok": True, "data": kits})
+            k["items"] = _kit_items(conn, k["id"])
+        return _ok(kits)
 
 @bp.post("/api/kits/save")
 @login_required
@@ -208,7 +239,7 @@ def api_kits_save():
     items = js.get("items") or []
 
     if not name:
-        return jsonify({"ok": False, "error": "name is required"}), 400
+        return _err("name is required")
 
     with get_db_connection() as conn:
         if kit_id:
@@ -249,7 +280,7 @@ def api_kits_save():
                 bulk,
             )
         conn.commit()
-        return jsonify({"ok": True, "data": {"id": kid}})
+        return _ok({"id": kid})
 
 @bp.post("/api/kits/delete")
 @login_required
@@ -257,15 +288,15 @@ def api_kits_delete():
     js = request.get_json(silent=True) or {}
     kit_id = js.get("id")
     if not kit_id:
-        return jsonify({"ok": False, "error": "id is required"}), 400
+        return _err("id is required")
     with get_db_connection() as conn:
         conn.execute("DELETE FROM promo_kit_items WHERE kit_id=?", (int(kit_id),))
         conn.execute("DELETE FROM promo_kits WHERE id=?", (int(kit_id),))
         conn.commit()
-    return jsonify({"ok": True})
+    return _ok()
 
 # =========================================================
-# API: promocodes
+# API: promocodes (CRUD + preview/redeem)
 # =========================================================
 
 @bp.post("/api/promo/create")
@@ -279,12 +310,18 @@ def api_promo_create():
     kit_id = js.get("kit_id")
     uses = int(js.get("uses") or 1)
     expires_at = (js.get("expires_at") or "").strip() or None
-    created_by = "admin"  # todo: взять из сессии
+    created_by = _actor_name()
 
     if amount <= 0 and not kit_id:
-        return jsonify({"ok": False, "error": "amount > 0 or kit_id required"}), 400
+        return _err("amount > 0 or kit_id required")
 
+    # валидация kit_id (если дан)
     with get_db_connection() as conn:
+        if kit_id:
+            kit = _row(conn, "SELECT id FROM promo_kits WHERE id=?", (int(kit_id),))
+            if not kit:
+                return _err("kit_id not found")
+
         conn.execute(
             """
             INSERT INTO promo_codes(code, amount, currency_key, realm, kit_id, uses_total, uses_left, expires_at, created_by)
@@ -302,7 +339,97 @@ def api_promo_create():
             (code, amount, currency, realm, int(kit_id) if kit_id else None, uses, uses, expires_at, created_by),
         )
         conn.commit()
-    return jsonify({"ok": True, "data": {"code": code}})
+    return _ok({"code": code})
+
+@bp.post("/api/promo/bulk_create")
+@login_required
+def api_promo_bulk_create():
+    """
+    Массовое создание однотипных кодов.
+    Вход: {prefix?, amount?, currency_key?, realm?, kit_id?, uses?, expires_at?, count, length?}
+    """
+    js = request.get_json(silent=True) or {}
+    count = max(1, int(js.get("count") or 1))
+    length = max(6, int(js.get("length") or 10))
+    prefix = (js.get("prefix") or "").strip().upper()
+    amount = float(js.get("amount") or 0)
+    currency = (js.get("currency_key") or os.getenv("POINTS_KEY", "rubs")).strip()
+    realm = (js.get("realm") or "").strip() or None
+    kit_id = js.get("kit_id")
+    uses = int(js.get("uses") or 1)
+    expires_at = (js.get("expires_at") or "").strip() or None
+    created_by = _actor_name()
+
+    if amount <= 0 and not kit_id:
+        return _err("amount > 0 or kit_id required")
+
+    out_codes: List[str] = []
+    with get_db_connection() as conn:
+        if kit_id:
+            kit = _row(conn, "SELECT id FROM promo_kits WHERE id=?", (int(kit_id),))
+            if not kit:
+                return _err("kit_id not found")
+
+        # пробуем сгенерировать N уникальных
+        attempts = 0
+        while len(out_codes) < count and attempts < count * 10:
+            attempts += 1
+            code = (prefix + _rand_code(length)).upper()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO promo_codes(code, amount, currency_key, realm, kit_id, uses_total, uses_left, expires_at, created_by)
+                    VALUES (?,?,?,?,?,?,?, ?, ?)
+                    """,
+                    (code, amount, currency, realm, int(kit_id) if kit_id else None, uses, uses, expires_at, created_by),
+                )
+                out_codes.append(code)
+            except Exception:
+                # дубликат — пробуем следующий
+                pass
+        conn.commit()
+    return _ok({"count": len(out_codes), "codes": out_codes})
+
+@bp.post("/api/promo/delete")
+@login_required
+def api_promo_delete():
+    js = request.get_json(silent=True) or {}
+    code = (js.get("code") or "").strip().upper()
+    pid = js.get("id")
+    if not code and not pid:
+        return _err("code or id required")
+
+    with get_db_connection() as conn:
+        if pid:
+            conn.execute("DELETE FROM promo_codes WHERE id=?", (int(pid),))
+        else:
+            conn.execute("DELETE FROM promo_codes WHERE code=?", (code,))
+        conn.commit()
+    return _ok()
+
+@bp.get("/api/promo/info")
+@login_required
+def api_promo_info():
+    """Инфо по коду + предметы набора (если есть)."""
+    code = (request.args.get("code") or "").strip().upper()
+    if not code:
+        return _err("code required")
+    with get_db_connection() as conn:
+        p = _row(
+            conn,
+            """
+            SELECT p.*, k.name AS kit_name
+            FROM promo_codes p
+            LEFT JOIN promo_kits k ON k.id = p.kit_id
+            WHERE p.code = ?
+            """,
+            (code,),
+        )
+        if not p:
+            return _err("code not found", 404)
+        p["expired"] = bool(p.get("expires_at") and str(p["expires_at"]) and datetime.utcnow() > datetime.fromisoformat(str(p["expires_at"]).replace(" ", "T")))
+        p["kit_items"] = _kit_items(conn, int(p["kit_id"])) if p.get("kit_id") else []
+        return _ok(p)
 
 @bp.get("/api/promo/list")
 @login_required
@@ -320,7 +447,172 @@ def api_promo_list():
             LIMIT 100
             """,
         )
-    return jsonify({"ok": True, "data": rows})
+    return _ok(rows)
+
+# =========================================================
+# API: redemptions (preview + redeem + history)
+# =========================================================
+
+def _load_code_for_update(conn: MySQLConnection, code: str) -> Optional[dict]:
+    # берём строку под блокировку до конца транзакции
+    return _row(conn, "SELECT * FROM promo_codes WHERE code=? FOR UPDATE", (code,))
+
+def _validate_code_row(p: dict, *, realm: Optional[str]) -> Optional[str]:
+    # возвращает текст ошибки или None если всё ок
+    if not p:
+        return "code not found"
+    if int(p.get("uses_left") or 0) <= 0:
+        return "no uses left"
+    if p.get("expires_at"):
+        try:
+            exp = datetime.fromisoformat(str(p["expires_at"]).replace(" ", "T"))
+            if datetime.utcnow() > exp:
+                return "code expired"
+        except Exception:
+            pass
+    if p.get("realm") and realm and str(p["realm"]).strip() != str(realm).strip():
+        return "code is restricted to another realm"
+    return None
+
+@bp.post("/api/promo/redeem_preview")
+@login_required
+def api_promo_redeem_preview():
+    """
+    Проверка: можно ли применить код и что именно он выдаст.
+    Вход: {code, username?, uuid?, realm?}
+    Выход: {code_id, amount, currency_key, kit_id, kit_items, will_expire, uses_left_after?}
+    """
+    js = request.get_json(silent=True) or {}
+    code = (js.get("code") or "").strip().upper()
+    realm = (js.get("realm") or "").strip() or None
+    if not code:
+        return _err("code required")
+
+    with get_db_connection() as conn:
+        p = _row(conn, "SELECT * FROM promo_codes WHERE code=?", (code,))
+        err = _validate_code_row(p, realm=realm)
+        if err:
+            return _err(err, 400, code=code)
+
+        out = {
+            "code_id": int(p["id"]),
+            "code": code,
+            "amount": float(p["amount"] or 0),
+            "currency_key": p["currency_key"],
+            "kit_id": p.get("kit_id"),
+            "uses_left": int(p.get("uses_left") or 0),
+            "uses_total": int(p.get("uses_total") or 0),
+            "realm": p.get("realm"),
+            "expires_at": p.get("expires_at"),
+            "kit_items": _kit_items(conn, int(p["kit_id"])) if p.get("kit_id") else [],
+        }
+        out["uses_left_after"] = max(0, int(out["uses_left"]) - 1)
+        return _ok(out)
+
+@bp.post("/api/promo/redeem")
+@login_required
+def api_promo_redeem():
+    """
+    Погашение кода (без реальной выдачи валюты/лутбоксов — только учёт).
+    Вход: {code, username?, uuid, realm?, ip?}
+    Логика:
+      - SELECT ... FOR UPDATE
+      - валидация (uses_left>0, не истёк, realm если задан)
+      - INSERT promo_redemptions(...)
+      - UPDATE promo_codes SET uses_left=uses_left-1
+    """
+    js = request.get_json(silent=True) or {}
+    code = (js.get("code") or "").strip().upper()
+    uuid = (js.get("uuid") or "").strip()
+    username = (js.get("username") or "").strip() or None
+    realm = (js.get("realm") or "").strip() or None
+    ip = (js.get("ip") or request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+
+    if not code:
+        return _err("code required")
+    if not uuid:
+        return _err("uuid required")
+
+    with get_db_connection() as conn:
+        # блокируем строку
+        p = _load_code_for_update(conn, code)
+        err = _validate_code_row(p, realm=realm)
+        if err:
+            return _err(err, 400, code=code)
+
+        code_id = int(p["id"])
+        amount = float(p.get("amount") or 0.0)
+        currency_key = p.get("currency_key")
+        kit_id = p.get("kit_id")
+        kit_items = _kit_items(conn, int(kit_id)) if kit_id else []
+
+        # запись о редемпшене
+        conn.execute(
+            """
+            INSERT INTO promo_redemptions(code_id, uuid, username, realm, granted_amount, kit_id, granted_items_json, ip)
+            VALUES (?,?,?,?,?,?,?,?)
+            """,
+            (
+                code_id, uuid, username, realm,
+                amount if amount > 0 else None,
+                int(kit_id) if kit_id else None,
+                _json(kit_items),
+                ip or None,
+            ),
+        )
+        # уменьшаем uses_left
+        conn.execute("UPDATE promo_codes SET uses_left = uses_left - 1 WHERE id = ? AND uses_left > 0", (code_id,))
+        conn.commit()
+
+        return _ok({
+            "code": code,
+            "code_id": code_id,
+            "uses_left": int(p["uses_left"]) - 1,
+            "amount": amount,
+            "currency_key": currency_key,
+            "kit_id": kit_id,
+            "kit_items": kit_items,
+        })
+
+@bp.get("/api/promo/redemptions")
+@login_required
+def api_promo_redemptions():
+    """
+    История погашений.
+    Параметры: code?, uuid?, username?, limit?
+    """
+    code = (request.args.get("code") or "").strip().upper()
+    uuid = (request.args.get("uuid") or "").strip()
+    username = (request.args.get("username") or "").strip()
+    limit = max(1, min(500, int(request.args.get("limit") or 100)))
+
+    where = []
+    params: List[object] = []
+    if code:
+        where.append("r.code_id = (SELECT id FROM promo_codes WHERE code = ?)")
+        params.append(code)
+    if uuid:
+        where.append("r.uuid = ?")
+        params.append(uuid)
+    if username:
+        where.append("r.username = ?")
+        params.append(username)
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    with get_db_connection() as conn:
+        rows = _rows(
+            conn,
+            f"""
+            SELECT r.id, r.code_id, (SELECT code FROM promo_codes WHERE id=r.code_id) AS code,
+                   r.uuid, r.username, r.realm, r.granted_amount, r.kit_id, r.ip, r.created_at
+            FROM promo_redemptions r
+            {where_sql}
+            ORDER BY r.id DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        )
+    return _ok(rows)
 
 # Регистрация под /admin
 admin_bp.register_blueprint(bp)
