@@ -11,7 +11,7 @@ from typing import Optional, Iterable, List, Tuple
 from flask import Blueprint, render_template, request, jsonify, current_app, g, session
 
 from ...decorators import login_required
-from ...database import get_db_connection, MySQLConnection
+from ...database import get_db_connection, MySQLConnection, init_db
 from . import admin_bp
 
 bp = Blueprint("promocode", __name__, url_prefix="/promocode")
@@ -125,14 +125,25 @@ def _kit_items(conn: MySQLConnection, kit_id: int) -> List[dict]:
         (kit_id,),
     )
     for it in items:
-        # корректно разворачиваем *_json => без _json
         for col in ("enchants_json", "nbt_json"):
-            key = col.replace("_json", "")
             try:
-                it[key] = json.loads(it.get(col) or "[]")
+                it[col[:-5] + "s"] = json.loads(it[col] or "[]")
             except Exception:
-                it[key] = []
+                it[col[:-5] + "s"] = []
     return items
+
+# -------- ленивое создание схемы (idempotent) --------
+_SCHEMA_READY = False
+def _ensure_schema(conn: MySQLConnection) -> None:
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    try:
+        init_db(conn)  # создаст promo_* таблицы и остальную схему панели, если их нет
+        _SCHEMA_READY = True
+    except Exception as e:
+        current_app.logger.error("init_db failed: %s", e)
+        # даже если не удалось — пусть дальнейшая операция покажет понятную ошибку
 
 # =========================================================
 # UI
@@ -226,6 +237,7 @@ def api_items_custom():
 @login_required
 def api_kits_list():
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         kits = _rows(conn, "SELECT id, name, description, created_at FROM promo_kits ORDER BY id DESC")
         for k in kits:
             k["items"] = _kit_items(conn, k["id"])
@@ -244,6 +256,8 @@ def api_kits_save():
         return _err("name is required")
 
     with get_db_connection() as conn:
+        _ensure_schema(conn)
+
         if kit_id:
             conn.execute("UPDATE promo_kits SET name=?, description=? WHERE id=?", (name, desc, int(kit_id)))
             conn.execute("DELETE FROM promo_kit_items WHERE kit_id=?", (int(kit_id),))
@@ -260,7 +274,8 @@ def api_kits_save():
             iid = (it.get("id") or it.get("item_id") or "").strip()
             if not iid:
                 continue
-            amount = int(it.get("amount") or 1)
+            # поддержим и amount, и qty
+            amount = int(it.get("amount") or it.get("qty") or 1)
             display_name = (it.get("display_name") or "").strip() or None
             ench = _json(it.get("enchants") or [])
             nbt = _json(it.get("nbt") or [])
@@ -282,7 +297,7 @@ def api_kits_save():
                 bulk,
             )
         conn.commit()
-        # возвращаем id в двух местах: и в data, и на корне — для совместимости фронтов
+        # совместимость: id и в data, и на корне
         return _ok({"id": kid}, id=kid)
 
 @bp.post("/api/kits/delete")
@@ -293,6 +308,7 @@ def api_kits_delete():
     if not kit_id:
         return _err("id is required")
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         conn.execute("DELETE FROM promo_kit_items WHERE kit_id=?", (int(kit_id),))
         conn.execute("DELETE FROM promo_kits WHERE id=?", (int(kit_id),))
         conn.commit()
@@ -320,6 +336,7 @@ def api_promo_create():
 
     # валидация kit_id (если дан)
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         if kit_id:
             kit = _row(conn, "SELECT id FROM promo_kits WHERE id=?", (int(kit_id),))
             if not kit:
@@ -368,6 +385,7 @@ def api_promo_bulk_create():
 
     out_codes: List[str] = []
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         if kit_id:
             kit = _row(conn, "SELECT id FROM promo_kits WHERE id=?", (int(kit_id),))
             if not kit:
@@ -403,6 +421,7 @@ def api_promo_delete():
         return _err("code or id required")
 
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         if pid:
             conn.execute("DELETE FROM promo_codes WHERE id=?", (int(pid),))
         else:
@@ -418,6 +437,7 @@ def api_promo_info():
     if not code:
         return _err("code required")
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         p = _row(
             conn,
             """
@@ -438,6 +458,7 @@ def api_promo_info():
 @login_required
 def api_promo_list():
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         rows = _rows(
             conn,
             """
@@ -492,6 +513,7 @@ def api_promo_redeem_preview():
         return _err("code required")
 
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         p = _row(conn, "SELECT * FROM promo_codes WHERE code=?", (code,))
         err = _validate_code_row(p, realm=realm)
         if err:
@@ -537,6 +559,7 @@ def api_promo_redeem():
         return _err("uuid required")
 
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         # блокируем строку
         p = _load_code_for_update(conn, code)
         err = _validate_code_row(p, realm=realm)
@@ -603,6 +626,7 @@ def api_promo_redemptions():
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     with get_db_connection() as conn:
+        _ensure_schema(conn)
         rows = _rows(
             conn,
             f"""
@@ -621,7 +645,9 @@ def api_promo_redemptions():
 admin_bp.register_blueprint(bp)
 
 # ===== Совместимые алиасы под /admin/gameservers/promocode =====
-# UI дергает эти пути — маппим их на те же view-функции
+# UI может дергать эти пути — маппим их на те же view-функции
+
+# UI
 admin_bp.add_url_rule(
     "/gameservers/promocode", view_func=ui_index,
     methods=["GET"], endpoint="gameservers_promocode_index_no_slash"
@@ -660,7 +686,7 @@ admin_bp.add_url_rule(
     endpoint="gameservers_promocode_api_kits_delete"
 )
 
-# promo codes
+# promo
 admin_bp.add_url_rule(
     "/gameservers/promocode/api/promo/create",
     view_func=api_promo_create, methods=["POST"],
@@ -695,9 +721,4 @@ admin_bp.add_url_rule(
     "/gameservers/promocode/api/promo/redeem",
     view_func=api_promo_redeem, methods=["POST"],
     endpoint="gameservers_promocode_api_promo_redeem"
-)
-admin_bp.add_url_rule(
-    "/gameservers/promocode/api/promo/redemptions",
-    view_func=api_promo_redemptions, methods=["GET"],
-    endpoint="gameservers_promocode_api_promo_redemptions"
 )
