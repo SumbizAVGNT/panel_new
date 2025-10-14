@@ -2,44 +2,33 @@
 {% block title %}Game Servers{% endblock %}
 {% block content %}
 <style>
-/* === 1) Стили аккаунтов подключаем первыми (если нужны общие токены) === */
-@import url("{{ url_for('static', filename='css/accounts.css') }}");
-
-/* === 2) Палитра и токены интерфейса === */
+/* Палитра */
 :root{
   --ui-surface : rgba(12,16,24,.62);
   --ui-surface-2: rgba(10,14,22,.85);
   --ui-border  : rgba(148,163,184,.22);
   --ui-border-2: rgba(148,163,184,.32);
-  --ui-accent  : #60a5fa;  /* sky-400 */
-  --ui-accent2 : #38bdf8;  /* sky-300 */
   --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --muted:#94a3b8;
 }
 
-/* === 3) Табы (мягкая неоновая кромка) === */
+/* Табы */
 .tabs{display:flex;gap:10px;margin:8px 0 14px;flex-wrap:wrap}
 .tabs .tab-btn{
-  position:relative;
-  border-radius:14px;border:1px solid var(--ui-border);
+  position:relative;border-radius:14px;border:1px solid var(--ui-border);
   background:linear-gradient(180deg,rgba(13,17,23,.9),rgba(13,17,23,.55));
   color:#e5e7eb;padding:.56rem 1rem;font-weight:800;letter-spacing:.02em;
   transition:.18s ease; box-shadow:0 10px 24px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.03)
 }
 .tabs .tab-btn:hover{transform:translateY(-1px)}
-.tabs .tab-btn:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
 .tabs .tab-btn.active{
   background:linear-gradient(180deg,#0e172a,#0a1221);
   border-color:var(--ui-border-2);
   box-shadow:0 0 0 1px rgba(96,165,250,.25) inset, 0 8px 26px rgba(2,132,199,.18)
 }
-.tabs .tab-btn.active::after{
-  content:""; position:absolute; left:10px; right:10px; bottom:-2px; height:2px; border-radius:2px;
-  background:linear-gradient(90deg, #60a5fa, #38bdf8, #8b5cf6); filter:drop-shadow(0 0 6px rgba(96,165,250,.6))
-}
 .tab-pane{display:none;opacity:0;transform:translateY(8px);transition:opacity .25s ease, transform .25s ease}
 .tab-pane.active{display:block;opacity:1;transform:none}
 
-/* === 4) Сетка реалмов === */
+/* Сетка реалмов */
 .grid-realms{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:18px}
 .tile{
   position:relative; isolation:isolate;
@@ -48,22 +37,13 @@
   padding:16px; display:flex; flex-direction:column; gap:12px;
   transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
-.tile::before{ /* «аура» рамки */
+.tile::before{
   content:""; position:absolute; inset:-1px; border-radius:inherit; z-index:-1;
   background:linear-gradient(140deg, #60a5fa33, #38bdf833 45%, #8b5cf633 80%);
   filter:blur(10px); opacity:.7; transition:opacity .25s ease;
 }
-.tile::after{ /* засветка в углу */
-  content:""; position:absolute; right:-12px; top:-12px; width:120px; height:120px; pointer-events:none;
-  background:radial-gradient(50% 50% at 70% 30%, #60a5fa3a 0%, transparent 60%),
-             radial-gradient(45% 45% at 60% 60%, #38bdf836 0%, transparent 60%);
-  filter:blur(18px); opacity:.55; border-radius:50%;
-}
-.tile:hover{
-  transform:translateY(-2px);
-  border-color:var(--ui-border-2);
-  box-shadow:0 18px 34px rgba(0,0,0,.32), 0 0 0 1px rgba(148,163,184,.22)
-}
+.tile:hover{ transform:translateY(-2px); border-color:var(--ui-border-2);
+  box-shadow:0 18px 34px rgba(0,0,0,.32), 0 0 0 1px rgba(148,163,184,.22) }
 .tile .cap{font-size:.78rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
 .tile .row2{display:flex;align-items:center;justify-content:space-between}
 .badge-cap{padding:.35rem .6rem;border-radius:999px}
@@ -73,27 +53,16 @@
 .realm-dot.on{background:#22c55e; box-shadow:0 0 0 3px #22c55e28, 0 0 12px #22c55e7a}
 .realm-dot.off{background:#ef4444; box-shadow:0 0 0 3px #ef444428}
 
-/* === 5) Ключевые метрики === */
-.kstrip{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
-.gauge{
-  --v: 0; --c: var(--ok);
-  inline-size:48px; block-size:48px; border-radius:50%;
+.kstrip{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.gauge{ --v:0; --c:var(--ok); width:48px;height:48px;border-radius:50%;
   background:conic-gradient(var(--c) calc(var(--v)*1%), rgba(255,255,255,.09) 0);
-  display:grid;place-items:center; position:relative; flex:0 0 auto;
-  box-shadow:inset 0 0 0 1px var(--ui-border)
-}
-.gauge::before{
-  content:""; position:absolute; inset:4px; border-radius:50%;
-  background:var(--ui-surface-2); box-shadow:inset 0 0 0 1px var(--ui-border)
-}
-.gauge__label{position:relative;font-weight:800;font-size:.82rem;letter-spacing:.02em}
+  display:grid;place-items:center;position:relative; box-shadow:inset 0 0 0 1px var(--ui-border)}
+.gauge::before{content:"";position:absolute;inset:4px;border-radius:50%;
+  background:var(--ui-surface-2);box-shadow:inset 0 0 0 1px var(--ui-border)}
+.gauge__label{position:relative;font-weight:800;font-size:.82rem}
 
 .kv{display:flex;align-items:center;gap:8px}
-.kv .b{
-  font-size:.8rem;border-radius:10px;padding:.28rem .55rem;
-  border:1px solid var(--ui-border); background:rgba(2,6,23,.42);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.03)
-}
+.kv .b{font-size:.8rem;border-radius:10px;padding:.28rem .55rem;border:1px solid var(--ui-border);background:rgba(2,6,23,.42)}
 .b.ok{border-color:rgba(34,197,94,.35)} .b.ok strong{color:var(--ok)}
 .b.warn{border-color:rgba(245,158,11,.35)} .b.warn strong{color:var(--warn)}
 .b.bad{border-color:rgba(239,68,68,.35)} .b.bad strong{color:var(--bad)}
@@ -105,25 +74,11 @@
 .tile .footer .go{margin-left:auto;opacity:.7;transition:.15s}
 .tile:hover .footer .go{opacity:1;transform:translateX(2px)}
 
-/* flash-подсветка при обновлении значения */
-.flash{animation:flash 700ms ease}
-@keyframes flash{
-  0%{box-shadow:0 0 0 0 rgba(96,165,250,.0), inset 0 0 0 0 rgba(96,165,250,.0)}
-  20%{box-shadow:0 0 0 6px rgba(96,165,250,.2), inset 0 0 0 1px rgba(96,165,250,.25)}
-  100%{box-shadow:inset 0 0 0 1px var(--ui-border)}
-}
-
-/* skeleton */
 .skel{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:10px}
 .skel:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:translateX(-100%);animation:shimmer 1.05s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
 
-/* refresh spin */
-@keyframes spin{to{transform:rotate(360deg)}}
-.spin{animation:spin .8s linear infinite}
-
-/* reduce motion */
-@media (prefers-reduced-motion: reduce){ .tabs .tab-btn, .tab-pane{transition:none} }
+@keyframes spin{to{transform:rotate(360deg)}} .spin{animation:spin .8s linear infinite}
 </style>
 
 <div class="container-xxl py-4">
@@ -137,11 +92,9 @@
       <button id="refresh" class="btn btn-sm btn-outline-secondary">
         <i id="refreshIco" class="bi bi-arrow-repeat me-1"></i>Обновить
       </button>
-      <a class="btn btn-sm btn-outline-light" href="/admin"><i class="bi bi-house"></i></a>
     </div>
   </div>
 
-  <!-- Tabs -->
   <div class="tabs">
     <button class="tab-btn active" data-tab="servers"><i class="bi bi-hdd-network me-1"></i>Servers</button>
     <button class="tab-btn" data-tab="accounts"><i class="bi bi-people me-1"></i>Accounts</button>
@@ -151,33 +104,7 @@
 
   <!-- Servers -->
   <div id="tab-servers" class="tab-pane active">
-    <div id="realms" class="grid-realms" aria-live="polite">
-      <div class="tile">
-        <div class="cap">Loading</div>
-        <div class="row2">
-          <div class="realm-name">
-            <span class="realm-dot"></span>
-            <div class="h5 m-0 skel" style="height:22px;width:140px"></div>
-          </div>
-          <span class="badge badge-cap bg-secondary">—</span>
-        </div>
-        <div class="kstrip">
-          <div class="gauge"><span class="gauge__label">--</span></div>
-          <div class="kv">
-            <div class="b"><strong>TPS1m:</strong> —</div>
-            <div class="b"><strong>MSPT:</strong> —</div>
-          </div>
-        </div>
-        <div class="meta">
-          <span class="pill">plugins: —</span>
-          <span class="pill">online: —</span>
-        </div>
-        <div class="footer small-dim">
-          <span class="skel" style="height:16px;width:130px"></span>
-          <i class="bi bi-arrow-right-short go"></i>
-        </div>
-      </div>
-    </div>
+    <div id="realms" class="grid-realms" aria-live="polite"></div>
   </div>
 
   <!-- Accounts -->
@@ -197,7 +124,7 @@
 </div>
 
 <script>
-/* ===== Tabs + ленивые инициализации ===== */
+/* ===== Tabs (ленивая инициализация) ===== */
 const tabBtns = document.querySelectorAll('.tab-btn');
 const panes   = document.querySelectorAll('.tab-pane');
 const lazyInits = {
@@ -217,9 +144,6 @@ tabBtns.forEach(b=>{
 });
 
 /* ===== Визуальные утилиты ===== */
-function badge(isOnline, text){
-  return `<span class="badge badge-cap ${isOnline?'bg-success':'bg-secondary'}">${text || (isOnline?'online':'offline')}</span>`;
-}
 function kvClass(val, goodHigh=true){
   if(val==null) return '';
   if(goodHigh){ if(val>=18) return 'ok'; if(val>=12) return 'warn'; return 'bad'; }
@@ -235,31 +159,21 @@ function gaugeSet(el, value=0, max=20){
   el.style.setProperty('--c', color.trim());
   const label = el.querySelector('.gauge__label'); if(label) label.textContent = (value!=null? value.toFixed(1) : '--');
 }
-const flash = (node)=>{ if(!node) return; node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); };
+const humanMs = (ms)=>{ if(!ms||ms<0) return '—'; let s=Math.floor(ms/1000);
+  const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
+  const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s'; };
 
-/* ===== Разметка карточек ===== */
-function tileSkeleton(){
-  return `<div class="tile">
-    <div class="cap">Realm</div>
-    <div class="row2">
-      <div class="realm-name"><span class="realm-dot"></span><div class="h6 m-0 skel" style="height:20px;width:120px"></div></div>
-      ${badge(false,'—')}
-    </div>
-    <div class="kstrip">
-      <div class="gauge"><span class="gauge__label">--</span></div>
-      <div class="kv"><div class="b"><strong>TPS1m:</strong> —</div><div class="b"><strong>MSPT:</strong> —</div></div>
-    </div>
-    <div class="meta" id="m-__"></div>
-    <div class="footer small-dim"><span class="skel" style="height:16px;width:120px"></span><i class="bi bi-arrow-right-short go"></i></div>
-  </div>`;
-}
+/* ===== Карточка ===== */
 function realmTileHtml(name, plugins){
   const href = `/admin/gameservers/${encodeURIComponent(name)}`;
   return `<a class="tile text-decoration-none text-reset" href="${href}" data-realm="${name}">
     <div class="cap">Realm</div>
     <div class="row2">
-      <div class="realm-name"><span class="realm-dot" data-k="dot"></span><div class="h5 m-0">${name}</div></div>
-      ${badge((plugins|0)>0)}
+      <div class="realm-name">
+        <span class="realm-dot" data-k="dot"></span>
+        <div class="h5 m-0">${name}</div>
+      </div>
+      <span class="badge badge-cap bg-secondary" data-k="state">—</span>
     </div>
     <div class="kstrip">
       <div class="gauge" data-gauge="tps-${name}"><span class="gauge__label">--</span></div>
@@ -280,130 +194,137 @@ function realmTileHtml(name, plugins){
   </a>`;
 }
 
-/* ===== Загрузка без фликера / без abort ===== */
-let cycle = 0;                  // поколение запросов
-const LS_INDEX_AUTO = "gs_index_auto";
-let indexTimer = null;
-
+/* ===== Нормализация + рендер ===== */
 function normalize(d){
   d=d||{}; const t=d.tps||{}, p=d.players||{}, j=d.jvm||{};
-  return { tps1: t["1m"] ?? d.tps_1m ?? null, mspt: t.mspt ?? d.mspt ?? null,
-           online: p.online ?? d.players_online ?? null, uptime_ms: j.uptime_ms ?? d.uptime_ms ?? null,
-           ts: d.ts || Math.floor(Date.now()/1000) };
+  const tps1 = t["1m"] ?? d.tps_1m ?? null;
+  const mspt = t.mspt   ?? d.mspt   ?? null;
+  const uptime_ms = j.uptime_ms ?? d.uptime_ms ?? null;
+  const playersOnline = p.online ?? d.players_online ?? null;
+  const isUp = (Number.isFinite(tps1) && tps1>0) || Number.isFinite(mspt) || (Number.isFinite(uptime_ms) && uptime_ms>0);
+  return { tps1, mspt, uptime_ms, playersOnline, isUp, ts: d.ts || Math.floor(Date.now()/1000) };
 }
-function humanMs(ms){
-  if(!ms || ms<0) return '—';
-  let s=Math.floor(ms/1000);
-  const d=Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
-  const a=[]; if(d) a.push(d+'d'); if(h) a.push(h+'h'); if(m) a.push(m+'m'); if(s) a.push(s+'s'); return a.join(' ')||'0s';
-}
-
-function ensureTile(name, plugins){
-  const box = document.getElementById('realms');
-  const sel = `.tile[data-realm="${CSS.escape(name)}"]`;
-  let el = box.querySelector(sel);
-  if(!el){
-    box.insertAdjacentHTML('beforeend', realmTileHtml(name, plugins||0));
-  }else{
-    const plug = el.querySelector('.meta .pill');
-    if (plug) plug.textContent = `plugins: ${(plugins|0)}`;
-  }
-  return box.querySelector(sel);
-}
-
 function fillTile(name, p){
   const root = document.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`); if(!root) return;
-  const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta.querySelector(`[data-k="${k}"]`);
+  const meta = root.querySelector(`#m-${CSS.escape(name)}`), q=k=>meta?.querySelector(`[data-k="${k}"]`);
 
+  // state (dot + badge)
   const dot = root.querySelector('[data-k="dot"]');
-  if(q('online')) q('online').textContent = `online: ${p.online ?? '—'}`;
-  if(dot){ dot.classList.remove('on','off'); dot.classList.add((p.online>0)?'on':'off'); }
+  if(dot){ dot.classList.remove('on','off'); dot.classList.add(p.isUp ? 'on' : 'off'); }
+  const state = root.querySelector('[data-k="state"]');
+  if(state){
+    state.classList.remove('bg-success','bg-danger','bg-secondary');
+    state.classList.add(p.isUp ? 'bg-success' : 'bg-danger');
+    state.textContent = p.isUp ? 'online' : 'offline';
+  }
+
+  if(q('online')) q('online').textContent = `online: ${p.playersOnline ?? '—'}`;
 
   const tpsB = root.querySelector('[data-k="tps"]');
-  const msptB = root.querySelector('[data-k="mspt"]');
-  if(tpsB){
-    const prev = tpsB.textContent;
-    const cls = kvClass(p.tps1, true);
-    tpsB.className = `b ${cls}`;
-    const txt = `TPS1m: ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`;
-    tpsB.innerHTML = `<strong>TPS1m:</strong> ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`;
-    if(prev.trim() !== txt) flash(tpsB);
-  }
-  if(msptB){
-    const prev = msptB.textContent;
-    const cls = kvClass(p.mspt, false);
-    msptB.className = `b ${cls}`;
-    const txt = `MSPT: ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`;
-    msptB.innerHTML = `<strong>MSPT:</strong> ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`;
-    if(prev.trim() !== txt) flash(msptB);
-  }
+  if(tpsB){ tpsB.className = `b ${kvClass(p.tps1, true)}`;
+    tpsB.innerHTML = `<strong>TPS1m:</strong> ${p.tps1!=null? p.tps1.toFixed(2) : '—'}`; }
 
-  const g = root.querySelector(`[data-gauge="tps-${CSS.escape(name)}"]`);
-  gaugeSet(g, p.tps1 ?? 0, 20);
+  const msptB = root.querySelector('[data-k="mspt"]');
+  if(msptB){ msptB.className = `b ${kvClass(p.mspt, false)}`;
+    msptB.innerHTML = `<strong>MSPT:</strong> ${p.mspt!=null? p.mspt.toFixed(2) : '—'}`; }
+
+  gaugeSet(root.querySelector(`[data-gauge="tps-${CSS.escape(name)}"]`), p.tps1 ?? 0, 20);
 
   const up = root.querySelector('[data-k="uptime"]'); if(up) up.textContent = `uptime: ${humanMs(p.uptime_ms)}`;
   const upd = root.querySelector('[data-k="updated"]');
-  if(upd){ const now = Math.floor(Date.now()/1000), ts = p.ts || now; const ago = Math.max(0, now - ts); upd.textContent = `· обновлено: ${ago}s ago`; }
+  if(upd){ const now = Math.floor(Date.now()/1000), ts = p.ts || now; upd.textContent = `· обновлено: ${Math.max(0, now-ts)}s ago`; }
+}
+
+/* ===== Загрузка/синхронизация списка реалмов ===== */
+let indexTimer=null, lastController=null;
+const LS_INDEX_AUTO="gs_index_auto";
+
+function setSkeleton(){
+  const box = document.getElementById('realms');
+  box.innerHTML = `<div class="tile" data-skel="1">
+    <div class="cap">Loading</div>
+    <div class="row2">
+      <div class="realm-name"><span class="realm-dot"></span><div class="h5 m-0 skel" style="height:22px;width:140px"></div></div>
+      <span class="badge badge-cap bg-secondary">—</span>
+    </div>
+    <div class="kstrip">
+      <div class="gauge"><span class="gauge__label">--</span></div>
+      <div class="kv"><div class="b"><strong>TPS1m:</strong> —</div><div class="b"><strong>MSPT:</strong> —</div></div>
+    </div>
+    <div class="meta"><span class="pill">plugins: —</span><span class="pill">online: —</span></div>
+    <div class="footer small-dim"><span class="skel" style="height:16px;width:130px"></span><i class="bi bi-arrow-right-short go"></i></div>
+  </div>`;
 }
 
 async function loadRealms(){
-  const my = ++cycle; // запоминаем «поколение» этого обновления
   const box = document.getElementById('realms');
   const ico = document.getElementById('refreshIco');
   ico?.classList.add('spin');
 
-  // если пусто — покажем один скелет, но не будем чистить при следующих тиках
-  if(!box.querySelector('.tile')) box.insertAdjacentHTML('beforeend', tileSkeleton());
+  // отмена предыдущего запроса
+  try{ lastController?.abort(); }catch(_){}
+  lastController = new AbortController();
 
+  if(!box.children.length) setSkeleton();
+
+  let data = {};
   try{
-    const r = await fetch('/admin/gameservers/api/list', {cache:'no-store'});
-    const j = await r.json();
-    if (my !== cycle) return; // устаревший ответ
-    if (!j.ok) throw new Error(j.error||'bridge error');
-
-    const data  = j.data || {};
-    const names = Object.keys(data).sort((a,b)=>a.localeCompare(b));
-
-    // создать/обновить необходимые тайлы
-    const seen = new Set();
-    names.forEach(n => { ensureTile(n, data[n]); seen.add(n); });
-
-    // удалить исчезнувшие реалмы
-    box.querySelectorAll('.tile[data-realm]').forEach(el=>{
-      const n = el.getAttribute('data-realm');
-      if(!seen.has(n)) el.remove();
-    });
-
-    // подкачать статистику
-    await Promise.allSettled(names.map(async (name)=>{
-      try{
-        const r2 = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store'});
-        const j2 = await r2.json();
-        if (my !== cycle) return;
-        if(!j2.ok || !j2.data) return;
-        fillTile(name, normalize(j2.data));
-      }catch{}
-    }));
+    const r = await fetch('/admin/gameservers/api/list',{cache:'no-store', signal:lastController.signal});
+    const j = await r.json(); if(!j.ok) throw new Error(j.error||'bridge error');
+    data = j.data || {};
   }catch(e){
-    if (my === cycle) console.warn('[realms]', e);
-  }finally{
-    if (my === cycle) ico?.classList.remove('spin');
+    const msg = (e.name === 'AbortError') ? 'Отменено' : (e.message||e);
+    box.innerHTML = `<div class="tile"><div class="cap">Error</div><div class="small small-dim">${msg}</div></div>`;
+    ico?.classList.remove('spin'); return;
   }
+
+  // Список актуальных имён
+  const names = Object.keys(data).sort((a,b)=>a.localeCompare(b));
+  const nameSet = new Set(names);
+
+  // 1) Удаляем ВСЕ скелеты и карточки, которых больше нет
+  box.querySelectorAll('[data-skel="1"]').forEach(el=>el.remove());
+  box.querySelectorAll('.tile[data-realm]').forEach(el=>{
+    if(!nameSet.has(el.dataset.realm)) el.remove();
+  });
+
+  // 2) Добавляем недостающие карточки
+  names.forEach(name=>{
+    if(!box.querySelector(`.tile[data-realm="${CSS.escape(name)}"]`)){
+      box.insertAdjacentHTML('beforeend', realmTileHtml(name, data[name]||0));
+    }
+  });
+
+  // 3) Обновляем метрики у всех существующих карточек
+  await Promise.allSettled(names.map(async (name)=>{
+    try{
+      const r = await fetch(`/admin/gameservers/api/stats/latest?realm=${encodeURIComponent(name)}`, {cache:'no-store', signal:lastController.signal});
+      const j = await r.json(); if(!j.ok || !j.data) return; fillTile(name, normalize(j.data));
+    }catch(_){}
+  }));
+
+  // Если после синхронизации не осталось карточек — отрисуем заглушку
+  if(!box.querySelector('.tile[data-realm]')){
+    box.innerHTML = `<div class="tile"><div class="cap">Info</div><div>Нет доступных реалмов</div></div>`;
+  }
+
+  ico?.classList.remove('spin');
 }
 
-/* ===== Автообновление списка ===== */
+/* ===== Автообновление ===== */
 function applyIndexTimer(){
   clearInterval(indexTimer);
   const auto = document.getElementById('autoIndex').checked;
   localStorage.setItem(LS_INDEX_AUTO, auto?'1':'0');
-  if(auto) indexTimer = setInterval(loadRealms, 5000);
+  if(auto){ indexTimer = setInterval(loadRealms, 5000); }
 }
 document.getElementById('autoIndex').checked = (localStorage.getItem(LS_INDEX_AUTO) ?? '1') !== '0';
 
-/* ===== Binds & init ===== */
+/* ===== Binds ===== */
 document.getElementById('refresh').addEventListener('click', loadRealms);
 document.getElementById('autoIndex').addEventListener('change', applyIndexTimer);
 
+/* ===== Init ===== */
 loadRealms();
 applyIndexTimer();
 </script>
