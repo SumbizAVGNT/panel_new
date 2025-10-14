@@ -11,7 +11,7 @@
 
     /* Builder grid */
     #kits-root .builder{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
-    @media (max-width: 1100px){#kits-root .builder{grid-template-columns:1fr}}
+    @media (max-width:1100px){#kits-root .builder{grid-template-columns:1fr}}
     #kits-root .slot-grid{display:grid;grid-template-columns:repeat(9,1fr);gap:10px}
     #kits-root .slot{position:relative;background:rgba(2,6,23,.5);border:1px dashed rgba(148,163,184,.3);border-radius:12px;min-height:62px;display:grid;place-items:center;color:#cbd5e1;cursor:pointer;transition:.15s}
     #kits-root .slot:hover{border-color:rgba(148,163,184,.5);transform:translateY(-1px)}
@@ -19,6 +19,7 @@
     #kits-root .slot .qty{position:absolute;right:6px;bottom:4px;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.35);border-radius:8px;padding:2px 6px;font-size:.72rem}
     #kits-root .slot .name{max-width:90%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #kits-root .slot .icon{width:30px;height:30px;image-rendering:pixelated;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6);display:block}
+    #kits-root .slot.drag-over{background:rgba(96,165,250,.08);border-style:solid}
 
     /* Items catalog */
     #kits-root .items-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
@@ -32,13 +33,12 @@
     #kits-root .item .n{font-size:.86rem;color:#e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
     /* Saved kits list */
-    #kits-root .kit-row{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:rgba(13,17,23,.45)}
-    #kits-root .kit-row:hover{border-color:rgba(148,163,184,.35)}
-    #kits-root .kit-row .name{font-weight:700}
     #kits-root .right-col{display:grid;grid-template-rows:auto 1fr;gap:12px}
-
-    /* drag feedback */
-    #kits-root .slot.drag-over{background:rgba(96,165,250,.08);border-style:solid}
+    #kits-root .kit-row{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:rgba(13,17,23,.45);cursor:pointer}
+    #kits-root .kit-row:hover{border-color:rgba(148,163,184,.35)}
+    #kits-root .kit-row.sel{border-color:#60a5fa;box-shadow:0 0 0 2px rgba(96,165,250,.25) inset}
+    #kits-root .kit-row .ttl{font-weight:700;color:#e5e7eb}
+    #kits-root .kit-row .sub{font-size:.78rem;color:#94a3b8}
 
     /* skeleton */
     #kits-root .skeleton{position:relative;overflow:hidden;background:rgba(148,163,184,.12);border-radius:10px;min-height:40px}
@@ -47,12 +47,7 @@
 
     /* Autocomplete + chips */
     #kits-root .dd{position:relative;z-index:50}
-    #kits-root .dd-list{
-      position:absolute;left:0;right:0;top:calc(100% + 6px);
-      background:#0b1220;border:1px solid rgba(148,163,184,.25);border-radius:10px;
-      box-shadow:0 10px 24px rgba(0,0,0,.45);max-height:260px;overflow:auto;
-      z-index:5000; pointer-events:auto;
-    }
+    #kits-root .dd-list{position:absolute;left:0;right:0;top:calc(100% + 6px);background:#0b1220;border:1px solid rgba(148,163,184,.25);border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.45);max-height:260px;overflow:auto;z-index:5000;pointer-events:auto}
     #kits-root .dd-item{padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer}
     #kits-root .dd-item small{color:#94a3b8}
     #kits-root .dd-item:hover,#kits-root .dd-item.act{background:rgba(96,165,250,.12)}
@@ -165,7 +160,12 @@
       <div class="glass p-3">
         <div class="d-flex align-items-center justify-content-between">
           <div class="sec-title">Сохранённые киты</div>
-          <div class="dim" id="kits-count">—</div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="dim" id="kits-count">—</div>
+            <button id="kits-refresh" class="btn btn-sm btn-outline-secondary" title="Обновить список">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
         </div>
         <div id="kits-list" class="vstack gap-2 mt-2">
           <div class="skeleton"></div>
@@ -188,4 +188,7 @@
   <!-- toast zone -->
   <div id="kits-toasts" class="position-fixed bottom-0 end-0 p-3" style="z-index:1080"></div>
 </section>
+
+<!-- Инициализация (если не через вкладки) -->
+<script>window.requestAnimationFrame(()=>window.kitsInit && window.kitsInit());</script>
 {% endraw %}
