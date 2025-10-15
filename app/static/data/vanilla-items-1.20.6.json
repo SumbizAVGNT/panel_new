@@ -1,6 +1,2410 @@
 [
-  { "id": "stone",          "name": "Stone" },
-  { "id": "dirt",           "name": "Dirt" },
-  { "id": "oak_log",        "name": "Oak Log" },
-  { "id": "diamond_sword",  "name": "Diamond Sword" }
+  {
+    "id": "acacia_boat",
+    "name": "Acacia Boat"
+  },
+  {
+    "id": "acacia_chest_boat",
+    "name": "Acacia Chest Boat"
+  },
+  {
+    "id": "acacia_door",
+    "name": "Acacia Door"
+  },
+  {
+    "id": "acacia_hanging_sign",
+    "name": "Acacia Hanging Sign"
+  },
+  {
+    "id": "acacia_sign",
+    "name": "Acacia Sign"
+  },
+  {
+    "id": "amethyst_shard",
+    "name": "Amethyst Shard"
+  },
+  {
+    "id": "angler_pottery_sherd",
+    "name": "Angler Pottery Sherd"
+  },
+  {
+    "id": "apple",
+    "name": "Apple"
+  },
+  {
+    "id": "archer_pottery_sherd",
+    "name": "Archer Pottery Sherd"
+  },
+  {
+    "id": "armadillo_scute",
+    "name": "Armadillo Scute"
+  },
+  {
+    "id": "armor_stand",
+    "name": "Armor Stand"
+  },
+  {
+    "id": "arms_up_pottery_sherd",
+    "name": "Arms Up Pottery Sherd"
+  },
+  {
+    "id": "arrow",
+    "name": "Arrow"
+  },
+  {
+    "id": "axolotl_bucket",
+    "name": "Axolotl Bucket"
+  },
+  {
+    "id": "baked_potato",
+    "name": "Baked Potato"
+  },
+  {
+    "id": "bamboo",
+    "name": "Bamboo"
+  },
+  {
+    "id": "bamboo_chest_raft",
+    "name": "Bamboo Chest Raft"
+  },
+  {
+    "id": "bamboo_door",
+    "name": "Bamboo Door"
+  },
+  {
+    "id": "bamboo_hanging_sign",
+    "name": "Bamboo Hanging Sign"
+  },
+  {
+    "id": "bamboo_raft",
+    "name": "Bamboo Raft"
+  },
+  {
+    "id": "bamboo_sign",
+    "name": "Bamboo Sign"
+  },
+  {
+    "id": "barrier",
+    "name": "Barrier"
+  },
+  {
+    "id": "beef",
+    "name": "Beef"
+  },
+  {
+    "id": "beetroot",
+    "name": "Beetroot"
+  },
+  {
+    "id": "beetroot_seeds",
+    "name": "Beetroot Seeds"
+  },
+  {
+    "id": "beetroot_soup",
+    "name": "Beetroot Soup"
+  },
+  {
+    "id": "bell",
+    "name": "Bell"
+  },
+  {
+    "id": "birch_boat",
+    "name": "Birch Boat"
+  },
+  {
+    "id": "birch_chest_boat",
+    "name": "Birch Chest Boat"
+  },
+  {
+    "id": "birch_door",
+    "name": "Birch Door"
+  },
+  {
+    "id": "birch_hanging_sign",
+    "name": "Birch Hanging Sign"
+  },
+  {
+    "id": "birch_sign",
+    "name": "Birch Sign"
+  },
+  {
+    "id": "black_candle",
+    "name": "Black Candle"
+  },
+  {
+    "id": "black_dye",
+    "name": "Black Dye"
+  },
+  {
+    "id": "blade_pottery_sherd",
+    "name": "Blade Pottery Sherd"
+  },
+  {
+    "id": "blaze_powder",
+    "name": "Blaze Powder"
+  },
+  {
+    "id": "blaze_rod",
+    "name": "Blaze Rod"
+  },
+  {
+    "id": "blue_candle",
+    "name": "Blue Candle"
+  },
+  {
+    "id": "blue_dye",
+    "name": "Blue Dye"
+  },
+  {
+    "id": "bolt_armor_trim_smithing_template",
+    "name": "Bolt Armor Trim Smithing Template"
+  },
+  {
+    "id": "bone",
+    "name": "Bone"
+  },
+  {
+    "id": "bone_meal",
+    "name": "Bone Meal"
+  },
+  {
+    "id": "book",
+    "name": "Book"
+  },
+  {
+    "id": "bow",
+    "name": "Bow"
+  },
+  {
+    "id": "bow_pulling_0",
+    "name": "Bow Pulling 0"
+  },
+  {
+    "id": "bow_pulling_1",
+    "name": "Bow Pulling 1"
+  },
+  {
+    "id": "bow_pulling_2",
+    "name": "Bow Pulling 2"
+  },
+  {
+    "id": "bowl",
+    "name": "Bowl"
+  },
+  {
+    "id": "bread",
+    "name": "Bread"
+  },
+  {
+    "id": "breeze_rod",
+    "name": "Breeze Rod"
+  },
+  {
+    "id": "brewer_pottery_sherd",
+    "name": "Brewer Pottery Sherd"
+  },
+  {
+    "id": "brewing_stand",
+    "name": "Brewing Stand"
+  },
+  {
+    "id": "brick",
+    "name": "Brick"
+  },
+  {
+    "id": "broken_elytra",
+    "name": "Broken Elytra"
+  },
+  {
+    "id": "brown_candle",
+    "name": "Brown Candle"
+  },
+  {
+    "id": "brown_dye",
+    "name": "Brown Dye"
+  },
+  {
+    "id": "brush",
+    "name": "Brush"
+  },
+  {
+    "id": "bucket",
+    "name": "Bucket"
+  },
+  {
+    "id": "bundle",
+    "name": "Bundle"
+  },
+  {
+    "id": "bundle_filled",
+    "name": "Bundle Filled"
+  },
+  {
+    "id": "burn_pottery_sherd",
+    "name": "Burn Pottery Sherd"
+  },
+  {
+    "id": "cake",
+    "name": "Cake"
+  },
+  {
+    "id": "campfire",
+    "name": "Campfire"
+  },
+  {
+    "id": "candle",
+    "name": "Candle"
+  },
+  {
+    "id": "carrot",
+    "name": "Carrot"
+  },
+  {
+    "id": "carrot_on_a_stick",
+    "name": "Carrot On A Stick"
+  },
+  {
+    "id": "cauldron",
+    "name": "Cauldron"
+  },
+  {
+    "id": "chain",
+    "name": "Chain"
+  },
+  {
+    "id": "chainmail_boots",
+    "name": "Chainmail Boots"
+  },
+  {
+    "id": "chainmail_chestplate",
+    "name": "Chainmail Chestplate"
+  },
+  {
+    "id": "chainmail_helmet",
+    "name": "Chainmail Helmet"
+  },
+  {
+    "id": "chainmail_leggings",
+    "name": "Chainmail Leggings"
+  },
+  {
+    "id": "charcoal",
+    "name": "Charcoal"
+  },
+  {
+    "id": "cherry_boat",
+    "name": "Cherry Boat"
+  },
+  {
+    "id": "cherry_chest_boat",
+    "name": "Cherry Chest Boat"
+  },
+  {
+    "id": "cherry_door",
+    "name": "Cherry Door"
+  },
+  {
+    "id": "cherry_hanging_sign",
+    "name": "Cherry Hanging Sign"
+  },
+  {
+    "id": "cherry_sign",
+    "name": "Cherry Sign"
+  },
+  {
+    "id": "chest_minecart",
+    "name": "Chest Minecart"
+  },
+  {
+    "id": "chicken",
+    "name": "Chicken"
+  },
+  {
+    "id": "chorus_fruit",
+    "name": "Chorus Fruit"
+  },
+  {
+    "id": "clay_ball",
+    "name": "Clay Ball"
+  },
+  {
+    "id": "clock_00",
+    "name": "Clock 00"
+  },
+  {
+    "id": "clock_01",
+    "name": "Clock 01"
+  },
+  {
+    "id": "clock_02",
+    "name": "Clock 02"
+  },
+  {
+    "id": "clock_03",
+    "name": "Clock 03"
+  },
+  {
+    "id": "clock_04",
+    "name": "Clock 04"
+  },
+  {
+    "id": "clock_05",
+    "name": "Clock 05"
+  },
+  {
+    "id": "clock_06",
+    "name": "Clock 06"
+  },
+  {
+    "id": "clock_07",
+    "name": "Clock 07"
+  },
+  {
+    "id": "clock_08",
+    "name": "Clock 08"
+  },
+  {
+    "id": "clock_09",
+    "name": "Clock 09"
+  },
+  {
+    "id": "clock_10",
+    "name": "Clock 10"
+  },
+  {
+    "id": "clock_11",
+    "name": "Clock 11"
+  },
+  {
+    "id": "clock_12",
+    "name": "Clock 12"
+  },
+  {
+    "id": "clock_13",
+    "name": "Clock 13"
+  },
+  {
+    "id": "clock_14",
+    "name": "Clock 14"
+  },
+  {
+    "id": "clock_15",
+    "name": "Clock 15"
+  },
+  {
+    "id": "clock_16",
+    "name": "Clock 16"
+  },
+  {
+    "id": "clock_17",
+    "name": "Clock 17"
+  },
+  {
+    "id": "clock_18",
+    "name": "Clock 18"
+  },
+  {
+    "id": "clock_19",
+    "name": "Clock 19"
+  },
+  {
+    "id": "clock_20",
+    "name": "Clock 20"
+  },
+  {
+    "id": "clock_21",
+    "name": "Clock 21"
+  },
+  {
+    "id": "clock_22",
+    "name": "Clock 22"
+  },
+  {
+    "id": "clock_23",
+    "name": "Clock 23"
+  },
+  {
+    "id": "clock_24",
+    "name": "Clock 24"
+  },
+  {
+    "id": "clock_25",
+    "name": "Clock 25"
+  },
+  {
+    "id": "clock_26",
+    "name": "Clock 26"
+  },
+  {
+    "id": "clock_27",
+    "name": "Clock 27"
+  },
+  {
+    "id": "clock_28",
+    "name": "Clock 28"
+  },
+  {
+    "id": "clock_29",
+    "name": "Clock 29"
+  },
+  {
+    "id": "clock_30",
+    "name": "Clock 30"
+  },
+  {
+    "id": "clock_31",
+    "name": "Clock 31"
+  },
+  {
+    "id": "clock_32",
+    "name": "Clock 32"
+  },
+  {
+    "id": "clock_33",
+    "name": "Clock 33"
+  },
+  {
+    "id": "clock_34",
+    "name": "Clock 34"
+  },
+  {
+    "id": "clock_35",
+    "name": "Clock 35"
+  },
+  {
+    "id": "clock_36",
+    "name": "Clock 36"
+  },
+  {
+    "id": "clock_37",
+    "name": "Clock 37"
+  },
+  {
+    "id": "clock_38",
+    "name": "Clock 38"
+  },
+  {
+    "id": "clock_39",
+    "name": "Clock 39"
+  },
+  {
+    "id": "clock_40",
+    "name": "Clock 40"
+  },
+  {
+    "id": "clock_41",
+    "name": "Clock 41"
+  },
+  {
+    "id": "clock_42",
+    "name": "Clock 42"
+  },
+  {
+    "id": "clock_43",
+    "name": "Clock 43"
+  },
+  {
+    "id": "clock_44",
+    "name": "Clock 44"
+  },
+  {
+    "id": "clock_45",
+    "name": "Clock 45"
+  },
+  {
+    "id": "clock_46",
+    "name": "Clock 46"
+  },
+  {
+    "id": "clock_47",
+    "name": "Clock 47"
+  },
+  {
+    "id": "clock_48",
+    "name": "Clock 48"
+  },
+  {
+    "id": "clock_49",
+    "name": "Clock 49"
+  },
+  {
+    "id": "clock_50",
+    "name": "Clock 50"
+  },
+  {
+    "id": "clock_51",
+    "name": "Clock 51"
+  },
+  {
+    "id": "clock_52",
+    "name": "Clock 52"
+  },
+  {
+    "id": "clock_53",
+    "name": "Clock 53"
+  },
+  {
+    "id": "clock_54",
+    "name": "Clock 54"
+  },
+  {
+    "id": "clock_55",
+    "name": "Clock 55"
+  },
+  {
+    "id": "clock_56",
+    "name": "Clock 56"
+  },
+  {
+    "id": "clock_57",
+    "name": "Clock 57"
+  },
+  {
+    "id": "clock_58",
+    "name": "Clock 58"
+  },
+  {
+    "id": "clock_59",
+    "name": "Clock 59"
+  },
+  {
+    "id": "clock_60",
+    "name": "Clock 60"
+  },
+  {
+    "id": "clock_61",
+    "name": "Clock 61"
+  },
+  {
+    "id": "clock_62",
+    "name": "Clock 62"
+  },
+  {
+    "id": "clock_63",
+    "name": "Clock 63"
+  },
+  {
+    "id": "coal",
+    "name": "Coal"
+  },
+  {
+    "id": "coast_armor_trim_smithing_template",
+    "name": "Coast Armor Trim Smithing Template"
+  },
+  {
+    "id": "cocoa_beans",
+    "name": "Cocoa Beans"
+  },
+  {
+    "id": "cod",
+    "name": "Cod"
+  },
+  {
+    "id": "cod_bucket",
+    "name": "Cod Bucket"
+  },
+  {
+    "id": "command_block_minecart",
+    "name": "Command Block Minecart"
+  },
+  {
+    "id": "comparator",
+    "name": "Comparator"
+  },
+  {
+    "id": "compass_00",
+    "name": "Compass 00"
+  },
+  {
+    "id": "compass_01",
+    "name": "Compass 01"
+  },
+  {
+    "id": "compass_02",
+    "name": "Compass 02"
+  },
+  {
+    "id": "compass_03",
+    "name": "Compass 03"
+  },
+  {
+    "id": "compass_04",
+    "name": "Compass 04"
+  },
+  {
+    "id": "compass_05",
+    "name": "Compass 05"
+  },
+  {
+    "id": "compass_06",
+    "name": "Compass 06"
+  },
+  {
+    "id": "compass_07",
+    "name": "Compass 07"
+  },
+  {
+    "id": "compass_08",
+    "name": "Compass 08"
+  },
+  {
+    "id": "compass_09",
+    "name": "Compass 09"
+  },
+  {
+    "id": "compass_10",
+    "name": "Compass 10"
+  },
+  {
+    "id": "compass_11",
+    "name": "Compass 11"
+  },
+  {
+    "id": "compass_12",
+    "name": "Compass 12"
+  },
+  {
+    "id": "compass_13",
+    "name": "Compass 13"
+  },
+  {
+    "id": "compass_14",
+    "name": "Compass 14"
+  },
+  {
+    "id": "compass_15",
+    "name": "Compass 15"
+  },
+  {
+    "id": "compass_16",
+    "name": "Compass 16"
+  },
+  {
+    "id": "compass_17",
+    "name": "Compass 17"
+  },
+  {
+    "id": "compass_18",
+    "name": "Compass 18"
+  },
+  {
+    "id": "compass_19",
+    "name": "Compass 19"
+  },
+  {
+    "id": "compass_20",
+    "name": "Compass 20"
+  },
+  {
+    "id": "compass_21",
+    "name": "Compass 21"
+  },
+  {
+    "id": "compass_22",
+    "name": "Compass 22"
+  },
+  {
+    "id": "compass_23",
+    "name": "Compass 23"
+  },
+  {
+    "id": "compass_24",
+    "name": "Compass 24"
+  },
+  {
+    "id": "compass_25",
+    "name": "Compass 25"
+  },
+  {
+    "id": "compass_26",
+    "name": "Compass 26"
+  },
+  {
+    "id": "compass_27",
+    "name": "Compass 27"
+  },
+  {
+    "id": "compass_28",
+    "name": "Compass 28"
+  },
+  {
+    "id": "compass_29",
+    "name": "Compass 29"
+  },
+  {
+    "id": "compass_30",
+    "name": "Compass 30"
+  },
+  {
+    "id": "compass_31",
+    "name": "Compass 31"
+  },
+  {
+    "id": "cooked_beef",
+    "name": "Cooked Beef"
+  },
+  {
+    "id": "cooked_chicken",
+    "name": "Cooked Chicken"
+  },
+  {
+    "id": "cooked_cod",
+    "name": "Cooked Cod"
+  },
+  {
+    "id": "cooked_mutton",
+    "name": "Cooked Mutton"
+  },
+  {
+    "id": "cooked_porkchop",
+    "name": "Cooked Porkchop"
+  },
+  {
+    "id": "cooked_rabbit",
+    "name": "Cooked Rabbit"
+  },
+  {
+    "id": "cooked_salmon",
+    "name": "Cooked Salmon"
+  },
+  {
+    "id": "cookie",
+    "name": "Cookie"
+  },
+  {
+    "id": "copper_door",
+    "name": "Copper Door"
+  },
+  {
+    "id": "copper_ingot",
+    "name": "Copper Ingot"
+  },
+  {
+    "id": "creeper_banner_pattern",
+    "name": "Creeper Banner Pattern"
+  },
+  {
+    "id": "crimson_door",
+    "name": "Crimson Door"
+  },
+  {
+    "id": "crimson_hanging_sign",
+    "name": "Crimson Hanging Sign"
+  },
+  {
+    "id": "crimson_sign",
+    "name": "Crimson Sign"
+  },
+  {
+    "id": "crossbow_arrow",
+    "name": "Crossbow Arrow"
+  },
+  {
+    "id": "crossbow_firework",
+    "name": "Crossbow Firework"
+  },
+  {
+    "id": "crossbow_pulling_0",
+    "name": "Crossbow Pulling 0"
+  },
+  {
+    "id": "crossbow_pulling_1",
+    "name": "Crossbow Pulling 1"
+  },
+  {
+    "id": "crossbow_pulling_2",
+    "name": "Crossbow Pulling 2"
+  },
+  {
+    "id": "crossbow_standby",
+    "name": "Crossbow Standby"
+  },
+  {
+    "id": "cyan_candle",
+    "name": "Cyan Candle"
+  },
+  {
+    "id": "cyan_dye",
+    "name": "Cyan Dye"
+  },
+  {
+    "id": "danger_pottery_sherd",
+    "name": "Danger Pottery Sherd"
+  },
+  {
+    "id": "dark_oak_boat",
+    "name": "Dark Oak Boat"
+  },
+  {
+    "id": "dark_oak_chest_boat",
+    "name": "Dark Oak Chest Boat"
+  },
+  {
+    "id": "dark_oak_door",
+    "name": "Dark Oak Door"
+  },
+  {
+    "id": "dark_oak_hanging_sign",
+    "name": "Dark Oak Hanging Sign"
+  },
+  {
+    "id": "dark_oak_sign",
+    "name": "Dark Oak Sign"
+  },
+  {
+    "id": "diamond",
+    "name": "Diamond"
+  },
+  {
+    "id": "diamond_axe",
+    "name": "Diamond Axe"
+  },
+  {
+    "id": "diamond_boots",
+    "name": "Diamond Boots"
+  },
+  {
+    "id": "diamond_chestplate",
+    "name": "Diamond Chestplate"
+  },
+  {
+    "id": "diamond_helmet",
+    "name": "Diamond Helmet"
+  },
+  {
+    "id": "diamond_hoe",
+    "name": "Diamond Hoe"
+  },
+  {
+    "id": "diamond_horse_armor",
+    "name": "Diamond Horse Armor"
+  },
+  {
+    "id": "diamond_leggings",
+    "name": "Diamond Leggings"
+  },
+  {
+    "id": "diamond_pickaxe",
+    "name": "Diamond Pickaxe"
+  },
+  {
+    "id": "diamond_shovel",
+    "name": "Diamond Shovel"
+  },
+  {
+    "id": "diamond_sword",
+    "name": "Diamond Sword"
+  },
+  {
+    "id": "disc_fragment_5",
+    "name": "Disc Fragment 5"
+  },
+  {
+    "id": "dragon_breath",
+    "name": "Dragon Breath"
+  },
+  {
+    "id": "dried_kelp",
+    "name": "Dried Kelp"
+  },
+  {
+    "id": "dune_armor_trim_smithing_template",
+    "name": "Dune Armor Trim Smithing Template"
+  },
+  {
+    "id": "echo_shard",
+    "name": "Echo Shard"
+  },
+  {
+    "id": "egg",
+    "name": "Egg"
+  },
+  {
+    "id": "elytra",
+    "name": "Elytra"
+  },
+  {
+    "id": "emerald",
+    "name": "Emerald"
+  },
+  {
+    "id": "empty_armor_slot_boots",
+    "name": "Empty Armor Slot Boots"
+  },
+  {
+    "id": "empty_armor_slot_chestplate",
+    "name": "Empty Armor Slot Chestplate"
+  },
+  {
+    "id": "empty_armor_slot_helmet",
+    "name": "Empty Armor Slot Helmet"
+  },
+  {
+    "id": "empty_armor_slot_leggings",
+    "name": "Empty Armor Slot Leggings"
+  },
+  {
+    "id": "empty_armor_slot_shield",
+    "name": "Empty Armor Slot Shield"
+  },
+  {
+    "id": "empty_slot_amethyst_shard",
+    "name": "Empty Slot Amethyst Shard"
+  },
+  {
+    "id": "empty_slot_axe",
+    "name": "Empty Slot Axe"
+  },
+  {
+    "id": "empty_slot_diamond",
+    "name": "Empty Slot Diamond"
+  },
+  {
+    "id": "empty_slot_emerald",
+    "name": "Empty Slot Emerald"
+  },
+  {
+    "id": "empty_slot_hoe",
+    "name": "Empty Slot Hoe"
+  },
+  {
+    "id": "empty_slot_ingot",
+    "name": "Empty Slot Ingot"
+  },
+  {
+    "id": "empty_slot_lapis_lazuli",
+    "name": "Empty Slot Lapis Lazuli"
+  },
+  {
+    "id": "empty_slot_pickaxe",
+    "name": "Empty Slot Pickaxe"
+  },
+  {
+    "id": "empty_slot_quartz",
+    "name": "Empty Slot Quartz"
+  },
+  {
+    "id": "empty_slot_redstone_dust",
+    "name": "Empty Slot Redstone Dust"
+  },
+  {
+    "id": "empty_slot_shovel",
+    "name": "Empty Slot Shovel"
+  },
+  {
+    "id": "empty_slot_smithing_template_armor_trim",
+    "name": "Empty Slot Smithing Template Armor Trim"
+  },
+  {
+    "id": "empty_slot_smithing_template_netherite_upgrade",
+    "name": "Empty Slot Smithing Template Netherite Upgrade"
+  },
+  {
+    "id": "empty_slot_sword",
+    "name": "Empty Slot Sword"
+  },
+  {
+    "id": "enchanted_book",
+    "name": "Enchanted Book"
+  },
+  {
+    "id": "end_crystal",
+    "name": "End Crystal"
+  },
+  {
+    "id": "ender_eye",
+    "name": "Ender Eye"
+  },
+  {
+    "id": "ender_pearl",
+    "name": "Ender Pearl"
+  },
+  {
+    "id": "experience_bottle",
+    "name": "Experience Bottle"
+  },
+  {
+    "id": "explorer_pottery_sherd",
+    "name": "Explorer Pottery Sherd"
+  },
+  {
+    "id": "exposed_copper_door",
+    "name": "Exposed Copper Door"
+  },
+  {
+    "id": "eye_armor_trim_smithing_template",
+    "name": "Eye Armor Trim Smithing Template"
+  },
+  {
+    "id": "feather",
+    "name": "Feather"
+  },
+  {
+    "id": "fermented_spider_eye",
+    "name": "Fermented Spider Eye"
+  },
+  {
+    "id": "filled_map",
+    "name": "Filled Map"
+  },
+  {
+    "id": "filled_map_markings",
+    "name": "Filled Map Markings"
+  },
+  {
+    "id": "fire_charge",
+    "name": "Fire Charge"
+  },
+  {
+    "id": "firework_rocket",
+    "name": "Firework Rocket"
+  },
+  {
+    "id": "firework_star",
+    "name": "Firework Star"
+  },
+  {
+    "id": "firework_star_overlay",
+    "name": "Firework Star Overlay"
+  },
+  {
+    "id": "fishing_rod",
+    "name": "Fishing Rod"
+  },
+  {
+    "id": "fishing_rod_cast",
+    "name": "Fishing Rod Cast"
+  },
+  {
+    "id": "flint",
+    "name": "Flint"
+  },
+  {
+    "id": "flint_and_steel",
+    "name": "Flint And Steel"
+  },
+  {
+    "id": "flow_armor_trim_smithing_template",
+    "name": "Flow Armor Trim Smithing Template"
+  },
+  {
+    "id": "flow_banner_pattern",
+    "name": "Flow Banner Pattern"
+  },
+  {
+    "id": "flow_pottery_sherd",
+    "name": "Flow Pottery Sherd"
+  },
+  {
+    "id": "flower_banner_pattern",
+    "name": "Flower Banner Pattern"
+  },
+  {
+    "id": "flower_pot",
+    "name": "Flower Pot"
+  },
+  {
+    "id": "friend_pottery_sherd",
+    "name": "Friend Pottery Sherd"
+  },
+  {
+    "id": "furnace_minecart",
+    "name": "Furnace Minecart"
+  },
+  {
+    "id": "ghast_tear",
+    "name": "Ghast Tear"
+  },
+  {
+    "id": "glass_bottle",
+    "name": "Glass Bottle"
+  },
+  {
+    "id": "glistering_melon_slice",
+    "name": "Glistering Melon Slice"
+  },
+  {
+    "id": "globe_banner_pattern",
+    "name": "Globe Banner Pattern"
+  },
+  {
+    "id": "glow_berries",
+    "name": "Glow Berries"
+  },
+  {
+    "id": "glow_ink_sac",
+    "name": "Glow Ink Sac"
+  },
+  {
+    "id": "glow_item_frame",
+    "name": "Glow Item Frame"
+  },
+  {
+    "id": "glowstone_dust",
+    "name": "Glowstone Dust"
+  },
+  {
+    "id": "goat_horn",
+    "name": "Goat Horn"
+  },
+  {
+    "id": "gold_ingot",
+    "name": "Gold Ingot"
+  },
+  {
+    "id": "gold_nugget",
+    "name": "Gold Nugget"
+  },
+  {
+    "id": "golden_apple",
+    "name": "Golden Apple"
+  },
+  {
+    "id": "golden_axe",
+    "name": "Golden Axe"
+  },
+  {
+    "id": "golden_boots",
+    "name": "Golden Boots"
+  },
+  {
+    "id": "golden_carrot",
+    "name": "Golden Carrot"
+  },
+  {
+    "id": "golden_chestplate",
+    "name": "Golden Chestplate"
+  },
+  {
+    "id": "golden_helmet",
+    "name": "Golden Helmet"
+  },
+  {
+    "id": "golden_hoe",
+    "name": "Golden Hoe"
+  },
+  {
+    "id": "golden_horse_armor",
+    "name": "Golden Horse Armor"
+  },
+  {
+    "id": "golden_leggings",
+    "name": "Golden Leggings"
+  },
+  {
+    "id": "golden_pickaxe",
+    "name": "Golden Pickaxe"
+  },
+  {
+    "id": "golden_shovel",
+    "name": "Golden Shovel"
+  },
+  {
+    "id": "golden_sword",
+    "name": "Golden Sword"
+  },
+  {
+    "id": "gray_candle",
+    "name": "Gray Candle"
+  },
+  {
+    "id": "gray_dye",
+    "name": "Gray Dye"
+  },
+  {
+    "id": "green_candle",
+    "name": "Green Candle"
+  },
+  {
+    "id": "green_dye",
+    "name": "Green Dye"
+  },
+  {
+    "id": "gunpowder",
+    "name": "Gunpowder"
+  },
+  {
+    "id": "guster_banner_pattern",
+    "name": "Guster Banner Pattern"
+  },
+  {
+    "id": "guster_pottery_sherd",
+    "name": "Guster Pottery Sherd"
+  },
+  {
+    "id": "heart_of_the_sea",
+    "name": "Heart Of The Sea"
+  },
+  {
+    "id": "heart_pottery_sherd",
+    "name": "Heart Pottery Sherd"
+  },
+  {
+    "id": "heartbreak_pottery_sherd",
+    "name": "Heartbreak Pottery Sherd"
+  },
+  {
+    "id": "honey_bottle",
+    "name": "Honey Bottle"
+  },
+  {
+    "id": "honeycomb",
+    "name": "Honeycomb"
+  },
+  {
+    "id": "hopper",
+    "name": "Hopper"
+  },
+  {
+    "id": "hopper_minecart",
+    "name": "Hopper Minecart"
+  },
+  {
+    "id": "host_armor_trim_smithing_template",
+    "name": "Host Armor Trim Smithing Template"
+  },
+  {
+    "id": "howl_pottery_sherd",
+    "name": "Howl Pottery Sherd"
+  },
+  {
+    "id": "ink_sac",
+    "name": "Ink Sac"
+  },
+  {
+    "id": "iron_axe",
+    "name": "Iron Axe"
+  },
+  {
+    "id": "iron_boots",
+    "name": "Iron Boots"
+  },
+  {
+    "id": "iron_chestplate",
+    "name": "Iron Chestplate"
+  },
+  {
+    "id": "iron_door",
+    "name": "Iron Door"
+  },
+  {
+    "id": "iron_helmet",
+    "name": "Iron Helmet"
+  },
+  {
+    "id": "iron_hoe",
+    "name": "Iron Hoe"
+  },
+  {
+    "id": "iron_horse_armor",
+    "name": "Iron Horse Armor"
+  },
+  {
+    "id": "iron_ingot",
+    "name": "Iron Ingot"
+  },
+  {
+    "id": "iron_leggings",
+    "name": "Iron Leggings"
+  },
+  {
+    "id": "iron_nugget",
+    "name": "Iron Nugget"
+  },
+  {
+    "id": "iron_pickaxe",
+    "name": "Iron Pickaxe"
+  },
+  {
+    "id": "iron_shovel",
+    "name": "Iron Shovel"
+  },
+  {
+    "id": "iron_sword",
+    "name": "Iron Sword"
+  },
+  {
+    "id": "item_frame",
+    "name": "Item Frame"
+  },
+  {
+    "id": "jungle_boat",
+    "name": "Jungle Boat"
+  },
+  {
+    "id": "jungle_chest_boat",
+    "name": "Jungle Chest Boat"
+  },
+  {
+    "id": "jungle_door",
+    "name": "Jungle Door"
+  },
+  {
+    "id": "jungle_hanging_sign",
+    "name": "Jungle Hanging Sign"
+  },
+  {
+    "id": "jungle_sign",
+    "name": "Jungle Sign"
+  },
+  {
+    "id": "kelp",
+    "name": "Kelp"
+  },
+  {
+    "id": "knowledge_book",
+    "name": "Knowledge Book"
+  },
+  {
+    "id": "lantern",
+    "name": "Lantern"
+  },
+  {
+    "id": "lapis_lazuli",
+    "name": "Lapis Lazuli"
+  },
+  {
+    "id": "lava_bucket",
+    "name": "Lava Bucket"
+  },
+  {
+    "id": "lead",
+    "name": "Lead"
+  },
+  {
+    "id": "leather",
+    "name": "Leather"
+  },
+  {
+    "id": "leather_boots",
+    "name": "Leather Boots"
+  },
+  {
+    "id": "leather_boots_overlay",
+    "name": "Leather Boots Overlay"
+  },
+  {
+    "id": "leather_chestplate",
+    "name": "Leather Chestplate"
+  },
+  {
+    "id": "leather_chestplate_overlay",
+    "name": "Leather Chestplate Overlay"
+  },
+  {
+    "id": "leather_helmet",
+    "name": "Leather Helmet"
+  },
+  {
+    "id": "leather_helmet_overlay",
+    "name": "Leather Helmet Overlay"
+  },
+  {
+    "id": "leather_horse_armor",
+    "name": "Leather Horse Armor"
+  },
+  {
+    "id": "leather_leggings",
+    "name": "Leather Leggings"
+  },
+  {
+    "id": "leather_leggings_overlay",
+    "name": "Leather Leggings Overlay"
+  },
+  {
+    "id": "light",
+    "name": "Light"
+  },
+  {
+    "id": "light_00",
+    "name": "Light 00"
+  },
+  {
+    "id": "light_01",
+    "name": "Light 01"
+  },
+  {
+    "id": "light_02",
+    "name": "Light 02"
+  },
+  {
+    "id": "light_03",
+    "name": "Light 03"
+  },
+  {
+    "id": "light_04",
+    "name": "Light 04"
+  },
+  {
+    "id": "light_05",
+    "name": "Light 05"
+  },
+  {
+    "id": "light_06",
+    "name": "Light 06"
+  },
+  {
+    "id": "light_07",
+    "name": "Light 07"
+  },
+  {
+    "id": "light_08",
+    "name": "Light 08"
+  },
+  {
+    "id": "light_09",
+    "name": "Light 09"
+  },
+  {
+    "id": "light_10",
+    "name": "Light 10"
+  },
+  {
+    "id": "light_11",
+    "name": "Light 11"
+  },
+  {
+    "id": "light_12",
+    "name": "Light 12"
+  },
+  {
+    "id": "light_13",
+    "name": "Light 13"
+  },
+  {
+    "id": "light_14",
+    "name": "Light 14"
+  },
+  {
+    "id": "light_15",
+    "name": "Light 15"
+  },
+  {
+    "id": "light_blue_candle",
+    "name": "Light Blue Candle"
+  },
+  {
+    "id": "light_blue_dye",
+    "name": "Light Blue Dye"
+  },
+  {
+    "id": "light_gray_candle",
+    "name": "Light Gray Candle"
+  },
+  {
+    "id": "light_gray_dye",
+    "name": "Light Gray Dye"
+  },
+  {
+    "id": "lime_candle",
+    "name": "Lime Candle"
+  },
+  {
+    "id": "lime_dye",
+    "name": "Lime Dye"
+  },
+  {
+    "id": "lingering_potion",
+    "name": "Lingering Potion"
+  },
+  {
+    "id": "mace",
+    "name": "Mace"
+  },
+  {
+    "id": "magenta_candle",
+    "name": "Magenta Candle"
+  },
+  {
+    "id": "magenta_dye",
+    "name": "Magenta Dye"
+  },
+  {
+    "id": "magma_cream",
+    "name": "Magma Cream"
+  },
+  {
+    "id": "mangrove_boat",
+    "name": "Mangrove Boat"
+  },
+  {
+    "id": "mangrove_chest_boat",
+    "name": "Mangrove Chest Boat"
+  },
+  {
+    "id": "mangrove_door",
+    "name": "Mangrove Door"
+  },
+  {
+    "id": "mangrove_hanging_sign",
+    "name": "Mangrove Hanging Sign"
+  },
+  {
+    "id": "mangrove_propagule",
+    "name": "Mangrove Propagule"
+  },
+  {
+    "id": "mangrove_sign",
+    "name": "Mangrove Sign"
+  },
+  {
+    "id": "map",
+    "name": "Map"
+  },
+  {
+    "id": "melon_seeds",
+    "name": "Melon Seeds"
+  },
+  {
+    "id": "melon_slice",
+    "name": "Melon Slice"
+  },
+  {
+    "id": "milk_bucket",
+    "name": "Milk Bucket"
+  },
+  {
+    "id": "minecart",
+    "name": "Minecart"
+  },
+  {
+    "id": "miner_pottery_sherd",
+    "name": "Miner Pottery Sherd"
+  },
+  {
+    "id": "mojang_banner_pattern",
+    "name": "Mojang Banner Pattern"
+  },
+  {
+    "id": "mourner_pottery_sherd",
+    "name": "Mourner Pottery Sherd"
+  },
+  {
+    "id": "mushroom_stew",
+    "name": "Mushroom Stew"
+  },
+  {
+    "id": "music_disc_11",
+    "name": "Music Disc 11"
+  },
+  {
+    "id": "music_disc_13",
+    "name": "Music Disc 13"
+  },
+  {
+    "id": "music_disc_5",
+    "name": "Music Disc 5"
+  },
+  {
+    "id": "music_disc_blocks",
+    "name": "Music Disc Blocks"
+  },
+  {
+    "id": "music_disc_cat",
+    "name": "Music Disc Cat"
+  },
+  {
+    "id": "music_disc_chirp",
+    "name": "Music Disc Chirp"
+  },
+  {
+    "id": "music_disc_far",
+    "name": "Music Disc Far"
+  },
+  {
+    "id": "music_disc_mall",
+    "name": "Music Disc Mall"
+  },
+  {
+    "id": "music_disc_mellohi",
+    "name": "Music Disc Mellohi"
+  },
+  {
+    "id": "music_disc_otherside",
+    "name": "Music Disc Otherside"
+  },
+  {
+    "id": "music_disc_pigstep",
+    "name": "Music Disc Pigstep"
+  },
+  {
+    "id": "music_disc_relic",
+    "name": "Music Disc Relic"
+  },
+  {
+    "id": "music_disc_stal",
+    "name": "Music Disc Stal"
+  },
+  {
+    "id": "music_disc_strad",
+    "name": "Music Disc Strad"
+  },
+  {
+    "id": "music_disc_wait",
+    "name": "Music Disc Wait"
+  },
+  {
+    "id": "music_disc_ward",
+    "name": "Music Disc Ward"
+  },
+  {
+    "id": "mutton",
+    "name": "Mutton"
+  },
+  {
+    "id": "name_tag",
+    "name": "Name Tag"
+  },
+  {
+    "id": "nautilus_shell",
+    "name": "Nautilus Shell"
+  },
+  {
+    "id": "nether_brick",
+    "name": "Nether Brick"
+  },
+  {
+    "id": "nether_sprouts",
+    "name": "Nether Sprouts"
+  },
+  {
+    "id": "nether_star",
+    "name": "Nether Star"
+  },
+  {
+    "id": "nether_wart",
+    "name": "Nether Wart"
+  },
+  {
+    "id": "netherite_axe",
+    "name": "Netherite Axe"
+  },
+  {
+    "id": "netherite_boots",
+    "name": "Netherite Boots"
+  },
+  {
+    "id": "netherite_chestplate",
+    "name": "Netherite Chestplate"
+  },
+  {
+    "id": "netherite_helmet",
+    "name": "Netherite Helmet"
+  },
+  {
+    "id": "netherite_hoe",
+    "name": "Netherite Hoe"
+  },
+  {
+    "id": "netherite_ingot",
+    "name": "Netherite Ingot"
+  },
+  {
+    "id": "netherite_leggings",
+    "name": "Netherite Leggings"
+  },
+  {
+    "id": "netherite_pickaxe",
+    "name": "Netherite Pickaxe"
+  },
+  {
+    "id": "netherite_scrap",
+    "name": "Netherite Scrap"
+  },
+  {
+    "id": "netherite_shovel",
+    "name": "Netherite Shovel"
+  },
+  {
+    "id": "netherite_sword",
+    "name": "Netherite Sword"
+  },
+  {
+    "id": "netherite_upgrade_smithing_template",
+    "name": "Netherite Upgrade Smithing Template"
+  },
+  {
+    "id": "oak_boat",
+    "name": "Oak Boat"
+  },
+  {
+    "id": "oak_chest_boat",
+    "name": "Oak Chest Boat"
+  },
+  {
+    "id": "oak_door",
+    "name": "Oak Door"
+  },
+  {
+    "id": "oak_hanging_sign",
+    "name": "Oak Hanging Sign"
+  },
+  {
+    "id": "oak_sign",
+    "name": "Oak Sign"
+  },
+  {
+    "id": "ominous_bottle",
+    "name": "Ominous Bottle"
+  },
+  {
+    "id": "ominous_trial_key",
+    "name": "Ominous Trial Key"
+  },
+  {
+    "id": "orange_candle",
+    "name": "Orange Candle"
+  },
+  {
+    "id": "orange_dye",
+    "name": "Orange Dye"
+  },
+  {
+    "id": "oxidized_copper_door",
+    "name": "Oxidized Copper Door"
+  },
+  {
+    "id": "painting",
+    "name": "Painting"
+  },
+  {
+    "id": "paper",
+    "name": "Paper"
+  },
+  {
+    "id": "phantom_membrane",
+    "name": "Phantom Membrane"
+  },
+  {
+    "id": "piglin_banner_pattern",
+    "name": "Piglin Banner Pattern"
+  },
+  {
+    "id": "pink_candle",
+    "name": "Pink Candle"
+  },
+  {
+    "id": "pink_dye",
+    "name": "Pink Dye"
+  },
+  {
+    "id": "pink_petals",
+    "name": "Pink Petals"
+  },
+  {
+    "id": "pitcher_plant",
+    "name": "Pitcher Plant"
+  },
+  {
+    "id": "pitcher_pod",
+    "name": "Pitcher Pod"
+  },
+  {
+    "id": "plenty_pottery_sherd",
+    "name": "Plenty Pottery Sherd"
+  },
+  {
+    "id": "pointed_dripstone",
+    "name": "Pointed Dripstone"
+  },
+  {
+    "id": "poisonous_potato",
+    "name": "Poisonous Potato"
+  },
+  {
+    "id": "popped_chorus_fruit",
+    "name": "Popped Chorus Fruit"
+  },
+  {
+    "id": "porkchop",
+    "name": "Porkchop"
+  },
+  {
+    "id": "potato",
+    "name": "Potato"
+  },
+  {
+    "id": "potion",
+    "name": "Potion"
+  },
+  {
+    "id": "potion_overlay",
+    "name": "Potion Overlay"
+  },
+  {
+    "id": "powder_snow_bucket",
+    "name": "Powder Snow Bucket"
+  },
+  {
+    "id": "prismarine_crystals",
+    "name": "Prismarine Crystals"
+  },
+  {
+    "id": "prismarine_shard",
+    "name": "Prismarine Shard"
+  },
+  {
+    "id": "prize_pottery_sherd",
+    "name": "Prize Pottery Sherd"
+  },
+  {
+    "id": "pufferfish",
+    "name": "Pufferfish"
+  },
+  {
+    "id": "pufferfish_bucket",
+    "name": "Pufferfish Bucket"
+  },
+  {
+    "id": "pumpkin_pie",
+    "name": "Pumpkin Pie"
+  },
+  {
+    "id": "pumpkin_seeds",
+    "name": "Pumpkin Seeds"
+  },
+  {
+    "id": "purple_candle",
+    "name": "Purple Candle"
+  },
+  {
+    "id": "purple_dye",
+    "name": "Purple Dye"
+  },
+  {
+    "id": "quartz",
+    "name": "Quartz"
+  },
+  {
+    "id": "rabbit",
+    "name": "Rabbit"
+  },
+  {
+    "id": "rabbit_foot",
+    "name": "Rabbit Foot"
+  },
+  {
+    "id": "rabbit_hide",
+    "name": "Rabbit Hide"
+  },
+  {
+    "id": "rabbit_stew",
+    "name": "Rabbit Stew"
+  },
+  {
+    "id": "raiser_armor_trim_smithing_template",
+    "name": "Raiser Armor Trim Smithing Template"
+  },
+  {
+    "id": "raw_copper",
+    "name": "Raw Copper"
+  },
+  {
+    "id": "raw_gold",
+    "name": "Raw Gold"
+  },
+  {
+    "id": "raw_iron",
+    "name": "Raw Iron"
+  },
+  {
+    "id": "recovery_compass_00",
+    "name": "Recovery Compass 00"
+  },
+  {
+    "id": "recovery_compass_01",
+    "name": "Recovery Compass 01"
+  },
+  {
+    "id": "recovery_compass_02",
+    "name": "Recovery Compass 02"
+  },
+  {
+    "id": "recovery_compass_03",
+    "name": "Recovery Compass 03"
+  },
+  {
+    "id": "recovery_compass_04",
+    "name": "Recovery Compass 04"
+  },
+  {
+    "id": "recovery_compass_05",
+    "name": "Recovery Compass 05"
+  },
+  {
+    "id": "recovery_compass_06",
+    "name": "Recovery Compass 06"
+  },
+  {
+    "id": "recovery_compass_07",
+    "name": "Recovery Compass 07"
+  },
+  {
+    "id": "recovery_compass_08",
+    "name": "Recovery Compass 08"
+  },
+  {
+    "id": "recovery_compass_09",
+    "name": "Recovery Compass 09"
+  },
+  {
+    "id": "recovery_compass_10",
+    "name": "Recovery Compass 10"
+  },
+  {
+    "id": "recovery_compass_11",
+    "name": "Recovery Compass 11"
+  },
+  {
+    "id": "recovery_compass_12",
+    "name": "Recovery Compass 12"
+  },
+  {
+    "id": "recovery_compass_13",
+    "name": "Recovery Compass 13"
+  },
+  {
+    "id": "recovery_compass_14",
+    "name": "Recovery Compass 14"
+  },
+  {
+    "id": "recovery_compass_15",
+    "name": "Recovery Compass 15"
+  },
+  {
+    "id": "recovery_compass_16",
+    "name": "Recovery Compass 16"
+  },
+  {
+    "id": "recovery_compass_17",
+    "name": "Recovery Compass 17"
+  },
+  {
+    "id": "recovery_compass_18",
+    "name": "Recovery Compass 18"
+  },
+  {
+    "id": "recovery_compass_19",
+    "name": "Recovery Compass 19"
+  },
+  {
+    "id": "recovery_compass_20",
+    "name": "Recovery Compass 20"
+  },
+  {
+    "id": "recovery_compass_21",
+    "name": "Recovery Compass 21"
+  },
+  {
+    "id": "recovery_compass_22",
+    "name": "Recovery Compass 22"
+  },
+  {
+    "id": "recovery_compass_23",
+    "name": "Recovery Compass 23"
+  },
+  {
+    "id": "recovery_compass_24",
+    "name": "Recovery Compass 24"
+  },
+  {
+    "id": "recovery_compass_25",
+    "name": "Recovery Compass 25"
+  },
+  {
+    "id": "recovery_compass_26",
+    "name": "Recovery Compass 26"
+  },
+  {
+    "id": "recovery_compass_27",
+    "name": "Recovery Compass 27"
+  },
+  {
+    "id": "recovery_compass_28",
+    "name": "Recovery Compass 28"
+  },
+  {
+    "id": "recovery_compass_29",
+    "name": "Recovery Compass 29"
+  },
+  {
+    "id": "recovery_compass_30",
+    "name": "Recovery Compass 30"
+  },
+  {
+    "id": "recovery_compass_31",
+    "name": "Recovery Compass 31"
+  },
+  {
+    "id": "red_candle",
+    "name": "Red Candle"
+  },
+  {
+    "id": "red_dye",
+    "name": "Red Dye"
+  },
+  {
+    "id": "redstone",
+    "name": "Redstone"
+  },
+  {
+    "id": "repeater",
+    "name": "Repeater"
+  },
+  {
+    "id": "rib_armor_trim_smithing_template",
+    "name": "Rib Armor Trim Smithing Template"
+  },
+  {
+    "id": "rotten_flesh",
+    "name": "Rotten Flesh"
+  },
+  {
+    "id": "saddle",
+    "name": "Saddle"
+  },
+  {
+    "id": "salmon",
+    "name": "Salmon"
+  },
+  {
+    "id": "salmon_bucket",
+    "name": "Salmon Bucket"
+  },
+  {
+    "id": "scrape_pottery_sherd",
+    "name": "Scrape Pottery Sherd"
+  },
+  {
+    "id": "sea_pickle",
+    "name": "Sea Pickle"
+  },
+  {
+    "id": "seagrass",
+    "name": "Seagrass"
+  },
+  {
+    "id": "sentry_armor_trim_smithing_template",
+    "name": "Sentry Armor Trim Smithing Template"
+  },
+  {
+    "id": "shaper_armor_trim_smithing_template",
+    "name": "Shaper Armor Trim Smithing Template"
+  },
+  {
+    "id": "sheaf_pottery_sherd",
+    "name": "Sheaf Pottery Sherd"
+  },
+  {
+    "id": "shears",
+    "name": "Shears"
+  },
+  {
+    "id": "shelter_pottery_sherd",
+    "name": "Shelter Pottery Sherd"
+  },
+  {
+    "id": "shulker_shell",
+    "name": "Shulker Shell"
+  },
+  {
+    "id": "silence_armor_trim_smithing_template",
+    "name": "Silence Armor Trim Smithing Template"
+  },
+  {
+    "id": "skull_banner_pattern",
+    "name": "Skull Banner Pattern"
+  },
+  {
+    "id": "skull_pottery_sherd",
+    "name": "Skull Pottery Sherd"
+  },
+  {
+    "id": "slime_ball",
+    "name": "Slime Ball"
+  },
+  {
+    "id": "sniffer_egg",
+    "name": "Sniffer Egg"
+  },
+  {
+    "id": "snort_pottery_sherd",
+    "name": "Snort Pottery Sherd"
+  },
+  {
+    "id": "snout_armor_trim_smithing_template",
+    "name": "Snout Armor Trim Smithing Template"
+  },
+  {
+    "id": "snowball",
+    "name": "Snowball"
+  },
+  {
+    "id": "soul_campfire",
+    "name": "Soul Campfire"
+  },
+  {
+    "id": "soul_lantern",
+    "name": "Soul Lantern"
+  },
+  {
+    "id": "spawn_egg",
+    "name": "Spawn Egg"
+  },
+  {
+    "id": "spawn_egg_overlay",
+    "name": "Spawn Egg Overlay"
+  },
+  {
+    "id": "spectral_arrow",
+    "name": "Spectral Arrow"
+  },
+  {
+    "id": "spider_eye",
+    "name": "Spider Eye"
+  },
+  {
+    "id": "spire_armor_trim_smithing_template",
+    "name": "Spire Armor Trim Smithing Template"
+  },
+  {
+    "id": "splash_potion",
+    "name": "Splash Potion"
+  },
+  {
+    "id": "spruce_boat",
+    "name": "Spruce Boat"
+  },
+  {
+    "id": "spruce_chest_boat",
+    "name": "Spruce Chest Boat"
+  },
+  {
+    "id": "spruce_door",
+    "name": "Spruce Door"
+  },
+  {
+    "id": "spruce_hanging_sign",
+    "name": "Spruce Hanging Sign"
+  },
+  {
+    "id": "spruce_sign",
+    "name": "Spruce Sign"
+  },
+  {
+    "id": "spyglass",
+    "name": "Spyglass"
+  },
+  {
+    "id": "spyglass_model",
+    "name": "Spyglass Model"
+  },
+  {
+    "id": "stick",
+    "name": "Stick"
+  },
+  {
+    "id": "stone_axe",
+    "name": "Stone Axe"
+  },
+  {
+    "id": "stone_hoe",
+    "name": "Stone Hoe"
+  },
+  {
+    "id": "stone_pickaxe",
+    "name": "Stone Pickaxe"
+  },
+  {
+    "id": "stone_shovel",
+    "name": "Stone Shovel"
+  },
+  {
+    "id": "stone_sword",
+    "name": "Stone Sword"
+  },
+  {
+    "id": "string",
+    "name": "String"
+  },
+  {
+    "id": "structure_void",
+    "name": "Structure Void"
+  },
+  {
+    "id": "sugar",
+    "name": "Sugar"
+  },
+  {
+    "id": "sugar_cane",
+    "name": "Sugar Cane"
+  },
+  {
+    "id": "suspicious_stew",
+    "name": "Suspicious Stew"
+  },
+  {
+    "id": "sweet_berries",
+    "name": "Sweet Berries"
+  },
+  {
+    "id": "tadpole_bucket",
+    "name": "Tadpole Bucket"
+  },
+  {
+    "id": "tide_armor_trim_smithing_template",
+    "name": "Tide Armor Trim Smithing Template"
+  },
+  {
+    "id": "tipped_arrow_base",
+    "name": "Tipped Arrow Base"
+  },
+  {
+    "id": "tipped_arrow_head",
+    "name": "Tipped Arrow Head"
+  },
+  {
+    "id": "tnt_minecart",
+    "name": "Tnt Minecart"
+  },
+  {
+    "id": "torchflower_seeds",
+    "name": "Torchflower Seeds"
+  },
+  {
+    "id": "totem_of_undying",
+    "name": "Totem Of Undying"
+  },
+  {
+    "id": "trial_key",
+    "name": "Trial Key"
+  },
+  {
+    "id": "trident",
+    "name": "Trident"
+  },
+  {
+    "id": "tropical_fish",
+    "name": "Tropical Fish"
+  },
+  {
+    "id": "tropical_fish_bucket",
+    "name": "Tropical Fish Bucket"
+  },
+  {
+    "id": "turtle_egg",
+    "name": "Turtle Egg"
+  },
+  {
+    "id": "turtle_helmet",
+    "name": "Turtle Helmet"
+  },
+  {
+    "id": "turtle_scute",
+    "name": "Turtle Scute"
+  },
+  {
+    "id": "vex_armor_trim_smithing_template",
+    "name": "Vex Armor Trim Smithing Template"
+  },
+  {
+    "id": "ward_armor_trim_smithing_template",
+    "name": "Ward Armor Trim Smithing Template"
+  },
+  {
+    "id": "warped_door",
+    "name": "Warped Door"
+  },
+  {
+    "id": "warped_fungus_on_a_stick",
+    "name": "Warped Fungus On A Stick"
+  },
+  {
+    "id": "warped_hanging_sign",
+    "name": "Warped Hanging Sign"
+  },
+  {
+    "id": "warped_sign",
+    "name": "Warped Sign"
+  },
+  {
+    "id": "water_bucket",
+    "name": "Water Bucket"
+  },
+  {
+    "id": "wayfinder_armor_trim_smithing_template",
+    "name": "Wayfinder Armor Trim Smithing Template"
+  },
+  {
+    "id": "weathered_copper_door",
+    "name": "Weathered Copper Door"
+  },
+  {
+    "id": "wheat",
+    "name": "Wheat"
+  },
+  {
+    "id": "wheat_seeds",
+    "name": "Wheat Seeds"
+  },
+  {
+    "id": "white_candle",
+    "name": "White Candle"
+  },
+  {
+    "id": "white_dye",
+    "name": "White Dye"
+  },
+  {
+    "id": "wild_armor_trim_smithing_template",
+    "name": "Wild Armor Trim Smithing Template"
+  },
+  {
+    "id": "wind_charge",
+    "name": "Wind Charge"
+  },
+  {
+    "id": "wolf_armor",
+    "name": "Wolf Armor"
+  },
+  {
+    "id": "wolf_armor_overlay",
+    "name": "Wolf Armor Overlay"
+  },
+  {
+    "id": "wooden_axe",
+    "name": "Wooden Axe"
+  },
+  {
+    "id": "wooden_hoe",
+    "name": "Wooden Hoe"
+  },
+  {
+    "id": "wooden_pickaxe",
+    "name": "Wooden Pickaxe"
+  },
+  {
+    "id": "wooden_shovel",
+    "name": "Wooden Shovel"
+  },
+  {
+    "id": "wooden_sword",
+    "name": "Wooden Sword"
+  },
+  {
+    "id": "writable_book",
+    "name": "Writable Book"
+  },
+  {
+    "id": "written_book",
+    "name": "Written Book"
+  },
+  {
+    "id": "yellow_candle",
+    "name": "Yellow Candle"
+  },
+  {
+    "id": "yellow_dye",
+    "name": "Yellow Dye"
+  }
 ]
