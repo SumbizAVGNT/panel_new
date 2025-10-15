@@ -56,34 +56,29 @@
   </div>
 </div>
 
-<!-- ===== Modal: редактирование/создание (AURORA/GLASS) ===== -->
-<div class="modal fade" id="pcEditModal" data-bs-backdrop="false" data-bs-focus="true" tabindex="-1" aria-hidden="true">
+<!-- ===== Modal: редактирование/создание ===== -->
+<div class="modal fade" id="pcEditModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="false">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content glass-modal pc-modal">
+    <div class="modal-content glass pc-modal">
 
-      <!-- AURORA HEADER -->
-      <div class="modal-aurora">
-        <div class="aurora-bg"></div>
-        <div class="aurora-bar">
-          <div class="aurora-left">
-            <div class="aurora-icon">
-              <i class="bi bi-qr-code-scan"></i>
-            </div>
-            <div class="aurora-titles">
-              <div class="aurora-title">
-                Промокод <span id="pc-f-title" class="text-secondary">(новый)</span>
-              </div>
-              <div class="aurora-sub text-dim">Создание / редактирование</div>
-            </div>
+      <!-- HEADER как в accounts -->
+      <div class="modal-header">
+        <div class="d-flex align-items-center gap-2">
+          <div class="pc-header-icon">
+            <i class="bi bi-qr-code-scan"></i>
           </div>
-          <div class="aurora-right">
-            <button type="button" class="btn btn-sm btn-outline-light" data-bs-dismiss="modal">
-              <i class="bi bi-x-lg me-1"></i>Закрыть
-            </button>
+          <div>
+            <div class="pc-header-title">
+              Промокод <span id="pc-f-title" class="text-secondary">(новый)</span>
+            </div>
+            <div class="pc-header-sub text-dim">Создание / редактирование</div>
           </div>
         </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
 
-        <!-- Tabs (seg) -->
+      <!-- Tabs bar -->
+      <div class="m-tabs-wrap">
         <ul class="nav seg pc-tabs" id="pc-mTabs" role="tablist">
           <li class="nav-item"><a class="nav-link active" data-tab="overview"><i class="bi bi-sliders me-1"></i>Общее</a></li>
           <li class="nav-item"><a class="nav-link" data-tab="groups"><i class="bi bi-people me-1"></i>Группы</a></li>
@@ -157,6 +152,9 @@
                     </div>
                   </div>
 
+                  <!-- Превью LP-групп -->
+                  <div id="pc-groups-preview" class="small-muted mt-2"></div>
+
                   <div class="d-flex align-items-center gap-2 mt-3">
                     <button class="btn btn-sm btn-success btn-neon" id="pc-f-save">
                       <i class="bi bi-check2 me-1"></i>Сохранить
@@ -177,7 +175,7 @@
                   <div class="vstack gap-2">
                     <button class="btn btn-outline-light btn-sm" id="pc-a-gen"><i class="bi bi-stars me-1"></i>Сгенерировать код</button>
                     <button class="btn btn-outline-secondary btn-sm" id="pc-a-copy"><i class="bi bi-clipboard-check me-1"></i>Копировать код</button>
-                    <div class="small text-dim">Группы и активации грузятся на вкладках «Группы» / «Активации».</div>
+                    <div class="small text-dim">Подтягиваются группы/активации на соседних вкладках.</div>
                   </div>
                 </div>
               </div>
@@ -194,8 +192,7 @@
               <button class="btn btn-sm btn-primary btn-ghost" id="pc-g-save">Сохранить группы</button>
             </div>
           </div>
-
-          <!-- datalist с LP-группами для автодополнения -->
+          <!-- datalist для автодополнения -->
           <datalist id="pc-lp-groups"></datalist>
 
           <div class="table-responsive">
@@ -252,7 +249,7 @@
 <!-- ===== Toast zone ===== -->
 <div id="pc-toasts" class="pc-toasts"></div>
 
-<!-- ===== Styles (AURORA/GLASS) ===== -->
+<!-- ===== Styles (AURORA/GLASS, унификация с accounts) ===== -->
 <style>
 :root{
   --pc-bg: rgba(13,17,23,.58);
@@ -262,13 +259,14 @@
   --pc-red: #ef4444;
   --pc-dim: #94a3b8;
   --pc-text: #e5e7eb;
-  --pc-blue: #60a5fa;
-  --pc-cyan: #22d3ee;
 }
 
-.pc-wrap{display:grid;gap:14px}
+/* общие */
+.text-dim{color:var(--pc-dim)!important}
+.small-muted{color:#9aa4b2;font-size:.85rem}
 
-/* Glass cards / modal */
+/* контейнеры */
+.pc-wrap{display:grid;gap:14px}
 .glass-card{
   background:var(--pc-bg);
   border:1px solid var(--pc-br);
@@ -276,18 +274,29 @@
   border-radius:16px;
   padding:.75rem;
 }
-.glass-modal{
-  background:rgba(13,17,23,.92)!important;
-  border:1px solid var(--pc-br);
-  border-radius:16px;
-  overflow:hidden;
-  box-shadow: 0 0 0 1px rgba(96,165,250,.25), 0 18px 50px rgba(2,132,199,.18);
+
+/* модалка — как в accounts */
+.pc-modal{background:rgba(13,17,23,.92)!important;border:1px solid var(--pc-br);border-radius:16px;overflow:hidden}
+.pc-modal .modal-header{padding:.75rem;border-bottom:1px solid var(--pc-br)}
+.pc-modal .modal-body{padding:1rem}
+.pc-modal .modal-footer{padding:.75rem;border-top:1px solid var(--pc-br)}
+/* одинаковые отступы сверху */
+.modal-dialog{margin-top:1.75rem}
+
+/* убрать затемнение */
+.modal-backdrop{display:none!important}
+
+/* иконка в шапке */
+.pc-header-icon{
+  width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(180deg, rgba(148,163,184,.18), rgba(148,163,184,.06));
+  border:1px solid rgba(148,163,184,.28); color:#bfe3ff; font-size:19px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
 }
+.pc-header-title{font-weight:700;color:#e5e7eb}
+.pc-header-sub{font-size:.85rem}
 
-/* убираем затемнение у Bootstrap-модалки */
-.modal-backdrop{display:none!important;opacity:0!important}
-
-/* Toolbar */
+/* toolbar */
 .pc-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .pc-toolbar .left,.pc-toolbar .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pc-toolbar .form-control,.pc-toolbar .form-select{
@@ -298,7 +307,7 @@
 .input-icon i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--pc-dim)}
 .input-icon input{padding-left:32px}
 
-/* Buttons */
+/* кнопки */
 .btn-ghost{border-color:rgba(148,163,184,.28)!important}
 .btn-neon{
   position:relative; overflow:hidden; border:0!important; color:#0b1220!important;
@@ -312,7 +321,7 @@
 }
 .btn-neon:hover::after{opacity:1}
 
-/* Table */
+/* таблица */
 #pc-table{--bs-table-bg:rgba(15,23,42,.65);--bs-table-striped-bg:rgba(148,163,184,.05)}
 #pc-table th,#pc-table td{vertical-align:middle}
 #pc-table tbody tr{transition:.15s}
@@ -323,9 +332,6 @@
 .badge-active{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.45);color:#a7f3d0}
 .badge-off{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35);color:#e5e7eb}
 
-.text-dim{color:var(--pc-dim)!important}
-.text-expired{color:var(--pc-red)!important}
-
 .table thead th[data-sort]{user-select:none; position:relative}
 .table thead th[data-sort]::after{
   content:"";display:inline-block;margin-left:.35rem;border:4px solid transparent;
@@ -333,7 +339,25 @@
 }
 .table thead th[data-sort].desc::after{border-top-color:transparent;border-bottom-color:rgba(148,163,184,.75);transform:translateY(3px)}
 
-/* Toasts + skeletons */
+/* чип кода */
+.pc-code{
+  display:inline-flex; align-items:center; gap:.4rem;
+  padding:.25rem .5rem; border-radius:.65rem;
+  background:linear-gradient(180deg, rgba(148,163,184,.12), rgba(148,163,184,.05));
+  border:1px solid rgba(148,163,184,.25); cursor:copy; transition:.15s;
+}
+.pc-code:hover{border-color:rgba(148,163,184,.5)}
+.pc-code.copied{box-shadow:0 0 0 2px rgba(96,165,250,.25)}
+
+/* красивые таблицы */
+.glass.aurora-card,.aurora-card{
+  background:rgba(13,17,23,.58);
+  border:1px solid var(--pc-br);
+  border-radius:16px;
+}
+.nice-table thead th{position:sticky;top:0;background:rgba(15,23,42,.85)}
+
+/* тосты + скелетоны */
 .pc-toasts{position:fixed;right:14px;bottom:14px;display:grid;gap:8px;z-index:1080}
 .pc-toast{
   background:rgba(2,6,23,.92); color:#e5e7eb; border:1px solid rgba(148,163,184,.22);
@@ -352,29 +376,7 @@
 .skel-row td{padding:.65rem .5rem}
 .skel-pill{height:20px;border-radius:10px}
 
-/* Modal AURORA header */
-.modal-aurora{position:relative}
-.aurora-bg{
-  height:120px; filter: blur(18px); opacity:.8;
-  background:
-    radial-gradient(160px 80px at 15% 40%, rgba(96,165,250,.45), transparent 60%),
-    radial-gradient(200px 100px at 85% 30%, rgba(34,211,238,.30), transparent 60%),
-    radial-gradient(220px 120px at 50% 10%, rgba(168,85,247,.25), transparent 60%);
-}
-.aurora-bar{
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:.75rem; border-bottom:1px solid var(--pc-br);
-}
-.aurora-left{display:flex; align-items:center; gap:12px}
-.aurora-icon{
-  width:42px;height:42px;border-radius:12px;display:grid;place-items:center;
-  background:linear-gradient(180deg, rgba(148,163,184,.18), rgba(148,163,184,.06));
-  border:1px solid rgba(148,163,184,.28); color:#bfe3ff; font-size:20px;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
-}
-.aurora-title{font-weight:700;color:#e5e7eb}
-.aurora-sub{font-size:.85rem}
-.pc-tabs{padding:.35rem .75rem; border-bottom:1px solid var(--pc-br)}
+/* nav-seg (таб-бар) */
 .seg .nav-link{
   color:#cbd5e1; border:1px solid rgba(148,163,184,.18); padding:.35rem .65rem;
   border-radius:999px; margin:.15rem; background:rgba(13,17,23,.55); font-weight:600;
@@ -384,29 +386,8 @@
   box-shadow: 0 0 0 1px rgba(96,165,250,.25), 0 8px 20px rgba(2,132,199,.18);
 }
 
-/* Cards */
-.glass.aurora-card,.aurora-card{
-  background:rgba(13,17,23,.58);
-  border:1px solid var(--pc-br);
-  border-radius:16px;
-}
-.nice-table thead th{position:sticky;top:0;background:rgba(15,23,42,.85)}
-
-/* Code chip */
-.pc-code{
-  display:inline-flex; align-items:center; gap:.4rem;
-  padding:.25rem .5rem; border-radius:.65rem;
-  background:linear-gradient(180deg, rgba(148,163,184,.12), rgba(148,163,184,.05));
-  border:1px solid rgba(148,163,184,.25); cursor:copy; transition:.15s;
-}
-.pc-code:hover{border-color:rgba(148,163,184,.5)}
-.pc-code.copied{box-shadow:0 0 0 2px rgba(96,165,250,.25)}
-
-.modal-content.bg-dark{background:rgba(13,17,23,.92)!important}
-
 @media (max-width: 920px){
   .pc-toolbar .form-select{min-width:140px}
-  .aurora-bg{height:90px}
 }
 </style>
 
@@ -418,76 +399,31 @@
   // ---------- helpers ----------
   const $  = (s, r=document)=>r.querySelector(s);
   const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
-  const on = (el,ev,fn)=> el && el.addEventListener(ev,fn);
+  const on = (el, ev, fn)=> el && el.addEventListener(ev, fn);
   const esc = (s)=> String(s??'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
-  const toast = (msg)=>{ const z=$('#pc-toasts'); if(!z) return; const el=document.createElement('div'); el.className='pc-toast'; el.textContent=msg; z.appendChild(el); setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),250); }, 2200); };
-  const setNeonPointer = (btn, e)=>{ const r=btn.getBoundingClientRect(); btn.style.setProperty('--x',(e.clientX-r.left)+'px'); btn.style.setProperty('--y',(e.clientY-r.top)+'px'); };
-
-  const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
-  const chooseBase = async ()=>{
-    for (const b of API_BASES){
-      try{ const r=await fetch(b+'/promo/list',{cache:'no-store'}); if(r.ok) return b; }catch(_){}
+  const fmt = {
+    money:(a,k)=> (a!=null && a!=='') ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—',
+    date:(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—'
+  };
+  const toast = (msg)=>{
+    let zone = $('#pc-toasts');
+    if(!zone){
+      zone = document.createElement('div');
+      zone.id='pc-toasts'; zone.className='pc-toasts';
+      document.body.appendChild(zone);
     }
-    return API_BASES[0];
+    const el = document.createElement('div');
+    el.className='pc-toast'; el.textContent=msg;
+    zone.appendChild(el);
+    setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),250); }, 2200);
   };
+  const copy=(t)=> navigator.clipboard?.writeText(t).then(()=>toast('Скопировано')).catch(()=>{});
+  const setNeonPointer=(btn,e)=>{ const r=btn.getBoundingClientRect(); btn.style.setProperty('--x',(e.clientX-r.left)+'px'); btn.style.setProperty('--y',(e.clientY-r.top)+'px'); };
 
-  const json = async (url, opts={})=>{
-    const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
-    let j=null; try{ j=await r.json(); }catch(_){}
-    if(!j || !j.ok) throw new Error(j?.error || ('HTTP '+r.status));
-    return j.data;
-  };
-  const fmtMoney=(a,k)=> (a!=null && a!=='') ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—';
-  const fmtDate =(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—';
-
-  // ---------- state + refs ----------
-  let API='', rows=[], kits=[], sortBy='id', sortDir='desc';
-  let modalBS=null;
-  let groupsLoadedFor=null, redsLoadedFor=null, lpGroupsLoaded=false;
-  const els = {
-    list: $('#pc-list'), cnt: $('#pc-count'), search: $('#pc-search'),
-    ref: $('#pc-refresh'), create: $('#pc-create'), table: $('#pc-table'),
-    filterStatus: $('#pc-filter-status'), filterRealm: $('#pc-filter-realm'), filterKit: $('#pc-filter-kit'),
-    // modal
-    m: $('#pcEditModal'),
-    mId: $('#pc-f-id'), mTitle: $('#pc-f-title'), mCode: $('#pc-f-code'), mGen: $('#pc-f-gen'),
-    mEnabled: $('#pc-f-enabled'), mRealm: $('#pc-f-realm'), mExp: $('#pc-f-exp'),
-    mAmount: $('#pc-f-amount'), mCurr: $('#pc-f-currency'),
-    mTotal: $('#pc-f-total'), mPer: $('#pc-f-per'), mCd: $('#pc-f-cd'),
-    mKit: $('#pc-f-kit'), mLeft: $('#pc-f-left'),
-    mSave: $('#pc-f-save'), mDel: $('#pc-f-delete'),
-    // quick actions
-    aGen: $('#pc-a-gen'), aCopy: $('#pc-a-copy'),
-    // tabs
-    tabOver: $('#pc-tab-overview'), tabGroups: $('#pc-tab-groups'), tabReds: $('#pc-tab-reds'),
-    // groups / reds
-    gBody: $('#pc-groups-body'), gAdd: $('#pc-g-add'), gSave: $('#pc-g-save'),
-    rQ: $('#pc-r-player'), rBtn: $('#pc-r-search'), rCnt: $('#pc-r-count'), rBody: $('#pc-reds-body'),
-    lpList: $('#pc-lp-groups')
-  };
-
-  // ---------- Modal (Bootstrap or fallback без бэкдропа) ----------
-  const Modal = {
-    init(){
-      if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m, {backdrop:false, keyboard:true, focus:true});
-      // закрытие по data-bs-dismiss (и без BS тоже)
-      $$('[data-bs-dismiss="modal"]', els.m).forEach(btn=>btn.addEventListener('click', ()=>Modal.hide()));
-      document.addEventListener('keydown',(e)=>{ if(e.key==='Escape' && Modal.isShown() && !modalBS) Modal.hide(); });
-    },
-    isShown(){ return modalBS ? !!els.m.classList.contains('show') : els.m.style.display==='block'; },
-    show(){
-      if (modalBS){ modalBS.show(); return; }
-      els.m.classList.add('show'); els.m.style.display='block'; els.m.removeAttribute('aria-hidden'); document.body.classList.add('modal-open');
-    },
-    hide(){
-      if (modalBS){ modalBS.hide(); return; }
-      els.m.classList.remove('show'); els.m.style.display='none'; els.m.setAttribute('aria-hidden','true'); document.body.classList.remove('modal-open');
-    }
-  };
-
-  // ---------- skeletons ----------
-  function skeletonRows(n=6){
-    els.list.innerHTML = Array.from({length:n}).map(()=>`
+  // skeletons
+  function skeletonRows(target, n=6){
+    if(!target) return;
+    target.innerHTML = Array.from({length:n}).map(()=>`
       <tr class="skel-row">
         <td><div class="skel skel-pill" style="width:120px"></div></td>
         <td><div class="skel skel-pill" style="width:70px"></div></td>
@@ -502,51 +438,159 @@
     `).join('');
   }
 
-  // ---------- kits + filters ----------
+  // ---------- API ----------
+  const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
+  const chooseBase = async ()=>{
+    for (const base of API_BASES){
+      try{ const r = await fetch(base + '/promo/list', {cache:'no-store'}); if (r.ok) return base; }catch(_){}
+    }
+    return API_BASES[0];
+  };
+  const json = async (url, opts={})=>{
+    const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+    let j=null; try{ j=await r.json(); }catch(_){}
+    if(!j || !j.ok) throw new Error(j?.error || ('HTTP '+r.status));
+    return j.data;
+  };
+
+  // ---------- state ----------
+  let API = '';
+  let rows = [];
+  let kits = [];
+  let sortBy = 'id', sortDir = 'desc';
+  let modalBS = null;                 // modal (если Bootstrap)
+  let bodyDelegBound = false;
+
+  // LP groups cache + datalist
+  let lpGroups = [];
+  let lpMap = {};
+  const els = {};
+
+  // ---------- Modal wrapper (BS or fallback, без бэкдропа) ----------
+  const Modal = {
+    init(){
+      if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance($('#pcEditModal'), {backdrop:false});
+      $$('[data-bs-dismiss="modal"]', $('#pcEditModal')).forEach(btn=> btn.addEventListener('click', ()=>Modal.hide()));
+      document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && Modal.isShown() && !modalBS) Modal.hide(); });
+    },
+    isShown(){ const m=$('#pcEditModal'); return modalBS ? !!m.classList.contains('show') : m.style.display==='block'; },
+    show(){
+      const m=$('#pcEditModal');
+      if (modalBS) { modalBS.show(); return; }
+      m.classList.add('show'); m.style.display='block'; m.removeAttribute('aria-hidden'); document.body.classList.add('modal-open');
+    },
+    hide(){
+      const m=$('#pcEditModal');
+      if (modalBS) { modalBS.hide(); return; }
+      m.classList.remove('show'); m.style.display='none'; m.setAttribute('aria-hidden','true'); document.body.classList.remove('modal-open');
+    }
+  };
+
+  // ---------- grab ----------
+  function grab(){
+    els.body      = $('#pc-list');
+    els.count     = $('#pc-count');
+    els.search    = $('#pc-search');
+    els.btnRef    = $('#pc-refresh');
+    els.btnCreate = $('#pc-create');
+    els.tbl       = $('#pc-table');
+
+    // filters
+    els.fStatus   = $('#pc-filter-status');
+    els.fRealm    = $('#pc-filter-realm');
+    els.fKit      = $('#pc-filter-kit');
+
+    // modal
+    els.m         = $('#pcEditModal');
+    els.mId       = $('#pc-f-id');
+    els.mTitle    = $('#pc-f-title');
+    els.mCode     = $('#pc-f-code');
+    els.mGen      = $('#pc-f-gen');
+    els.mEnabled  = $('#pc-f-enabled');
+    els.mRealm    = $('#pc-f-realm');
+    els.mExp      = $('#pc-f-exp');
+    els.mAmount   = $('#pc-f-amount');
+    els.mCurr     = $('#pc-f-currency');
+    els.mTotal    = $('#pc-f-total');
+    els.mPer      = $('#pc-f-per');
+    els.mCd       = $('#pc-f-cd');
+    els.mKit      = $('#pc-f-kit');
+    els.mLeft     = $('#pc-f-left');
+    els.mSave     = $('#pc-f-save');
+    els.mDel      = $('#pc-f-delete');
+
+    // quick actions
+    els.aGen      = $('#pc-a-gen');
+    els.aCopy     = $('#pc-a-copy');
+
+    // tabs
+    els.tabOver   = $('#pc-tab-overview');
+    els.tabGroups = $('#pc-tab-groups');
+    els.tabReds   = $('#pc-tab-reds');
+
+    // groups / reds
+    els.gBody     = $('#pc-groups-body');
+    els.gAdd      = $('#pc-g-add');
+    els.gSave     = $('#pc-g-save');
+    els.gPreview  = $('#pc-groups-preview');
+
+    els.rQuery    = $('#pc-r-player');
+    els.rBtn      = $('#pc-r-search');
+    els.rCount    = $('#pc-r-count');
+    els.rBody     = $('#pc-reds-body');
+
+    els.dList     = $('#pc-lp-groups');
+  }
+
+  // ---------- kits ----------
   async function loadKits(){
     try{
       kits = await json(API+'/kits/list');
-      els.mKit.innerHTML = `<option value="">— без кита —</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
-      $('#pc-filter-kit').innerHTML = `<option value="">Kit: любой</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
+      if (els.mKit){
+        els.mKit.innerHTML = `<option value="">— без кита —</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
+      }
+      if (els.fKit){
+        els.fKit.innerHTML = `<option value="">Kit: любой</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
+      }
     }catch(_){ /* ignore */ }
   }
-  function fillRealmFilter(){
-    const uniq = Array.from(new Set(rows.map(r=>r.realm||''))).sort((a,b)=>String(a).localeCompare(String(b)));
-    els.filterRealm.innerHTML = `<option value="">Realm: все</option>` + uniq.map(v=>`<option value="${esc(v)}">${v || 'all'}</option>`).join('');
-  }
 
-  // ---------- LP GROUPS (optional endpoint) ----------
-  async function loadLpGroupsOnce(){
-    if (lpGroupsLoaded) return;
-    const candidates = [
-      API+'/lp/groups',
-      '/admin/accounts/api/lp/groups',
-      '/admin/gameservers/accounts/api/lp/groups'
+  // ---------- LP groups (для автокомплита) ----------
+  async function loadLPGroups(){
+    const tries = [
+      API+'/lp/groups',                                   // предпочтительно, если реализуешь
+      '/admin/accounts/api/lp/groups',                    // fallback из блока аккаунтов
+      '/admin/gameservers/accounts/api/lp/groups'         // ещё один возможный путь
     ];
-    for (const url of candidates){
+    for (const url of tries){
       try{
-        const r = await fetch(url,{cache:'no-store'});
-        if (!r.ok) continue;
-        const j = await r.json();
-        const data = (j && (j.data||j.groups||j)) || [];
-        if (!Array.isArray(data) || !data.length) continue;
-        els.lpList.innerHTML = data.map(g=>`<option value="${esc(g.name||g)}">`).join('');
-        lpGroupsLoaded = true;
+        const data = await json(url);
+        lpGroups = (data||[]).map(g=>{
+          if (typeof g==='string') return {name:g, weight:0};
+          const name = g.name || g.group || g.id || '';
+          const weight = Number(g.weight ?? g.w ?? g.priority ?? 0);
+          return {name, weight};
+        }).filter(x=>x.name);
+        lpGroups.sort((a,b)=>(b.weight||0)-(a.weight||0) || a.name.localeCompare(b.name));
+        lpMap = Object.fromEntries(lpGroups.map(g=>[g.name,g]));
+        if (els.dList) els.dList.innerHTML = lpGroups.map(g=>`<option value="${esc(g.name)}">${esc(g.name)}${g.weight?` (${g.weight})`:''}</option>`).join('');
         break;
-      }catch(_){ /* next */ }
+      }catch(_){ /* try next */ }
     }
   }
-  function attachLpDatalist(tr){
-    const inp = tr.querySelector('.g-name');
-    if (inp) inp.setAttribute('list','pc-lp-groups');
+
+  // ---------- filters + table ----------
+  function fillRealmFilter(){
+    if(!els.fRealm) return;
+    const uniq = Array.from(new Set(rows.map(r=>r.realm||''))).sort((a,b)=>String(a).localeCompare(String(b)));
+    els.fRealm.innerHTML = `<option value="">Realm: все</option>` + uniq.map(v=>`<option value="${esc(v)}">${v || 'all'}</option>`).join('');
   }
 
-  // ---------- table render ----------
   function filterRows(){
-    const q = (els.search.value||'').trim().toLowerCase();
-    const st = els.filterStatus.value;
-    const rl = els.filterRealm.value;
-    const kit = els.filterKit.value;
+    const q = (els.search?.value||'').trim().toLowerCase();
+    const st = els.fStatus?.value ?? '';
+    const rl = els.fRealm?.value ?? '';
+    const kit = els.fKit?.value ?? '';
     return rows.filter(x=>{
       if (q && !String(x.code).toLowerCase().includes(q)) return false;
       if (st!=='' && String(+!!x.enabled)!==st) return false;
@@ -555,6 +599,7 @@
       return true;
     });
   }
+
   function render(){
     let list = filterRows();
     list.sort((a,b)=>{
@@ -563,29 +608,37 @@
       return String(A??'').localeCompare(String(B??''));
     });
     if (sortDir==='desc') list.reverse();
-    els.cnt.textContent = list.length ? `${list.length} шт.` : '';
+    if (els.count) els.count.textContent = list.length ? `${list.length} шт.` : '';
 
     if (!list.length){
-      els.list.innerHTML = `<tr><td colspan="9" class="text-secondary small">Ничего не найдено</td></tr>`;
+      els.body.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`;
       return;
     }
 
     const now = Date.now();
-    els.list.innerHTML = list.map(x=>{
+    const q = (els.search?.value||'').trim().toLowerCase();
+
+    els.body.innerHTML = list.map(x=>{
       const used = (x.uses_total!=null && x.uses_left!=null) ? (x.uses_total - x.uses_left) : '—';
       const st = (+x.enabled ? `<span class="badge badge-active">active</span>` : `<span class="badge badge-off">off</span>`);
       const lim = (x.uses_total!=null) ? `${x.uses_left}/${x.uses_total}` : '∞';
       const expTs = x.expires_at ? Date.parse(String(x.expires_at).replace(' ','T')) : null;
-      const expStr = fmtDate(x.expires_at);
+      const expStr = fmt.date(x.expires_at);
       const expHtml = expTs && expTs < now ? `<span class="text-expired" title="истёк">${expStr}</span>` : expStr;
+
+      const code = String(x.code);
+      const i = q ? code.toLowerCase().indexOf(q) : -1;
+      const codeHtml = (i>=0)
+        ? esc(code.slice(0,i)) + '<mark>' + esc(code.slice(i,i+q.length)) + '</mark>' + esc(code.slice(i+q.length))
+        : esc(code);
 
       return `
       <tr data-id="${x.id}">
         <td>
-          <span class="pc-code" title="Скопировать код"><i class="bi bi-qr-code"></i><span class="code">${esc(x.code)}</span></span>
+          <span class="pc-code" title="Скопировать код"><i class="bi bi-qr-code"></i><span class="code">${codeHtml}</span></span>
         </td>
         <td>${st}</td>
-        <td>${fmtMoney(x.amount, x.currency_key)}</td>
+        <td>${fmt.money(x.amount, x.currency_key)}</td>
         <td>${x.realm ? esc(x.realm) : '<span class="text-dim">all</span>'}</td>
         <td>${lim}</td>
         <td>${expHtml}</td>
@@ -594,96 +647,104 @@
         <td class="text-end">
           <div class="btn-group btn-group-sm">
             <button class="btn btn-outline-light act-edit">Изм.</button>
-            <button class="btn btn-outline-secondary act-copy" title="Скопировать"><i class="bi bi-clipboard"></i></button>
+            <button class="btn btn-outline-secondary act-copy" title="Скопировать код"><i class="bi bi-clipboard"></i></button>
             <button class="btn btn-outline-danger act-del">Удалить</button>
           </div>
         </td>
       </tr>`;
     }).join('');
 
-    $$('.pc-code', els.list).forEach(el=>el.addEventListener('click', (e)=>{
+    $$('.pc-code', els.body).forEach(el=>el.addEventListener('click', (e)=>{
       const tr = e.target.closest('tr'); const r = rows.find(x=>x.id==tr.dataset.id);
-      if(!r) return; navigator.clipboard?.writeText(r.code).then(()=>{ el.classList.add('copied'); toast('Код скопирован'); setTimeout(()=>el.classList.remove('copied'), 700); });
+      if(r){ navigator.clipboard?.writeText(r.code).then(()=>{ el.classList.add('copied'); toast('Код скопирован'); setTimeout(()=>el.classList.remove('copied'), 700); }); }
     }));
-    $$('.act-copy', els.list).forEach(b=>b.addEventListener('click', (e)=>{
-      const tr=e.target.closest('tr'); const r=rows.find(x=>x.id==tr.dataset.id); if(r){ navigator.clipboard?.writeText(r.code); toast('Код скопирован'); }
-    }));
-    $$('.act-edit', els.list).forEach(b=>b.addEventListener('click', openEdit));
-    $$('.act-del', els.list).forEach(b=>b.addEventListener('click', delOne));
+    $$('.act-edit', els.body).forEach(btn=>btn.addEventListener('click', onRowEdit));
+    $$('.act-copy', els.body).forEach(btn=>btn.addEventListener('click', (e)=>{ const tr=e.target.closest('tr'); const r=rows.find(x=>x.id==tr.dataset.id); if(r) copy(r.code); }));
+    $$('.act-del', els.body).forEach(btn=>btn.addEventListener('click', onRowDelete));
+
+    if(!bodyDelegBound){
+      bodyDelegBound = true;
+      els.body.addEventListener('click', (e)=>{
+        const td = e.target.closest('td'); const tr = e.target.closest('tr');
+        if(!td || !tr) return;
+        if(td.cellIndex===0){
+          const r = rows.find(x=>x.id==tr.dataset.id);
+          if(r) copy(r.code);
+        }
+      });
+    }
   }
 
   async function loadList(){
-    skeletonRows();
+    skeletonRows(els.body);
     try{
       rows = await json(API+'/promo/list');
       fillRealmFilter();
       render();
     }catch(e){
-      els.list.innerHTML = `<tr><td colspan="9" class="text-danger">${esc(e.message||String(e))}</td></tr>`;
+      els.body.innerHTML = `<tr><td colspan="9" class="text-danger">${esc(e.message||String(e))}</td></tr>`;
     }
   }
 
   // ---------- modal: fill & open ----------
   function fillModal(row){
+    if(!els.m) return;
     els.mId.value      = row?.id ?? '';
-    els.mTitle.textContent = row ? `#${row.id}` : '(новый)';
-    els.mCode.value    = row?.code ?? '';
-    els.mEnabled.value = (row?.enabled ?? 1) ? '1':'0';
-    els.mRealm.value   = row?.realm ?? '';
-    els.mExp.value     = row?.expires_at ?? '';
-    els.mAmount.value  = row?.amount ?? '';
-    els.mCurr.value    = row?.currency_key ?? 'rubs';
-    els.mTotal.value   = row?.uses_total ?? '';
-    els.mPer.value     = row?.per_player_uses ?? '';
-    els.mCd.value      = row?.cooldown_seconds ?? '';
-    els.mLeft.value    = row?.uses_left ?? '';
-    els.mKit.value     = row?.kit_id ?? '';
+    els.mTitle && (els.mTitle.textContent = row ? `#${row.id}` : '(новый)');
+    els.mCode && (els.mCode.value    = row?.code ?? '');
+    els.mEnabled && (els.mEnabled.value = (row?.enabled ?? 1) ? '1':'0');
+    els.mRealm && (els.mRealm.value   = row?.realm ?? '');
+    els.mExp && (els.mExp.value     = row?.expires_at ?? '');
+    els.mAmount && (els.mAmount.value  = row?.amount ?? '');
+    els.mCurr && (els.mCurr.value    = row?.currency_key ?? 'rubs');
+    els.mTotal && (els.mTotal.value   = row?.uses_total ?? '');
+    els.mPer && (els.mPer.value     = row?.per_player_uses ?? '');
+    els.mCd && (els.mCd.value      = row?.cooldown_seconds ?? '');
+    els.mLeft && (els.mLeft.value    = row?.uses_left ?? '');
+    els.mKit && (els.mKit.value     = row?.kit_id ?? '');
 
-    groupsLoadedFor = null; redsLoadedFor = null; // ленивые вкладки
     switchTab('overview');
+
+    // подгружаем группы/активации уже ПОСЛЕ показа — быстрее открывается
+    setTimeout(()=>{ loadGroups(row?.id); loadReds(row?.id); }, 0);
   }
 
-  function openEdit(e){
-    const tr=e.target.closest('tr');
-    const id=Number(tr.dataset.id);
+  function onRowEdit(e){
+    const tr = e.target.closest('tr');
+    const id = Number(tr.dataset.id);
     const row = rows.find(x=>x.id===id);
-
-    // моментально показываем модалку
-    Modal.show();
+    if(!kits.length) loadKits();        // догоним в фоне, если не успели
     fillModal(row);
-
-    // подгружаем ассеты в фоне
-    loadKits().then(()=>{ if(row) els.mKit.value = row.kit_id ?? ''; });
-    loadLpGroupsOnce();
+    Modal.show();
   }
 
-  async function delOne(e){
-    const tr=e.target.closest('tr');
-    const id=Number(tr.dataset.id);
+  async function onRowDelete(e){
+    const tr = e.target.closest('tr');
+    const id = Number(tr.dataset.id);
     const row = rows.find(x=>x.id===id);
-    if(!confirm(`Удалить промокод ${row?.code || ('#'+id)}?`)) return;
+    if (!confirm(`Удалить промокод ${row?.code || ('#'+id)}?`)) return;
     try{
-      await json(API+'/promo/delete',{method:'POST', body:JSON.stringify({id})});
+      await json(API+'/promo/delete', {method:'POST', body:JSON.stringify({id})});
       await loadList();
       toast('Удалено');
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // ---------- save (create/update) ----------
+  // ---------- save ----------
   function buildBodyFromModal(){
-    const id = els.mId.value ? Number(els.mId.value) : null;
+    const id = els.mId?.value ? Number(els.mId.value) : null;
     return {
       id,
-      code: (els.mCode.value||'').trim().toUpperCase(),
-      enabled: Number(els.mEnabled.value||1),
-      realm: (els.mRealm.value||'').trim() || null,
-      expires_at: (els.mExp.value||'').trim() || null,
-      amount: (els.mAmount.value!==''? Number(els.mAmount.value): null),
-      currency_key: (els.mCurr.value||'').trim() || null,
-      uses_total: (els.mTotal.value!==''? Number(els.mTotal.value): null),
-      per_player_uses: (els.mPer.value!==''? Number(els.mPer.value): null),
-      cooldown_seconds: (els.mCd.value!==''? Number(els.mCd.value): null),
-      kit_id: (els.mKit.value? Number(els.mKit.value) : null)
+      code: (els.mCode?.value||'').trim().toUpperCase(),
+      enabled: Number(els.mEnabled?.value||1),
+      realm: (els.mRealm?.value||'').trim() || null,
+      expires_at: (els.mExp?.value||'').trim() || null,
+      amount: (els.mAmount && els.mAmount.value!==''? Number(els.mAmount.value): null),
+      currency_key: (els.mCurr?.value||'').trim() || null,
+      uses_total: (els.mTotal && els.mTotal.value!==''? Number(els.mTotal.value): null),
+      per_player_uses: (els.mPer && els.mPer.value!==''? Number(els.mPer.value): null),
+      cooldown_seconds: (els.mCd && els.mCd.value!==''? Number(els.mCd.value): null),
+      kit_id: (els.mKit && els.mKit.value ? Number(els.mKit.value) : null)
     };
   }
   async function saveCurrent(){
@@ -701,15 +762,17 @@
         })});
         await loadList();
         const row = rows.find(x=>x.id===created.id) || rows.find(x=>x.code===created.code);
-        if(row){ fillModal(row); }
+        if(row) fillModal(row);
       }else{
         await json(API+'/promo/update', {method:'POST', body: JSON.stringify(body)});
         await loadList();
         const row = rows.find(x=>x.id===body.id);
-        if(row){ fillModal(row); }
+        if(row) fillModal(row);
       }
       toast('Сохранено');
-    }catch(err){ alert('Ошибка: '+(err.message||err)); }
+    }catch(err){
+      alert('Ошибка: '+(err.message||err));
+    }
   }
 
   // ---------- groups ----------
@@ -724,42 +787,62 @@
       <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del">&times;</button></td>
     </tr>`;
   }
-  function groupsFromUI(){
+  function readGroupsFromUI(){
     const out=[];
     $$('#pc-groups-body tr').forEach((tr,i)=>{
       const g={
-        group_name: $('.g-name',tr).value.trim(),
+        group_name: ($('.g-name',tr).value||'').trim(),
         temp_seconds: $('.g-temp',tr).value ? Number($('.g-temp',tr).value) : null,
-        context_server: ($('.g-srv',tr).value||'').trim()||'global',
-        context_world: ($('.g-wld',tr).value||'').trim()||'global',
+        context_server: ($('.g-srv',tr).value||'').trim()||null,
+        context_world: ($('.g-wld',tr).value||'').trim()||null,
         priority: $('.g-pr',tr).value ? Number($('.g-pr',tr).value) : (i+1)
       };
       if(g.group_name) out.push(g);
     });
     return out;
   }
+  function renderGroupsPreview(){
+    if(!els.gPreview) return;
+    const items = readGroupsFromUI();
+    if(!items.length){ els.gPreview.innerHTML = '<span class="text-dim">LP-группы: —</span>'; return; }
+    els.gPreview.innerHTML = 'LP-группы: ' + items
+      .sort((a,b)=>(a.priority||0)-(b.priority||0))
+      .map(g=>{
+        const w = lpMap[g.group_name]?.weight;
+        const dur = g.temp_seconds ? `, ${g.temp_seconds}s` : '';
+        return `<span class="badge-role me-1" title="${esc(g.group_name)}${w?` · weight ${w}`:''}${dur}">${esc(g.group_name)}</span>`;
+      }).join('');
+  }
   function bindGroupRowEvents(){
-    $$('.g-del', els.gBody).forEach(b=>b.addEventListener('click', e=>e.target.closest('tr').remove()));
-    // подключаем datalist
-    $$('#pc-groups-body tr').forEach(attachLpDatalist);
+    $$('.g-del', els.gBody).forEach(btn=>btn.addEventListener('click', (e)=>{ e.preventDefault(); e.target.closest('tr').remove(); renderGroupsPreview(); }));
+    els.gBody.addEventListener('input', (e)=>{ if(e.target.matches('.g-name,.g-temp,.g-srv,.g-wld,.g-pr')) renderGroupsPreview(); });
   }
   async function loadGroups(codeId){
-    els.gBody.innerHTML='';
-    if(!codeId){ els.gBody.innerHTML='<tr><td colspan="7" class="text-secondary small">Сохраните промокод, чтобы добавить группы</td></tr>'; return; }
+    if(!els.gBody) return;
+    els.gBody.innerHTML = '';
+    if(!codeId){ els.gBody.innerHTML='<tr><td colspan="7" class="text-secondary small">Сохраните промокод, чтобы добавить группы</td></tr>'; renderGroupsPreview(); return; }
     try{
       const data = await json(API+'/promo/groups/list?code_id='+codeId);
       els.gBody.innerHTML = (data||[]).map((g,i)=>rowGroupTpl(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
       bindGroupRowEvents();
-      groupsLoadedFor = codeId;
+      renderGroupsPreview();
     }catch(_){
-      els.gBody.innerHTML = '<tr><td colspan="7" class="text-secondary small">Endpoint /promo/groups/* не реализован</td></tr>';
+      els.gBody.innerHTML = '<tr><td colspan="7" class="text-secondary small">Не удалось загрузить группы</td></tr>';
+      renderGroupsPreview();
     }
   }
+  function addGroupRow(){
+    const i = $$('#pc-groups-body tr').length;
+    els.gBody.insertAdjacentHTML('beforeend', rowGroupTpl(i, {}));
+    bindGroupRowEvents();
+    renderGroupsPreview();
+  }
   async function saveGroups(){
-    const id = Number(els.mId.value||0);
+    const id = Number(els.mId?.value||0);
     if(!id) return alert('Сначала сохраните промокод');
     try{
-      await json(API+'/promo/groups/save',{method:'POST', body: JSON.stringify({code_id:id, groups: groupsFromUI()})});
+      const groups = readGroupsFromUI();
+      await json(API+'/promo/groups/save', {method:'POST', body: JSON.stringify({code_id:id, groups})});
       toast('Группы сохранены');
       await loadGroups(id);
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
@@ -767,14 +850,16 @@
 
   // ---------- redemptions ----------
   async function loadReds(codeId){
-    els.rBody.innerHTML=''; els.rCnt.textContent='';
+    if(!els.rBody) return;
+    els.rBody.innerHTML = '';
+    if(els.rCount) els.rCount.textContent = '';
     if(!codeId) return;
     try{
-      const q=(els.rQ.value||'').trim();
+      const q = (els.rQuery?.value||'').trim();
       const data = await json(API+`/promo/redemptions?code_id=${codeId}` + (q?`&q=${encodeURIComponent(q)}`:''));
       els.rBody.innerHTML = (data||[]).map(r=>`
         <tr>
-          <td>${fmtDate(r.created_at)}</td>
+          <td>${fmt.date(r.created_at)}</td>
           <td>${esc(r.username||'—')}</td>
           <td class="text-secondary small">${esc(r.uuid)}</td>
           <td>${r.granted_amount!=null? (+r.granted_amount).toFixed(2) : '—'}</td>
@@ -782,8 +867,7 @@
           <td class="text-secondary">${esc(r.ip||'')}</td>
         </tr>
       `).join('') || `<tr><td colspan="6" class="text-secondary small">Пусто</td></tr>`;
-      els.rCnt.textContent = (data||[]).length ? `${data.length} активаций` : '';
-      redsLoadedFor = codeId;
+      if(els.rCount) els.rCount.textContent = (data||[]).length ? `${data.length} активаций` : '';
     }catch(_){
       els.rBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Ошибка загрузки</td></tr>`;
     }
@@ -792,93 +876,87 @@
   // ---------- tabs ----------
   function switchTab(key){
     $$('.pc-tabs .nav-link').forEach(a=>a.classList.toggle('active', a.dataset.tab===key));
-    els.tabOver.classList.toggle('d-none', key!=='overview');
-    els.tabGroups.classList.toggle('d-none', key!=='groups');
-    els.tabReds.classList.toggle('d-none', key!=='reds');
-
-    const id = Number(els.mId.value||0);
-    if (key==='groups' && id && groupsLoadedFor!==id) { loadLpGroupsOnce(); loadGroups(id); }
-    if (key==='reds'   && id && redsLoadedFor!==id)   { loadReds(id); }
+    els.tabOver?.classList.toggle('d-none', key!=='overview');
+    els.tabGroups?.classList.toggle('d-none', key!=='groups');
+    els.tabReds?.classList.toggle('d-none', key!=='reds');
   }
 
   // ---------- events ----------
   function bind(){
-    // sorting
-    $$('th[data-sort]', els.table).forEach(th=>{
+    // сортировка
+    $$('th[data-sort]', els.tbl).forEach(th=>{
       th.addEventListener('click', ()=>{
         const k = th.getAttribute('data-sort');
         if (sortBy===k) sortDir = (sortDir==='asc'?'desc':'asc'); else { sortBy=k; sortDir='asc'; }
-        $$('th[data-sort]', els.table).forEach(x=>x.classList.remove('desc'));
+        $$('th[data-sort]', els.tbl).forEach(x=>x.classList.remove('desc'));
         if (sortDir==='desc') th.classList.add('desc');
         render();
       });
     });
 
-    // filters / search
-    on(els.search,'input', render);
-    on(els.filterStatus,'change', render);
-    on(els.filterRealm,'change', render);
-    on(els.filterKit,'change', render);
+    // фильтры / поиск
+    on(els.search, 'input', render);
+    on(els.fStatus, 'change', render);
+    on(els.fRealm, 'change', render);
+    on(els.fKit, 'change', render);
 
     // toolbar
-    on(els.ref,'click', loadList);
-    on(els.create,'mousemove', (e)=>setNeonPointer(els.create, e));
-    on(els.create,'click', ()=>{
-      Modal.show();
+    on(els.btnRef, 'click', loadList);
+    on(els.btnCreate, 'pointermove', (e)=>setNeonPointer(els.btnCreate,e));
+    on(els.btnCreate, 'click', ()=>{
       fillModal(null);
-      loadKits();
-      loadLpGroupsOnce();
+      Modal.show();
     });
 
     // modal actions
-    on(els.mSave,'click', saveCurrent);
-    on(els.mDel,'click', async ()=>{
-      const id = els.mId.value ? Number(els.mId.value) : null;
+    on(els.mSave, 'click', saveCurrent);
+    on(els.mDel, 'click', async ()=>{
+      const id = els.mId?.value ? Number(els.mId.value) : null;
       if(!id){ alert('Промокод ещё не сохранён'); return; }
       if(!confirm('Удалить промокод?')) return;
       try{
         await json(API+'/promo/delete',{method:'POST', body:JSON.stringify({id})});
-        Modal.hide(); await loadList(); toast('Удалено');
+        Modal.hide();
+        await loadList();
+        toast('Удалено');
       }catch(err){ alert('Ошибка: '+(err.message||err)); }
     });
 
-    // quick actions
-    on(els.aGen,'click', ()=>{ genCode(); toast('Сгенерирован новый код'); });
-    on(els.aCopy,'click', ()=>{ const code=(els.mCode.value||'').trim(); if(code){ navigator.clipboard?.writeText(code); toast('Код скопирован'); } });
-
-    // codegen near input
-    on(els.mGen,'click', (e)=>{ e.preventDefault(); genCode(); });
+    // codegen / copy
+    function genCode(){
+      const alph='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let out=''; const len=10+Math.floor(Math.random()*3);
+      for(let i=0;i<len;i++) out+=alph[Math.floor(Math.random()*alph.length)];
+      if(els.mCode) els.mCode.value = out;
+    }
+    on(els.mGen, 'click', (e)=>{ e.preventDefault(); genCode(); toast('Сгенерирован новый код'); });
+    on(els.aGen, 'click', ()=>{ genCode(); toast('Сгенерирован новый код'); });
+    on(els.aCopy,'click', ()=>{ const code=(els.mCode?.value||'').trim(); if(code){ navigator.clipboard?.writeText(code); toast('Код скопирован'); } });
 
     // groups
-    on(els.gAdd,'click', ()=>{
-      const i=$$('#pc-groups-body tr').length;
-      els.gBody.insertAdjacentHTML('beforeend', rowGroupTpl(i, {}));
-      bindGroupRowEvents();
-    });
-    on(els.gSave,'click', saveGroups);
+    on(els.gAdd, 'click', addGroupRow);
+    on(els.gSave, 'click', saveGroups);
 
     // reds
-    on(els.rBtn,'click', ()=>loadReds(Number(els.mId.value||0)));
-    on(els.rQ,'keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId.value||0)); });
+    on(els.rBtn, 'click', ()=>loadReds(Number(els.mId?.value||0)));
+    on(els.rQuery, 'keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId?.value||0)); });
 
     // tabs
-    $$('.pc-tabs .nav-link').forEach(a=>a.addEventListener('click', ()=>switchTab(a.dataset.tab)));
-  }
-
-  // ---------- codegen ----------
-  function genCode(){
-    const alph='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let out=''; const len=10+Math.floor(Math.random()*3);
-    for(let i=0;i<len;i++) out+=alph[Math.floor(Math.random()*alph.length)];
-    els.mCode.value = out;
+    $$('.pc-tabs .nav-link').forEach(a=>a.addEventListener('click', ()=>{
+      const key=a.dataset.tab;
+      switchTab(key);
+      if(key==='reds') loadReds(Number(els.mId?.value||0));
+    }));
   }
 
   // ---------- init ----------
   (async function init(){
+    grab();
     Modal.init();
     API = await chooseBase();
     bind();
     await loadKits();
+    await loadLPGroups();
     await loadList();
   })();
 
