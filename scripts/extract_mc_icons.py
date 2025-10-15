@@ -1,34 +1,30 @@
 # panel_new/scripts/extract_mc_icons.py
 # -*- coding: utf-8 -*-
 r"""
-Извлекает иконки предметов Minecraft напрямую из client.jar Mojang (без локального .minecraft).
+Извлекает иконки Minecraft из client.jar Mojang (без локального .minecraft).
 
-Что делает:
- - version_manifest_v2 → version.json выбранной версии → downloads.client.url
- - Скачивает client.jar (кэширует локально)
- - Извлекает PNG из путей:
-     assets/minecraft/textures/gui/sprites/items/*.png   (1.20.5+)
-     assets/minecraft/textures/items/*.png               (классика)
-     assets/minecraft/textures/item/*.png                (иногда встречается)
- - Складывает в app/static/mc/<version>/items (или в --out)
- - Пишет app/static/data/vanilla-items-<version>.json со списком id/name
+Поддержка:
+ - ITEMS: 1) assets/minecraft/textures/gui/sprites/items/*.png (1.20.5+)
+          2) assets/minecraft/textures/items/*.png
+          3) assets/minecraft/textures/item/*.png
+ - BLOCKS: assets/minecraft/textures/block/*.png (и старая 'blocks/')
 
-Примеры:
-  py panel_new\scripts\extract_mc_icons.py --version 1.20.6 --force --debug
-  python panel_new/scripts/extract_mc_icons.py --version 1.20.6 --out "D:\...\items"
+Фичи:
+ - --kinds items|blocks|all
+ - --face <substring>  (например: side/top/bottom/front/back) — фильтр по части имени файла без учёта регистра
+ - Отдельные выходные папки: items → app/static/mc/<ver>/items, blocks → app/static/mc/<ver>/blocks
+ - Отдельные списки: app/static/data/vanilla-items-<ver>.json, app/static/data/vanilla-blocks-<ver>.json
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
-import os
 import sys
 import zipfile
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Tuple, List
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 # HTTP
 try:
@@ -39,29 +35,46 @@ except Exception:
 VERSION_DEFAULT = "1.20.6"
 MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 
-# Пути в JAR, где лежат иконки предметов
-ITEM_PATHS = (
-    "assets/minecraft/textures/gui/sprites/items/",  # 1.20.5+
-    "assets/minecraft/textures/items/",              # старая раскладка
-    "assets/minecraft/textures/item/",               # редкая вариация
+# Пути в JAR
+ITEM_PATHS: Tuple[str, ...] = (
+    "assets/minecraft/textures/gui/sprites/items/",
+    "assets/minecraft/textures/items/",
+    "assets/minecraft/textures/item/",
+)
+BLOCK_PATHS: Tuple[str, ...] = (
+    "assets/minecraft/textures/block/",
+    "assets/minecraft/textures/blocks/",  # старая раскладка
 )
 
 
-# ---------- утилиты пути/вывода ----------
+# ---------- пути проекта ----------
 
 def repo_root() -> Path:
     # panel_new/scripts -> parents[1] = panel_new
     return Path(__file__).resolve().parents[1]
 
 
-def out_dir_for(version: str, out_arg: Optional[str]) -> Path:
-    if out_arg:
-        return Path(out_arg).expanduser().resolve()
-    return (repo_root() / "app" / "static" / "mc" / version / "items").resolve()
+def out_dir_items(version: str, out_override: Optional[str]) -> Path:
+    base = Path(out_override).expanduser().resolve() if out_override else (repo_root() / "app" / "static" / "mc" / version / "items")
+    return base.resolve()
+
+
+def out_dir_blocks(version: str, out_override: Optional[str]) -> Path:
+    # если задан --out, то стянуть "родителя" и заменить на blocks рядом
+    if out_override:
+        p = Path(out_override).expanduser().resolve()
+        if p.name == "items":
+            p = p.parent / "blocks"
+        return p
+    return (repo_root() / "app" / "static" / "mc" / version / "blocks").resolve()
 
 
 def items_manifest_path(version: str) -> Path:
     return (repo_root() / "app" / "static" / "data" / f"vanilla-items-{version}.json").resolve()
+
+
+def blocks_manifest_path(version: str) -> Path:
+    return (repo_root() / "app" / "static" / "data" / f"vanilla-blocks-{version}.json").resolve()
 
 
 def ensure_parent(path: Path) -> None:
@@ -112,7 +125,6 @@ def fetch_version_json(version: str) -> dict:
 
 
 def get_client_download(vjson: dict) -> Tuple[str, Optional[str]]:
-    # Возвращает (url, sha1) client.jar
     dl = (vjson.get("downloads") or {}).get("client") or {}
     url = dl.get("url")
     if not url:
@@ -120,17 +132,11 @@ def get_client_download(vjson: dict) -> Tuple[str, Optional[str]]:
     return url, dl.get("sha1")
 
 
-# ---------- JAR извлечение ----------
-
-def want_item_entry(name: str) -> bool:
-    if not name.lower().endswith(".png"):
-        return False
-    n = name.replace("\\", "/")
-    return any(n.startswith(p) for p in ITEM_PATHS)
-
+# ---------- общая выборка из JAR ----------
 
 def compute_sha1(data: bytes) -> str:
-    h = hashlib.sha1()
+    import hashlib as _h
+    h = _h.sha1()
     h.update(data)
     return h.hexdigest()
 
@@ -146,7 +152,6 @@ def download_client_jar(version: str, url: str, sha1: Optional[str]) -> Path:
                 pass
         else:
             return dest
-
     blob = http_get_bytes(url)
     if sha1:
         got = compute_sha1(blob)
@@ -156,102 +161,128 @@ def download_client_jar(version: str, url: str, sha1: Optional[str]) -> Path:
     return dest
 
 
-def extract_icons_from_jar(jar_path: Path, out_dir: Path, force: bool = False, debug: bool = False) -> Tuple[int, int, int, List[str]]:
+def path_match(name: str, prefixes: Sequence[str]) -> bool:
+    n = name.replace("\\", "/")
+    return any(n.startswith(p) for p in prefixes)
+
+
+def stem_of(jar_name: str) -> str:
+    return Path(jar_name).stem.lower()
+
+
+def filter_face(stem: str, face_substr: Optional[str]) -> bool:
+    if not face_substr:
+        return True
+    return face_substr.lower() in stem.lower()
+
+
+def extract_group(
+    zf: zipfile.ZipFile,
+    prefixes: Sequence[str],
+    out_dir: Path,
+    face: Optional[str],
+    force: bool,
+    debug: bool,
+) -> Tuple[int, int, int, List[str]]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    saved = 0
-    skipped = 0
-    missing = 0
+    saved = skipped = missing = 0
     ids: List[str] = []
 
-    with zipfile.ZipFile(jar_path, "r") as zf:
-        names = zf.namelist()
-        if debug:
-            print(f"[debug] файлов в JAR: {len(names)}")
-            # покажем для наглядности первые совпадения по путям
-            sample = [n for n in names if any(n.startswith(p) for p in ITEM_PATHS)]
-            print(f"[debug] совпавших путей по маске: {len(sample)}")
-            for s in sample[:30]:
-                print("  -", s)
+    names = zf.namelist()
+    if debug:
+        sample = [n for n in names if path_match(n, prefixes)]
+        print(f"[debug] в группе {out_dir.name}: найдено по пути {len(sample)} (покажем до 15):")
+        for s in sample[:15]:
+            print("  -", s)
 
-        for name in names:
-            if not want_item_entry(name):
-                continue
-            item_id = Path(name).stem.lower()
-            ids.append(item_id)
-            dst = out_dir / f"{item_id}.png"
-            if dst.exists() and not force:
-                skipped += 1
-                continue
-            try:
-                data = zf.read(name)
-                dst.write_bytes(data)
-                saved += 1
-            except Exception:
-                missing += 1
-                if debug:
-                    print(f"[debug] не удалось извлечь {name}")
+    for name in names:
+        if not name.lower().endswith(".png"):
+            continue
+        if not path_match(name, prefixes):
+            continue
+        st = stem_of(name)
+        if not filter_face(st, face):
+            continue
+
+        ids.append(st)
+        dst = out_dir / f"{st}.png"
+        if dst.exists() and not force:
+            skipped += 1
+            continue
+        try:
+            data = zf.read(name)
+            dst.write_bytes(data)
+            saved += 1
+        except Exception:
+            missing += 1
+            if debug:
+                print(f"[debug] не удалось извлечь {name}")
 
     return saved, skipped, missing, ids
 
 
+def write_manifest(items: Iterable[str], path: Path) -> None:
+    ensure_parent(path)
+    uniq = sorted(set(items))
+    payload = [{"id": iid, "name": iid.replace("_", " ").title()} for iid in uniq]
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 # ---------- orchestration ----------
 
-def extract_all_icons(version: str, out_dir: Path, force: bool = False, debug: bool = False) -> dict:
+def run_extract(version: str, kinds: str, out: Optional[str], face: Optional[str], force: bool, debug: bool) -> None:
     vjson = fetch_version_json(version)
     client_url, client_sha1 = get_client_download(vjson)
     jar_path = download_client_jar(version, client_url, client_sha1)
 
-    saved, skipped, missing, ids = extract_icons_from_jar(jar_path, out_dir, force=force, debug=debug)
+    total_saved = total_skipped = total_missing = 0
 
-    # items manifest для фронта
-    manifest = items_manifest_path(version)
-    ensure_parent(manifest)
-    uniq = sorted(set(ids))
-    items_list = [{"id": iid, "name": iid.replace("_", " ").title()} for iid in uniq]
-    try:
-        manifest.write_text(json.dumps(items_list, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as e:
-        print(f"[warn] не удалось записать {manifest}: {e}")
+    with zipfile.ZipFile(jar_path, "r") as zf:
+        if kinds in ("items", "all"):
+            s, k, m, ids = extract_group(
+                zf, ITEM_PATHS, out_dir_items(version, out), face, force, debug
+            )
+            total_saved += s; total_skipped += k; total_missing += m
+            try:
+                write_manifest(ids, items_manifest_path(version))
+            except Exception as e:
+                print(f"[warn] не удалось записать items manifest: {e}")
 
-    return {
-        "version": version,
-        "saved": saved,
-        "skipped": skipped,
-        "missing": missing,
-        "count": len(uniq),
-        "out": str(out_dir),
-        "items_json": str(manifest),
-        "jar": str(jar_path),
-    }
+        if kinds in ("blocks", "all"):
+            s, k, m, ids = extract_group(
+                zf, BLOCK_PATHS, out_dir_blocks(version, out), face, force, debug
+            )
+            total_saved += s; total_skipped += k; total_missing += m
+            try:
+                write_manifest(ids, blocks_manifest_path(version))
+            except Exception as e:
+                print(f"[warn] не удалось записать blocks manifest: {e}")
+
+    print(
+        f"[done] версия: {version} | сохранено: {total_saved} | пропущено: {total_skipped} | "
+        f"не извлечено: {total_missing}"
+    )
+    print(f"[jar] {jar_path}")
 
 
 # ---------- CLI ----------
 
 def main():
-    parser = argparse.ArgumentParser(description="Извлекает иконки предметов из Mojang client.jar (без локального .minecraft)")
-    parser.add_argument("--version", default=VERSION_DEFAULT, help="Версия Minecraft (по умолчанию 1.20.6)")
-    parser.add_argument("--out", help="Папка для PNG (по умолчанию app/static/mc/<version>/items)")
-    parser.add_argument("--force", action="store_true", help="Переписывать существующие файлы")
-    parser.add_argument("--debug", action="store_true", help="Печать отладочной информации")
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(description="Извлекает иконки из Mojang client.jar")
+    p.add_argument("--version", default=VERSION_DEFAULT, help="Версия Minecraft (по умолчанию 1.20.6)")
+    p.add_argument("--out", help="Папка для PNG (items/blocks будут выбраны автоматически)")
+    p.add_argument("--kinds", choices=["items", "blocks", "all"], default="items", help="Что извлекать")
+    p.add_argument("--face", help="Фильтр по части имени (например side/top/bottom/front/back)")
+    p.add_argument("--force", action="store_true", help="Переписывать существующие файлы")
+    p.add_argument("--debug", action="store_true", help="Печать отладочной информации")
+    args = p.parse_args()
 
-    out_dir = out_dir_for(args.version, args.out)
-    print(f"[cfg] version={args.version} | out={out_dir}")
-
+    print(f"[cfg] version={args.version} | kinds={args.kinds} | face={args.face or '—'}")
     try:
-        stats = extract_all_icons(args.version, out_dir, force=args.force, debug=args.debug)
+        run_extract(args.version, args.kinds, args.out, args.face, args.force, args.debug)
     except Exception as e:
         print(f"[fatal] {e}")
         sys.exit(1)
-
-    print(
-        "[done] версия: {version} | сохранено: {saved} | пропущено: {skipped} | не извлечено: {missing} | всего_id: {count}".format(
-            **stats
-        )
-    )
-    print(f"[jar] {stats['jar']}")
-    print(f"[out] icons -> {stats['out']}")
-    print(f"[out] items json -> {stats['items_json']}")
 
 
 if __name__ == "__main__":

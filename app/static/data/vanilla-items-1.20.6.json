@@ -2406,5 +2406,66 @@
   {
     "id": "yellow_dye",
     "name": "Yellow Dye"
+  },
+    {
+    "id": "bee_nest_front",
+    "name": "Bee Nest Front"
+  },
+  {
+    "id": "beehive_front",
+    "name": "Beehive Front"
+  },
+  {
+    "id": "blast_furnace_front",
+    "name": "Blast Furnace Front"
+  },
+
+  {
+    "id": "command_block_front",
+    "name": "Command Block Front"
+  },
+  {
+    "id": "crafting_table_front",
+    "name": "Crafting Table Front"
+  },
+  {
+    "id": "dispenser_front",
+    "name": "Dispenser Front"
+  },
+  {
+    "id": "dropper_front",
+    "name": "Dropper Front"
+  },
+  {
+    "id": "fletching_table_front",
+    "name": "Fletching Table Front"
+  },
+  {
+    "id": "furnace_front",
+    "name": "Furnace Front"
+  },
+  {
+    "id": "lectern_front",
+    "name": "Lectern Front"
+  },
+  {
+    "id": "loom_front",
+    "name": "Loom Front"
+  },
+  {
+    "id": "observer_front",
+    "name": "Observer Front"
+  },
+  {
+    "id": "smithing_table_front",
+    "name": "Smithing Table Front"
+  },
+  {
+    "id": "smoker_front",
+    "name": "Smoker Front"
+  },
+  {
+    "id": "sunflower_front",
+    "name": "Sunflower Front"
   }
 ]
