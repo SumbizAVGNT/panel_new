@@ -11,7 +11,12 @@ from typing import Optional, Iterable, List, Tuple
 from flask import Blueprint, render_template, request, jsonify, current_app, g, session
 
 from ...decorators import login_required
-from ...database import get_db_connection, MySQLConnection, init_db
+from ...database import (
+    get_db_connection,
+    get_default_connection,
+    MySQLConnection,
+    init_db,
+)
 from . import admin_bp
 
 bp = Blueprint("promocode", __name__, url_prefix="/promocode")
@@ -115,11 +120,15 @@ def _kit_items(conn: MySQLConnection, kit_id: int) -> List[dict]:
         (kit_id,),
     )
     for it in items:
-        for col in ("enchants_json", "nbt_json"):
-            try:
-                it[col[:-5] + "s"] = json.loads(it[col] or "[]")
-            except Exception:
-                it[col[:-5] + "s"] = []
+        # аккуратно распакуем JSON-колонки в ожидаемые ключи
+        try:
+            it["enchants"] = json.loads(it.get("enchants_json") or "[]")
+        except Exception:
+            it["enchants"] = []
+        try:
+            it["nbt"] = json.loads(it.get("nbt_json") or "[]")
+        except Exception:
+            it["nbt"] = []
     return items
 
 # -------- schema guard --------
@@ -129,31 +138,10 @@ def _ensure_schema(conn: MySQLConnection) -> None:
     if _SCHEMA_READY:
         return
     try:
-        init_db(conn)
-        _ensure_groups_table(conn)
+        init_db(conn)  # создаёт все таблицы, включая promo_kits / promo_kit_items / promo_codes / promo_code_groups ...
         _SCHEMA_READY = True
     except Exception as e:
         current_app.logger.error("init_db failed: %s", e)
-
-def _ensure_groups_table(conn: MySQLConnection) -> None:
-    # максимально безопасно: IF NOT EXISTS
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS promo_groups (
-          id INT AUTO_INCREMENT PRIMARY KEY,
-          code_id INT NOT NULL,
-          group_name VARCHAR(191) NOT NULL,
-          temp_seconds INT NULL,
-          context_server VARCHAR(64) NULL,
-          context_world  VARCHAR(64) NULL,
-          priority INT NOT NULL DEFAULT 1,
-          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          INDEX idx_code (code_id),
-          CONSTRAINT fk_groups_code FOREIGN KEY (code_id) REFERENCES promo_codes(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """
-    )
-    conn.commit()
 
 # =========================================================
 # UI
@@ -242,47 +230,36 @@ def api_kits_save():
     if not name:
         return jsonify({"ok": False, "error": "name is required"}), 400
 
-    # TODO: замените на ваш способ получить соединение для промокодов
-    try:
-        # Если у вас уже есть conn в замыкании файла — используйте его
-        from ...database import get_default_connection  # если есть такой
-        conn = get_default_connection()
-    except Exception:
-        # fallback: используем тот же коннектор, что и AuthMe, если БД общая
-        conn = get_authme_connection()
-
-    try:
-        # --- begin tx
-        conn.execute("START TRANSACTION")
+    # Основная БД панели
+    with get_default_connection() as conn:
+        _ensure_schema(conn)
 
         # 1) upsert kit
         if kit_id:
-            # update existing
             conn.execute(
-                "UPDATE `promocode_kits` SET `name` = ?, `description` = ? WHERE `id` = ?",
+                "UPDATE `promo_kits` SET `name` = ?, `description` = ? WHERE `id` = ?",
                 (name, description, int(kit_id)),
             )
             # убедимся, что такая запись есть
-            row = conn.query_one("SELECT `id` FROM `promocode_kits` WHERE `id` = ? LIMIT 1", (int(kit_id),))
+            row = conn.query_one("SELECT `id` FROM `promo_kits` WHERE `id` = ? LIMIT 1", (int(kit_id),))
             if not row:
                 conn.execute(
-                    "INSERT INTO `promocode_kits` (`id`, `name`, `description`) VALUES (?, ?, ?)",
+                    "INSERT INTO `promo_kits` (`id`, `name`, `description`) VALUES (?, ?, ?)",
                     (int(kit_id), name, description),
                 )
         else:
-            # insert new
             conn.execute(
-                "INSERT INTO `promocode_kits` (`name`, `description`) VALUES (?, ?)",
+                "INSERT INTO `promo_kits` (`name`, `description`) VALUES (?, ?)",
                 (name, description),
             )
             rid = conn.query_one("SELECT LAST_INSERT_ID() AS id") or {}
             kit_id = int(rid.get("id") or 0)
 
         if not kit_id:
-            raise RuntimeError("Failed to obtain kit id")
+            return _err("Failed to obtain kit id", 500)
 
         # 2) replace items
-        conn.execute("DELETE FROM `promocode_kits_items` WHERE `kit_id` = ?", (int(kit_id),))
+        conn.execute("DELETE FROM `promo_kit_items` WHERE `kit_id` = ?", (int(kit_id),))
 
         # нормализуем список предметов
         items_params = []
@@ -327,23 +304,13 @@ def api_kits_save():
 
         if items_params:
             conn.executemany(
-                "INSERT INTO `promocode_kits_items` "
+                "INSERT INTO `promo_kit_items` "
                 "(`kit_id`,`slot`,`namespace`,`item_id`,`amount`,`display_name`,`enchants_json`,`nbt_json`) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 items_params
             )
 
-        conn.commit()
         return jsonify({"ok": True, "data": {"id": int(kit_id), "name": name}})
-
-    except Exception as e:
-        current_app.logger.exception("kits save failed: %s", e)
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        # если это IntegrityError по FK — вернём дружелюбно
-        return jsonify({"ok": False, "error": "Kit save failed (FK). Make sure kit exists before inserting items."}), 500
 
 @bp.post("/api/kits/delete")
 @login_required
@@ -353,28 +320,13 @@ def api_kits_delete():
     if not kit_id:
         return jsonify({"ok": False, "error": "id is required"}), 400
 
-    # TODO: замените на ваш коннектор, как и выше
-    try:
-        from ...database import get_default_connection
-        conn = get_default_connection()
-    except Exception:
-        conn = get_authme_connection()
-
-    try:
-        conn.execute("START TRANSACTION")
+    with get_default_connection() as conn:
+        _ensure_schema(conn)
         # если FK настроен ON DELETE CASCADE, достаточно удалить родителя
         # но на всякий случай чистим явно
-        conn.execute("DELETE FROM `promocode_kits_items` WHERE `kit_id` = ?", (int(kit_id),))
-        conn.execute("DELETE FROM `promocode_kits` WHERE `id` = ?", (int(kit_id),))
-        conn.commit()
+        conn.execute("DELETE FROM `promo_kit_items` WHERE `kit_id` = ?", (int(kit_id),))
+        conn.execute("DELETE FROM `promo_kits` WHERE `id` = ?", (int(kit_id),))
         return jsonify({"ok": True, "data": True})
-    except Exception as e:
-        current_app.logger.exception("kits delete failed: %s", e)
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return jsonify({"ok": False, "error": "Kit delete failed"}), 500
 
 # =========================================================
 # API: promocodes (CRUD + details)
@@ -419,7 +371,6 @@ def api_promo_create():
             """,
             (code, amount, currency, realm, int(kit_id) if kit_id else None, uses, uses, expires_at, created_by),
         )
-        conn.commit()
         pid = int(_row(conn, "SELECT id FROM promo_codes WHERE code=?", (code,))["id"])
     return _ok({"id": pid, "code": code})
 
@@ -455,7 +406,6 @@ def api_promo_update():
     with get_db_connection() as conn:
         _ensure_schema(conn)
         conn.execute(f"UPDATE promo_codes SET {', '.join(sets)} WHERE id=?", tuple(params))
-        conn.commit()
     return _ok()
 
 @bp.post("/api/promo/delete")
@@ -473,7 +423,6 @@ def api_promo_delete():
             conn.execute("DELETE FROM promo_codes WHERE id=?", (int(pid),))
         else:
             conn.execute("DELETE FROM promo_codes WHERE code=?", (code,))
-        conn.commit()
     return _ok()
 
 @bp.get("/api/promo/details")
@@ -572,7 +521,7 @@ def api_promo_groups_list():
             conn,
             """
             SELECT id, code_id, group_name, temp_seconds, context_server, context_world, priority, created_at
-            FROM promo_groups
+            FROM promo_code_groups
             WHERE code_id=?
             ORDER BY priority ASC, id ASC
             """,
@@ -595,32 +544,34 @@ def api_promo_groups_save():
         name = (g.get("group_name") or "").strip()
         if not name:
             continue
+        # схема ограничивает длину group_name до 36 символов
+        if len(name) > 36:
+            name = name[:36]
         tmp = g.get("temp_seconds")
         try:
             tmp = int(tmp) if tmp is not None and str(tmp) != "" else None
         except Exception:
             tmp = None
-        srv = (g.get("context_server") or "").strip() or None
-        wrd = (g.get("context_world") or "").strip() or None
+        srv = (g.get("context_server") or "").strip() or "global"  # NOT NULL DEFAULT 'global'
+        wrd = (g.get("context_world") or "").strip() or "global"   # NOT NULL DEFAULT 'global'
         pr  = g.get("priority")
         try:
-            pr = int(pr) if pr is not None and str(pr) != "" else i
+            pr = int(pr) if pr is not None and str(pr) != "" else i - 1  # по умолчанию 0..N
         except Exception:
-            pr = i
+            pr = i - 1
         bulk.append((int(code_id), name, tmp, srv, wrd, pr))
 
     with get_db_connection() as conn:
         _ensure_schema(conn)
-        conn.execute("DELETE FROM promo_groups WHERE code_id=?", (int(code_id),))
+        conn.execute("DELETE FROM promo_code_groups WHERE code_id=?", (int(code_id),))
         if bulk:
             conn.executemany(
                 """
-                INSERT INTO promo_groups(code_id, group_name, temp_seconds, context_server, context_world, priority)
+                INSERT INTO promo_code_groups(code_id, group_name, temp_seconds, context_server, context_world, priority)
                 VALUES (?,?,?,?,?,?)
                 """,
                 bulk,
             )
-        conn.commit()
     return _ok({"count": len(bulk)})
 
 # =========================================================
@@ -694,6 +645,8 @@ def api_promo_redeem():
 
     with get_db_connection() as conn:
         _ensure_schema(conn)
+
+        # используем блокировку строки до конца транзакции
         p = _load_code_for_update(conn, code)
         err = _validate_code_row(p, realm=realm)
         if err:
@@ -719,7 +672,6 @@ def api_promo_redeem():
             ),
         )
         conn.execute("UPDATE promo_codes SET uses_left = uses_left - 1 WHERE id = ? AND uses_left > 0", (code_id,))
-        conn.commit()
 
         return _ok({
             "code": code,

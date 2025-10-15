@@ -23,6 +23,7 @@ from pymysql.err import IntegrityError
 
 __all__ = [
     # коннекторы
+    "get_default_connection",
     "get_db_connection",
     "get_authme_connection",
     "get_luckperms_connection",
@@ -240,6 +241,13 @@ def _connect_with_auto_create(prefix: str, create_if_missing: bool) -> pymysql.c
 def _mysql_connect(prefix: str, create_if_missing: bool) -> MySQLConnection:
     return MySQLConnection(_connect_with_auto_create(prefix, create_if_missing=create_if_missing))
 
+
+def get_default_connection() -> MySQLConnection:
+    """
+    Соединение «по умолчанию» — основная БД панели (префикс DB_*).
+    Нужна для совместимости с кодом, который ожидает get_default_connection().
+    """
+    return get_db_connection()
 
 def get_db_connection(_db_path: Optional[str] = None) -> MySQLConnection:
     return _mysql_connect(prefix="DB_", create_if_missing=True)
@@ -802,7 +810,7 @@ def stats_get_series(
     """
     Возвращает [{"ts": <unix>, <field>: value, ...}, ...]
     Разрешённые поля:
-      mspt, tps_1m, tps_5m, tps_15m, players_online,
+      mspt, tps_1m, tps_5м, tps_15m, players_online,
       heap_used, heap_max, cpu_sys, cpu_proc
     """
     allowed = {
