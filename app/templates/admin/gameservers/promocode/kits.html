@@ -13,7 +13,7 @@
     #kits-root .builder{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
     @media (max-width:1100px){#kits-root .builder{grid-template-columns:1fr}}
     #kits-root .slot-grid{display:grid;grid-template-columns:repeat(9,1fr);gap:10px}
-    #kits-root .slot{position:relative;background:rgba(2,6,23,.5);border:1px dashed rgba(148,163,184,.3);border-radius:12px;min-height:62px;display:grid;place-items:center;color:#cbd5e1;cursor:pointer;transition:.15s; user-select:none}
+    #kits-root .slot{position:relative;background:rgba(2,6,23,.5);border:1px dashed rgba(148,163,184,.3);border-radius:12px;min-height:62px;display:grid;place-items:center;color:#cbd5e1;cursor:pointer;transition:.15s;user-select:none}
     #kits-root .slot:hover{border-color:rgba(148,163,184,.5);transform:translateY(-1px)}
     #kits-root .slot.active{outline:2px solid #60a5fa;outline-offset:2px}
     #kits-root .slot .qty{position:absolute;right:6px;bottom:4px;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.35);border-radius:8px;padding:2px 6px;font-size:.72rem}
@@ -22,12 +22,12 @@
     #kits-root .slot.drag-over{background:rgba(96,165,250,.08);border-style:solid}
 
     /* Items catalog */
-    #kits-root .items-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
+    #kits-root .items-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;width:100%;box-sizing:border-box;overflow-x:hidden}
     @media (max-width:1400px){#kits-root .items-grid{grid-template-columns:repeat(6,1fr)}}
     @media (max-width:1100px){#kits-root .items-grid{grid-template-columns:repeat(5,1fr)}}
     @media (max-width:900px){#kits-root .items-grid{grid-template-columns:repeat(4,1fr)}}
     @media (max-width:680px){#kits-root .items-grid{grid-template-columns:repeat(3,1fr)}}
-    #kits-root .item{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(13,17,23,.55);cursor:grab}
+    #kits-root .item{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(13,17,23,.55);cursor:grab;min-width:0}
     #kits-root .item:active{cursor:grabbing}
     #kits-root .item .icon{width:28px;height:28px;image-rendering:pixelated;border-radius:6px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6)}
     #kits-root .item .n{font-size:.86rem;color:#e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -53,15 +53,16 @@
     #kits-root .dd-item:hover,#kits-root .dd-item.act{background:rgba(96,165,250,.12)}
     #kits-root .chips{position:relative;z-index:51}
     #kits-root .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.6);margin:.25rem .25rem 0 0}
-    #kits-root .chip .lvl{font-weight:700; cursor:pointer}
+    #kits-root .chip .lvl{font-weight:700;cursor:pointer}
     #kits-root .chip .x{border:0;background:transparent;color:#e5e7eb;line-height:1;padding:0 .1rem;cursor:pointer}
     #kits-root #ench-input{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.55);color:#e5e7eb;border-radius:10px;padding:.48rem .6rem;width:100%}
 
     /* Pager */
-    #kits-root .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px}
-    #kits-root .pager .pages{display:flex;align-items:center;gap:6px}
+    #kits-root .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;width:100%;box-sizing:border-box}
+    #kits-root .pager .pages{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
     #kits-root .pager .info{color:#94a3b8;font-size:.86rem}
-    #kits-root .pager.sticky{position:sticky;top:0;background:rgba(13,17,23,.80);backdrop-filter:blur(6px);border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:.35rem .5rem;margin-bottom:.5rem;z-index:5}
+    /* Не “липкий”, чтобы сетка не прыгала */
+    #kits-root .pager.sticky{position:static;top:auto;background:transparent;border:0;padding:0;margin-bottom:8px}
   </style>
 
   <!-- Header -->
@@ -161,8 +162,8 @@
           </div>
         </div>
 
-        <!-- TOP pager (sticky) -->
-        <div id="items-pager-top" class="pager sticky" hidden>
+        <!-- TOP pager -->
+        <div id="items-pager-top" class="pager" hidden>
           <div class="pages">
             <button class="btn btn-sm btn-outline-secondary pg-first">«</button>
             <button class="btn btn-sm btn-outline-secondary pg-prev">‹</button>
@@ -173,8 +174,11 @@
           <div class="d-flex align-items-center gap-2">
             <span class="dim">на странице</span>
             <select class="form-select form-select-sm pg-size">
-              <option value="24">24</option>
-              <option value="48" selected>48</option>
+              <option value="12">12</option>
+              <option value="24" selected>24</option>
+              <option value="36">36</option>
+              <option value="48">48</option>
+              <option value="72">72</option>
               <option value="96">96</option>
               <option value="144">144</option>
             </select>
@@ -197,8 +201,11 @@
           <div class="d-flex align-items-center gap-2">
             <span class="dim">на странице</span>
             <select class="form-select form-select-sm pg-size">
-              <option value="24">24</option>
-              <option value="48" selected>48</option>
+              <option value="12">12</option>
+              <option value="24" selected>24</option>
+              <option value="36">36</option>
+              <option value="48">48</option>
+              <option value="72">72</option>
               <option value="96">96</option>
               <option value="144">144</option>
             </select>
@@ -297,7 +304,7 @@ window.kitsInit = function() {
     _sel: null,
     // pagination
     page: 1,
-    pageSize: 48,
+    pageSize: 24,   // <= по умолчанию больше страниц
     filtered: []
   };
 
@@ -590,6 +597,25 @@ window.kitsInit = function() {
     renderPager(list.length);
 
     const start = (state.page - 1) * state.pageSize;
+    theEnd = start + state.pageSize; // avoid accidental globals – next line fixes
+  };
+
+  // fix typo and render items
+  function renderCatalog(){
+    const wrap = $('#items-wrap');
+    const q = ($('#item-search').value||"").trim().toLowerCase();
+    const scope = $('#ver-select').value;
+    const list = state.items.filter(x=>{
+      const okScope = scope==="vanilla" ? (x.ns==='minecraft' || !x.ns) : scope==="custom" ? (x.ns && x.ns!=='minecraft') : true;
+      if (!okScope) return false;
+      if (!q) return true;
+      return x.id.toLowerCase().includes(q) || (x.name||"").toLowerCase().includes(q) || (`${x.ns}:${x.id}`).toLowerCase().includes(q);
+    });
+
+    state.filtered = list;
+    renderPager(list.length);
+
+    const start = (state.page - 1) * state.pageSize;
     const end   = start + state.pageSize;
     const pageItems = list.slice(start, end);
 
@@ -612,7 +638,7 @@ window.kitsInit = function() {
         markDirty(true);
       });
     });
-  };
+  }
 
   /* ---------- events ---------- */
   $('#kits-refresh').addEventListener('click', loadKits);
@@ -632,9 +658,9 @@ window.kitsInit = function() {
     p.querySelector('.pg-next').addEventListener('click',  ()=>{ const pages=Math.max(1,Math.ceil(state.filtered.length/state.pageSize)); state.page=Math.min(pages,state.page+1); renderCatalog(); });
     p.querySelector('.pg-last').addEventListener('click',  ()=>{ state.page=Math.max(1,Math.ceil(state.filtered.length/state.pageSize)); renderCatalog(); });
     p.querySelector('.pg-size').addEventListener('change',  ()=>{
-      state.pageSize=parseInt(p.querySelector('.pg-size').value,10)||48;
+      state.pageSize=parseInt(p.querySelector('.pg-size').value,10)||24;
       state.page=1;
-      // синхронизировать селекты размера
+      // синхронизируем селекты размера
       pagers().forEach(pp=>pp.querySelector('.pg-size').value=String(state.pageSize));
       renderCatalog();
     });
