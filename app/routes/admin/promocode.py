@@ -6,7 +6,7 @@ import re
 import json
 import random
 from datetime import datetime
-from typing import Optional, Iterable, List, Tuple
+from typing import Optional, Iterable, List, Tuple, Dict
 
 from flask import Blueprint, render_template, request, jsonify, current_app, g, session
 
@@ -16,6 +16,7 @@ from ...database import (
     get_default_connection,
     MySQLConnection,
     init_db,
+    get_luckperms_connection,
 )
 from . import admin_bp
 
@@ -120,7 +121,6 @@ def _kit_items(conn: MySQLConnection, kit_id: int) -> List[dict]:
         (kit_id,),
     )
     for it in items:
-        # аккуратно распакуем JSON-колонки в ожидаемые ключи
         try:
             it["enchants"] = json.loads(it.get("enchants_json") or "[]")
         except Exception:
@@ -142,6 +142,81 @@ def _ensure_schema(conn: MySQLConnection) -> None:
         _SCHEMA_READY = True
     except Exception as e:
         current_app.logger.error("init_db failed: %s", e)
+
+# =========================================================
+# LuckPerms helpers / config
+# =========================================================
+
+LP_PREFIX = (
+    os.getenv("LUCKPERMS_TABLE_PREFIX")
+    or os.getenv("LUCKPERMS_PREFIX")
+    or "luckperms_"
+).strip("`")
+
+def _lp_tbl(core: str) -> str:
+    return f"`{LP_PREFIX}{core}`"
+
+def _to_dashed_uuid(u: str) -> str:
+    u = (u or "").replace("-", "").lower()
+    if len(u) == 32:
+        return f"{u[0:8]}-{u[8:12]}-{u[12:16]}-{u[16:20]}-{u[20:]}"
+    return u
+
+def _promo_groups(conn: MySQLConnection, code_id: int) -> List[dict]:
+    return _rows(
+        conn,
+        """
+        SELECT group_name,
+               temp_seconds,
+               COALESCE(NULLIF(context_server,''),'global') AS context_server,
+               COALESCE(NULLIF(context_world,''),'global')  AS context_world,
+               priority
+        FROM promo_code_groups
+        WHERE code_id = ?
+        ORDER BY priority ASC, id ASC
+        """,
+        (int(code_id),),
+    )
+
+def _lp_apply_groups(uuid: str, groups: List[dict]) -> int:
+    """Добавляет узлы group.<name> пользователю в LuckPerms (временные/перманентные, с контекстами)."""
+    import time
+    if not uuid or not groups:
+        return 0
+    uu = _to_dashed_uuid(uuid)
+    now = int(time.time())
+
+    rows = []
+    for g in groups:
+        name = (g.get("group_name") or "").strip()
+        if not name:
+            continue
+        server = (g.get("context_server") or "global").strip() or "global"
+        world  = (g.get("context_world")  or "global").strip() or "global"
+        temp   = g.get("temp_seconds")
+        try:
+            expiry = int(now + int(temp)) if temp is not None and str(temp) != "" else 0
+        except Exception:
+            expiry = 0
+        rows.append((uu, f"group.{name}", 1, server, world, expiry, ""))
+
+    if not rows:
+        return 0
+
+    try:
+        with get_luckperms_connection() as lpc:
+            lpc.executemany(
+                f"""
+                INSERT INTO {_lp_tbl('user_permissions')}
+                (uuid, permission, value, server, world, expiry, contexts)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+            return len(rows)
+    except Exception as e:
+        current_app.logger.error("LuckPerms apply failed: %s", e)
+        return 0
 
 # =========================================================
 # UI
@@ -230,7 +305,6 @@ def api_kits_save():
     if not name:
         return jsonify({"ok": False, "error": "name is required"}), 400
 
-    # Основная БД панели
     with get_default_connection() as conn:
         _ensure_schema(conn)
 
@@ -240,7 +314,6 @@ def api_kits_save():
                 "UPDATE `promo_kits` SET `name` = ?, `description` = ? WHERE `id` = ?",
                 (name, description, int(kit_id)),
             )
-            # убедимся, что такая запись есть
             row = conn.query_one("SELECT `id` FROM `promo_kits` WHERE `id` = ? LIMIT 1", (int(kit_id),))
             if not row:
                 conn.execute(
@@ -261,7 +334,6 @@ def api_kits_save():
         # 2) replace items
         conn.execute("DELETE FROM `promo_kit_items` WHERE `kit_id` = ?", (int(kit_id),))
 
-        # нормализуем список предметов
         items_params = []
         for it in raw_items:
             if not it:
@@ -292,10 +364,8 @@ def api_kits_save():
             except Exception:
                 slot = None
             if slot is None or slot < 0 or slot > 26:
-                # безопасно проставим по порядку
                 slot = len(items_params)
                 if slot > 26:
-                    # ограничим 27 слотов
                     break
 
             items_params.append((
@@ -322,8 +392,6 @@ def api_kits_delete():
 
     with get_default_connection() as conn:
         _ensure_schema(conn)
-        # если FK настроен ON DELETE CASCADE, достаточно удалить родителя
-        # но на всякий случай чистим явно
         conn.execute("DELETE FROM `promo_kit_items` WHERE `kit_id` = ?", (int(kit_id),))
         conn.execute("DELETE FROM `promo_kits` WHERE `id` = ?", (int(kit_id),))
         return jsonify({"ok": True, "data": True})
@@ -381,7 +449,7 @@ def api_promo_update():
     pid = js.get("id")
     if not pid:
         return _err("id required")
-    fields = {
+    fields: Dict[str, object] = {
         "code": (js.get("code") or "").strip().upper(),
         "enabled": int(js.get("enabled") or 1),
         "realm": (js.get("realm") or "").strip() or None,
@@ -420,8 +488,13 @@ def api_promo_delete():
     with get_db_connection() as conn:
         _ensure_schema(conn)
         if pid:
+            conn.execute("DELETE FROM promo_code_groups WHERE code_id=?", (int(pid),))
             conn.execute("DELETE FROM promo_codes WHERE id=?", (int(pid),))
         else:
+            conn.execute(
+                "DELETE FROM promo_code_groups WHERE code_id=(SELECT id FROM promo_codes WHERE code=? LIMIT 1)",
+                (code,),
+            )
             conn.execute("DELETE FROM promo_codes WHERE code=?", (code,))
     return _ok()
 
@@ -538,13 +611,11 @@ def api_promo_groups_save():
     if not code_id:
         return _err("code_id required")
 
-    # sanitize
     bulk = []
     for i, g in enumerate(groups, start=1):
         name = (g.get("group_name") or "").strip()
         if not name:
             continue
-        # схема ограничивает длину group_name до 36 символов
         if len(name) > 36:
             name = name[:36]
         tmp = g.get("temp_seconds")
@@ -552,11 +623,11 @@ def api_promo_groups_save():
             tmp = int(tmp) if tmp is not None and str(tmp) != "" else None
         except Exception:
             tmp = None
-        srv = (g.get("context_server") or "").strip() or "global"  # NOT NULL DEFAULT 'global'
-        wrd = (g.get("context_world") or "").strip() or "global"   # NOT NULL DEFAULT 'global'
+        srv = (g.get("context_server") or "").strip() or "global"
+        wrd = (g.get("context_world") or "").strip() or "global"
         pr  = g.get("priority")
         try:
-            pr = int(pr) if pr is not None and str(pr) != "" else i - 1  # по умолчанию 0..N
+            pr = int(pr) if pr is not None and str(pr) != "" else i - 1
         except Exception:
             pr = i - 1
         bulk.append((int(code_id), name, tmp, srv, wrd, pr))
@@ -626,6 +697,8 @@ def api_promo_redeem_preview():
             "kit_items": _kit_items(conn, int(p["kit_id"])) if p.get("kit_id") else [],
         }
         out["uses_left_after"] = max(0, int(out["uses_left"]) - 1)
+        # превью LuckPerms-групп
+        out["groups"] = _promo_groups(conn, int(p["id"]))
         return _ok(out)
 
 @bp.post("/api/promo/redeem")
@@ -646,7 +719,6 @@ def api_promo_redeem():
     with get_db_connection() as conn:
         _ensure_schema(conn)
 
-        # используем блокировку строки до конца транзакции
         p = _load_code_for_update(conn, code)
         err = _validate_code_row(p, realm=realm)
         if err:
@@ -657,6 +729,10 @@ def api_promo_redeem():
         currency_key = p.get("currency_key")
         kit_id = p.get("kit_id")
         kit_items = _kit_items(conn, int(kit_id)) if kit_id else []
+
+        # применим группы LP
+        groups = _promo_groups(conn, code_id)
+        lp_applied = _lp_apply_groups(uuid, groups)
 
         conn.execute(
             """
@@ -681,6 +757,8 @@ def api_promo_redeem():
             "currency_key": currency_key,
             "kit_id": kit_id,
             "kit_items": kit_items,
+            "groups": groups,
+            "lp_applied": lp_applied,
         })
 
 @bp.get("/api/promo/redemptions")

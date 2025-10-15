@@ -57,7 +57,7 @@
 </div>
 
 <!-- ===== Modal: редактирование/создание (AURORA/GLASS) ===== -->
-<div class="modal fade" id="pcEditModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="pcEditModal" data-bs-backdrop="false" data-bs-focus="true" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content glass-modal pc-modal">
 
@@ -177,7 +177,7 @@
                   <div class="vstack gap-2">
                     <button class="btn btn-outline-light btn-sm" id="pc-a-gen"><i class="bi bi-stars me-1"></i>Сгенерировать код</button>
                     <button class="btn btn-outline-secondary btn-sm" id="pc-a-copy"><i class="bi bi-clipboard-check me-1"></i>Копировать код</button>
-                    <div class="small text-dim">Подтягиваются группы/активации на соседних вкладках.</div>
+                    <div class="small text-dim">Группы и активации грузятся на вкладках «Группы» / «Активации».</div>
                   </div>
                 </div>
               </div>
@@ -194,6 +194,10 @@
               <button class="btn btn-sm btn-primary btn-ghost" id="pc-g-save">Сохранить группы</button>
             </div>
           </div>
+
+          <!-- datalist с LP-группами для автодополнения -->
+          <datalist id="pc-lp-groups"></datalist>
+
           <div class="table-responsive">
             <table class="table table-dark table-sm align-middle nice-table">
               <thead class="text-secondary small">
@@ -279,6 +283,9 @@
   overflow:hidden;
   box-shadow: 0 0 0 1px rgba(96,165,250,.25), 0 18px 50px rgba(2,132,199,.18);
 }
+
+/* убираем затемнение у Bootstrap-модалки */
+.modal-backdrop{display:none!important;opacity:0!important}
 
 /* Toolbar */
 .pc-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -377,7 +384,7 @@
   box-shadow: 0 0 0 1px rgba(96,165,250,.25), 0 8px 20px rgba(2,132,199,.18);
 }
 
-/* Card polish like accounts */
+/* Cards */
 .glass.aurora-card,.aurora-card{
   background:rgba(13,17,23,.58);
   border:1px solid var(--pc-br);
@@ -432,11 +439,11 @@
   };
   const fmtMoney=(a,k)=> (a!=null && a!=='') ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—';
   const fmtDate =(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—';
-  const badge   =(t,cls='badge-soft')=>`<span class="badge ${cls}">${t}</span>`;
 
   // ---------- state + refs ----------
   let API='', rows=[], kits=[], sortBy='id', sortDir='desc';
-  let modalBS=null, backdrop=null;
+  let modalBS=null;
+  let groupsLoadedFor=null, redsLoadedFor=null, lpGroupsLoaded=false;
   const els = {
     list: $('#pc-list'), cnt: $('#pc-count'), search: $('#pc-search'),
     ref: $('#pc-refresh'), create: $('#pc-create'), table: $('#pc-table'),
@@ -452,17 +459,18 @@
     // quick actions
     aGen: $('#pc-a-gen'), aCopy: $('#pc-a-copy'),
     // tabs
-    tabNav: $('#pc-mTabs'),
     tabOver: $('#pc-tab-overview'), tabGroups: $('#pc-tab-groups'), tabReds: $('#pc-tab-reds'),
     // groups / reds
     gBody: $('#pc-groups-body'), gAdd: $('#pc-g-add'), gSave: $('#pc-g-save'),
     rQ: $('#pc-r-player'), rBtn: $('#pc-r-search'), rCnt: $('#pc-r-count'), rBody: $('#pc-reds-body'),
+    lpList: $('#pc-lp-groups')
   };
 
-  // ---------- Modal (Bootstrap or fallback) ----------
+  // ---------- Modal (Bootstrap or fallback без бэкдропа) ----------
   const Modal = {
     init(){
-      if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m);
+      if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m, {backdrop:false, keyboard:true, focus:true});
+      // закрытие по data-bs-dismiss (и без BS тоже)
       $$('[data-bs-dismiss="modal"]', els.m).forEach(btn=>btn.addEventListener('click', ()=>Modal.hide()));
       document.addEventListener('keydown',(e)=>{ if(e.key==='Escape' && Modal.isShown() && !modalBS) Modal.hide(); });
     },
@@ -470,12 +478,10 @@
     show(){
       if (modalBS){ modalBS.show(); return; }
       els.m.classList.add('show'); els.m.style.display='block'; els.m.removeAttribute('aria-hidden'); document.body.classList.add('modal-open');
-      if(!backdrop){ backdrop=document.createElement('div'); backdrop.className='modal-backdrop fade show'; document.body.appendChild(backdrop); backdrop.addEventListener('click', ()=>Modal.hide()); }
     },
     hide(){
       if (modalBS){ modalBS.hide(); return; }
       els.m.classList.remove('show'); els.m.style.display='none'; els.m.setAttribute('aria-hidden','true'); document.body.classList.remove('modal-open');
-      if(backdrop){ backdrop.remove(); backdrop=null; }
     }
   };
 
@@ -509,6 +515,32 @@
     els.filterRealm.innerHTML = `<option value="">Realm: все</option>` + uniq.map(v=>`<option value="${esc(v)}">${v || 'all'}</option>`).join('');
   }
 
+  // ---------- LP GROUPS (optional endpoint) ----------
+  async function loadLpGroupsOnce(){
+    if (lpGroupsLoaded) return;
+    const candidates = [
+      API+'/lp/groups',
+      '/admin/accounts/api/lp/groups',
+      '/admin/gameservers/accounts/api/lp/groups'
+    ];
+    for (const url of candidates){
+      try{
+        const r = await fetch(url,{cache:'no-store'});
+        if (!r.ok) continue;
+        const j = await r.json();
+        const data = (j && (j.data||j.groups||j)) || [];
+        if (!Array.isArray(data) || !data.length) continue;
+        els.lpList.innerHTML = data.map(g=>`<option value="${esc(g.name||g)}">`).join('');
+        lpGroupsLoaded = true;
+        break;
+      }catch(_){ /* next */ }
+    }
+  }
+  function attachLpDatalist(tr){
+    const inp = tr.querySelector('.g-name');
+    if (inp) inp.setAttribute('list','pc-lp-groups');
+  }
+
   // ---------- table render ----------
   function filterRows(){
     const q = (els.search.value||'').trim().toLowerCase();
@@ -539,8 +571,6 @@
     }
 
     const now = Date.now();
-    const q = (els.search.value||'').trim();
-
     els.list.innerHTML = list.map(x=>{
       const used = (x.uses_total!=null && x.uses_left!=null) ? (x.uses_total - x.uses_left) : '—';
       const st = (+x.enabled ? `<span class="badge badge-active">active</span>` : `<span class="badge badge-off">off</span>`);
@@ -609,20 +639,22 @@
     els.mLeft.value    = row?.uses_left ?? '';
     els.mKit.value     = row?.kit_id ?? '';
 
-    // tabs default
+    groupsLoadedFor = null; redsLoadedFor = null; // ленивые вкладки
     switchTab('overview');
-
-    loadGroups(row?.id);
-    loadReds(row?.id);
   }
 
-  async function openEdit(e){
+  function openEdit(e){
     const tr=e.target.closest('tr');
     const id=Number(tr.dataset.id);
     const row = rows.find(x=>x.id===id);
-    await loadKits();
-    fillModal(row);
+
+    // моментально показываем модалку
     Modal.show();
+    fillModal(row);
+
+    // подгружаем ассеты в фоне
+    loadKits().then(()=>{ if(row) els.mKit.value = row.kit_id ?? ''; });
+    loadLpGroupsOnce();
   }
 
   async function delOne(e){
@@ -669,12 +701,12 @@
         })});
         await loadList();
         const row = rows.find(x=>x.id===created.id) || rows.find(x=>x.code===created.code);
-        if(row) fillModal(row);
+        if(row){ fillModal(row); }
       }else{
         await json(API+'/promo/update', {method:'POST', body: JSON.stringify(body)});
         await loadList();
         const row = rows.find(x=>x.id===body.id);
-        if(row) fillModal(row);
+        if(row){ fillModal(row); }
       }
       toast('Сохранено');
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
@@ -684,7 +716,7 @@
   function rowGroupTpl(i,g){
     return `<tr>
       <td class="text-secondary">${i+1}</td>
-      <td><input class="form-control form-control-sm g-name" value="${esc(g.group_name||'')}"></td>
+      <td><input class="form-control form-control-sm g-name" list="pc-lp-groups" value="${esc(g.group_name||'')}"></td>
       <td style="width:150px"><input type="number" class="form-control form-control-sm g-temp" value="${g.temp_seconds??''}"></td>
       <td><input class="form-control form-control-sm g-srv" value="${esc(g.context_server||'')}"></td>
       <td><input class="form-control form-control-sm g-wld" value="${esc(g.context_world||'')}"></td>
@@ -698,13 +730,18 @@
       const g={
         group_name: $('.g-name',tr).value.trim(),
         temp_seconds: $('.g-temp',tr).value ? Number($('.g-temp',tr).value) : null,
-        context_server: ($('.g-srv',tr).value||'').trim()||null,
-        context_world: ($('.g-wld',tr).value||'').trim()||null,
+        context_server: ($('.g-srv',tr).value||'').trim()||'global',
+        context_world: ($('.g-wld',tr).value||'').trim()||'global',
         priority: $('.g-pr',tr).value ? Number($('.g-pr',tr).value) : (i+1)
       };
       if(g.group_name) out.push(g);
     });
     return out;
+  }
+  function bindGroupRowEvents(){
+    $$('.g-del', els.gBody).forEach(b=>b.addEventListener('click', e=>e.target.closest('tr').remove()));
+    // подключаем datalist
+    $$('#pc-groups-body tr').forEach(attachLpDatalist);
   }
   async function loadGroups(codeId){
     els.gBody.innerHTML='';
@@ -713,12 +750,10 @@
       const data = await json(API+'/promo/groups/list?code_id='+codeId);
       els.gBody.innerHTML = (data||[]).map((g,i)=>rowGroupTpl(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
       bindGroupRowEvents();
+      groupsLoadedFor = codeId;
     }catch(_){
       els.gBody.innerHTML = '<tr><td colspan="7" class="text-secondary small">Endpoint /promo/groups/* не реализован</td></tr>';
     }
-  }
-  function bindGroupRowEvents(){
-    $$('.g-del', els.gBody).forEach(b=>b.addEventListener('click', e=>e.target.closest('tr').remove()));
   }
   async function saveGroups(){
     const id = Number(els.mId.value||0);
@@ -748,6 +783,7 @@
         </tr>
       `).join('') || `<tr><td colspan="6" class="text-secondary small">Пусто</td></tr>`;
       els.rCnt.textContent = (data||[]).length ? `${data.length} активаций` : '';
+      redsLoadedFor = codeId;
     }catch(_){
       els.rBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Ошибка загрузки</td></tr>`;
     }
@@ -759,6 +795,10 @@
     els.tabOver.classList.toggle('d-none', key!=='overview');
     els.tabGroups.classList.toggle('d-none', key!=='groups');
     els.tabReds.classList.toggle('d-none', key!=='reds');
+
+    const id = Number(els.mId.value||0);
+    if (key==='groups' && id && groupsLoadedFor!==id) { loadLpGroupsOnce(); loadGroups(id); }
+    if (key==='reds'   && id && redsLoadedFor!==id)   { loadReds(id); }
   }
 
   // ---------- events ----------
@@ -783,10 +823,11 @@
     // toolbar
     on(els.ref,'click', loadList);
     on(els.create,'mousemove', (e)=>setNeonPointer(els.create, e));
-    on(els.create,'click', async ()=>{
-      await loadKits();
-      fillModal(null);
+    on(els.create,'click', ()=>{
       Modal.show();
+      fillModal(null);
+      loadKits();
+      loadLpGroupsOnce();
     });
 
     // modal actions
@@ -805,11 +846,15 @@
     on(els.aGen,'click', ()=>{ genCode(); toast('Сгенерирован новый код'); });
     on(els.aCopy,'click', ()=>{ const code=(els.mCode.value||'').trim(); if(code){ navigator.clipboard?.writeText(code); toast('Код скопирован'); } });
 
-    // codegen button near input
+    // codegen near input
     on(els.mGen,'click', (e)=>{ e.preventDefault(); genCode(); });
 
     // groups
-    on(els.gAdd,'click', ()=>{ const i=$$('#pc-groups-body tr').length; els.gBody.insertAdjacentHTML('beforeend', rowGroupTpl(i, {})); bindGroupRowEvents(); });
+    on(els.gAdd,'click', ()=>{
+      const i=$$('#pc-groups-body tr').length;
+      els.gBody.insertAdjacentHTML('beforeend', rowGroupTpl(i, {}));
+      bindGroupRowEvents();
+    });
     on(els.gSave,'click', saveGroups);
 
     // reds
@@ -817,10 +862,7 @@
     on(els.rQ,'keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId.value||0)); });
 
     // tabs
-    $$('.pc-tabs .nav-link').forEach(a=>a.addEventListener('click', ()=>{
-      switchTab(a.dataset.tab);
-      if(a.dataset.tab==='reds') loadReds(Number(els.mId.value||0));
-    }));
+    $$('.pc-tabs .nav-link').forEach(a=>a.addEventListener('click', ()=>switchTab(a.dataset.tab)));
   }
 
   // ---------- codegen ----------

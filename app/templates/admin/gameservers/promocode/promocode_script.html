@@ -11,7 +11,6 @@
     money:(a,k)=> (a!=null && a!=='') ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—',
     date:(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—'
   };
-  const badge = (t,cls='badge-soft')=>`<span class="badge ${cls}">${t}</span>`;
 
   // toast (создаст контейнер при первом вызове)
   function toast(msg){
@@ -72,19 +71,21 @@
 
   // ---------- state ----------
   let API = '';
-  let list = [];
+  let rows = [];
+  let kits = [];
   let sortBy = 'id', sortDir = 'desc';
-  let modalBS = null, backdropEl = null; // modal
-  let bodyDelegBound = false;            // чтоб не вешать копирование много раз
+  let modalBS = null;                  // modal (без бэкдропа)
+  let bodyDelegBound = false;          // чтоб не вешать копирование много раз
+  let groupsLoadedFor = null;          // ленивые вкладки
+  let redsLoadedFor   = null;
+  let lpGroupsLoaded  = false;
   const els = {};
 
-  // ---------- Modal wrapper (BS or fallback) ----------
+  // ---------- Modal wrapper (BS или fallback без затемнения) ----------
   const Modal = {
     init(){
-      if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m);
-      // закрытие через data-bs-dismiss — и для fallback тоже
+      if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m, {backdrop:false, keyboard:true, focus:true});
       $$('[data-bs-dismiss="modal"]', els.m).forEach(btn=> btn.addEventListener('click', ()=>Modal.hide()));
-      // Esc — для fallback
       document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && Modal.isShown() && !modalBS) Modal.hide(); });
     },
     isShown(){ return modalBS ? !!els.m.classList.contains('show') : els.m.style.display==='block'; },
@@ -94,12 +95,7 @@
       els.m.style.display='block';
       els.m.removeAttribute('aria-hidden');
       document.body.classList.add('modal-open');
-      if(!backdropEl){
-        backdropEl = document.createElement('div');
-        backdropEl.className = 'modal-backdrop fade show';
-        document.body.appendChild(backdropEl);
-        backdropEl.addEventListener('click', ()=>Modal.hide());
-      }
+      // без создания backdrop — нет затемнения
     },
     hide(){
       if (modalBS) { modalBS.hide(); return; }
@@ -107,7 +103,6 @@
       els.m.style.display='none';
       els.m.setAttribute('aria-hidden','true');
       document.body.classList.remove('modal-open');
-      if(backdropEl){ backdropEl.remove(); backdropEl = null; }
     }
   };
 
@@ -120,11 +115,17 @@
     els.btnCreate = $('#pc-create');
     els.tbl       = $('#pc-table');
 
+    // фильтры (если есть)
+    els.fStatus   = $('#pc-filter-status');
+    els.fRealm    = $('#pc-filter-realm');
+    els.fKit      = $('#pc-filter-kit');
+
     // modal
     els.m        = $('#pcEditModal');
     els.mId      = $('#pc-f-id');
     els.mTitle   = $('#pc-f-title');
     els.mCode    = $('#pc-f-code');
+    els.mGen     = $('#pc-f-gen');
     els.mEnabled = $('#pc-f-enabled');
     els.mRealm   = $('#pc-f-realm');
     els.mExp     = $('#pc-f-exp');
@@ -138,6 +139,16 @@
     els.mSave    = $('#pc-f-save');
     els.mDel     = $('#pc-f-delete');
 
+    // quick actions
+    els.aGen     = $('#pc-a-gen');
+    els.aCopy    = $('#pc-a-copy');
+
+    // tabs (AURORA)
+    els.tabNav   = $('#pc-mTabs');
+    els.tabOver  = $('#pc-tab-overview');
+    els.tabGroups= $('#pc-tab-groups');
+    els.tabReds  = $('#pc-tab-reds');
+
     // groups / reds
     els.gBody  = $('#pc-groups-body');
     els.gAdd   = $('#pc-g-add');
@@ -147,47 +158,103 @@
     els.rBtn   = $('#pc-r-search');
     els.rCount = $('#pc-r-count');
     els.rBody  = $('#pc-reds-body');
+
+    // datalist для LP-групп (автосоздание если не дан в разметке)
+    els.lpList = $('#pc-lp-groups');
+    if(!els.lpList){
+      els.lpList = document.createElement('datalist');
+      els.lpList.id = 'pc-lp-groups';
+      document.body.appendChild(els.lpList);
+    }
   }
 
   // ---------- kits ----------
-  async function loadKitsIntoSelect(){
-    if(!els.mKit) return;
-    els.mKit.innerHTML = `<option value="">— без кита —</option>`;
+  async function loadKits(){
     try{
-      const kits = await json(API+'/kits/list');
-      els.mKit.innerHTML += (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
-    }catch(_){}
+      kits = await json(API+'/kits/list');
+      if (els.mKit){
+        els.mKit.innerHTML = `<option value="">— без кита —</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
+      }
+      if (els.fKit){
+        els.fKit.innerHTML = `<option value="">Kit: любой</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
+      }
+    }catch(_){/* ignore */}
+  }
+  async function loadKitsIntoSelect(){ await loadKits(); } // совместимость
+
+  function fillRealmFilter(){
+    if(!els.fRealm) return;
+    const uniq = Array.from(new Set(rows.map(r=>r.realm||''))).sort((a,b)=>String(a).localeCompare(String(b)));
+    els.fRealm.innerHTML = `<option value="">Realm: все</option>` + uniq.map(v=>`<option value="${esc(v)}">${v || 'all'}</option>`).join('');
+  }
+
+  // ---------- LP GROUPS (автодополнение) ----------
+  async function loadLpGroupsOnce(){
+    if (lpGroupsLoaded) return;
+    const urls = [
+      API+'/lp/groups',
+      '/admin/accounts/api/lp/groups',
+      '/admin/gameservers/accounts/api/lp/groups'
+    ];
+    for (const u of urls){
+      try{
+        const r = await fetch(u, {cache:'no-store'});
+        if(!r.ok) continue;
+        const j = await r.json();
+        const arr = (j && (j.data||j.groups||j)) || [];
+        if(!Array.isArray(arr) || !arr.length) continue;
+        els.lpList.innerHTML = arr.map(g=>`<option value="${esc(g.name||g)}">`).join('');
+        lpGroupsLoaded = true;
+        break;
+      }catch(_){/* next */}
+    }
   }
 
   // ---------- table ----------
-  function render(){
+  function filterRows(){
     const q = (els.search?.value||'').trim().toLowerCase();
-    let rows = list.filter(x => !q || String(x.code).toLowerCase().includes(q));
+    const st = els.fStatus?.value ?? '';
+    const rl = els.fRealm?.value ?? '';
+    const kit = els.fKit?.value ?? '';
 
-    rows.sort((a,b)=>{
+    return rows.filter(x=>{
+      if (q && !String(x.code).toLowerCase().includes(q)) return false;
+      if (st!=='' && String(+!!x.enabled)!==st) return false;
+      if (rl!=='' && String(x.realm||'')!==rl) return false;
+      if (kit!=='' && String(x.kit_id||'')!==kit) return false;
+      return true;
+    });
+  }
+
+  function render(){
+    let list = filterRows();
+
+    list.sort((a,b)=>{
       const A=a[sortBy], B=b[sortBy];
       if (['id','amount','uses_left','uses_total'].includes(sortBy)) return (Number(A)||0)-(Number(B)||0);
       return String(A??'').localeCompare(String(B??''));
     });
-    if (sortDir==='desc') rows.reverse();
+    if (sortDir==='desc') list.reverse();
 
-    els.count && (els.count.textContent = rows.length ? `${rows.length} шт.` : '');
+    if (els.count) els.count.textContent = list.length ? `${list.length} шт.` : '';
 
-    if (!rows.length){
+    if (!list.length){
       els.body.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`;
       return;
     }
 
     const now = Date.now();
-    els.body.innerHTML = rows.map(x=>{
+    const q = (els.search?.value||'').trim().toLowerCase();
+
+    els.body.innerHTML = list.map(x=>{
       const used = (x.uses_total!=null && x.uses_left!=null) ? (x.uses_total - x.uses_left) : '—';
-      const st = (+x.enabled ? badge('active') : badge('off','bg-secondary'));
+      const st = (+x.enabled ? `<span class="badge badge-active">active</span>` : `<span class="badge badge-off">off</span>`);
       const lim = (x.uses_total!=null) ? `${x.uses_left}/${x.uses_total}` : '∞';
       const expTs = x.expires_at ? Date.parse(String(x.expires_at).replace(' ','T')) : null;
       const expStr = fmt.date(x.expires_at);
       const expHtml = expTs && expTs < now ? `<span class="text-expired" title="истёк">${expStr}</span>` : expStr;
 
-      // подсветка совпадения в коде
+      // подсветка совпадения в коде + чип
       const code = String(x.code);
       const i = q ? code.toLowerCase().indexOf(q) : -1;
       const codeHtml = (i>=0)
@@ -196,13 +263,15 @@
 
       return `
       <tr data-id="${x.id}">
-        <td class="fw-semibold">${codeHtml}</td>
+        <td>
+          <span class="pc-code" title="Скопировать код"><i class="bi bi-qr-code"></i><span class="code">${codeHtml}</span></span>
+        </td>
         <td>${st}</td>
         <td>${fmt.money(x.amount, x.currency_key)}</td>
         <td>${x.realm ? esc(x.realm) : '<span class="text-dim">all</span>'}</td>
         <td>${lim}</td>
         <td>${expHtml}</td>
-        <td>${x.kit_name? badge(esc(x.kit_name)): ''}</td>
+        <td>${x.kit_name? `<span class="badge badge-soft">${esc(x.kit_name)}</span>`: ''}</td>
         <td class="text-end">${used}</td>
         <td class="text-end">
           <div class="btn-group btn-group-sm">
@@ -215,9 +284,13 @@
     }).join('');
 
     // actions
+    $$('.pc-code', els.body).forEach(el=>el.addEventListener('click', (e)=>{
+      const tr = e.target.closest('tr'); const r = rows.find(x=>x.id==tr.dataset.id);
+      if(r){ navigator.clipboard?.writeText(r.code).then(()=>{ el.classList.add('copied'); toast('Код скопирован'); setTimeout(()=>el.classList.remove('copied'), 700); }); }
+    }));
     $$('.act-edit', els.body).forEach(btn=>btn.addEventListener('click', onRowEdit));
     $$('.act-copy', els.body).forEach(btn=>btn.addEventListener('click', (e)=>{
-      const tr = e.target.closest('tr'); const r = list.find(x=>x.id==tr.dataset.id);
+      const tr = e.target.closest('tr'); const r = rows.find(x=>x.id==tr.dataset.id);
       if(r) copy(r.code);
     }));
     $$('.act-del', els.body).forEach(btn=>btn.addEventListener('click', onRowDelete));
@@ -229,7 +302,7 @@
         const td = e.target.closest('td'); const tr = e.target.closest('tr');
         if(!td || !tr) return;
         if(td.cellIndex===0){
-          const r = list.find(x=>x.id==tr.dataset.id);
+          const r = rows.find(x=>x.id==tr.dataset.id);
           if(r) copy(r.code);
         }
       });
@@ -239,7 +312,8 @@
   async function loadList(){
     skeletonRows(els.body);
     try{
-      list = await json(API+'/promo/list');
+      rows = await json(API+'/promo/list');
+      fillRealmFilter();
       render();
     }catch(e){
       els.body.innerHTML = `<tr><td colspan="9" class="text-danger">${esc(e.message||String(e))}</td></tr>`;
@@ -248,37 +322,45 @@
 
   // ---------- modal: fill & open ----------
   function fillModal(row){
+    if(!els.m) return;
     els.mId.value      = row?.id ?? '';
-    els.mTitle.textContent = row ? `#${row.id}` : '(новый)';
-    els.mCode.value    = row?.code ?? '';
-    els.mEnabled.value = (row?.enabled ?? 1) ? '1':'0';
-    els.mRealm.value   = row?.realm ?? '';
-    els.mExp.value     = row?.expires_at ?? '';
-    els.mAmount.value  = row?.amount ?? '';
-    els.mCurr.value    = row?.currency_key ?? 'rubs';
-    els.mTotal.value   = row?.uses_total ?? '';
-    els.mPer.value     = row?.per_player_uses ?? '';
-    els.mCd.value      = row?.cooldown_seconds ?? '';
-    els.mLeft.value    = row?.uses_left ?? '';
-    els.mKit.value     = row?.kit_id ?? '';
+    els.mTitle && (els.mTitle.textContent = row ? `#${row.id}` : '(новый)');
+    els.mCode && (els.mCode.value    = row?.code ?? '');
+    els.mEnabled && (els.mEnabled.value = (row?.enabled ?? 1) ? '1':'0');
+    els.mRealm && (els.mRealm.value   = row?.realm ?? '');
+    els.mExp && (els.mExp.value     = row?.expires_at ?? '');
+    els.mAmount && (els.mAmount.value  = row?.amount ?? '');
+    els.mCurr && (els.mCurr.value    = row?.currency_key ?? 'rubs');
+    els.mTotal && (els.mTotal.value   = row?.uses_total ?? '');
+    els.mPer && (els.mPer.value     = row?.per_player_uses ?? '');
+    els.mCd && (els.mCd.value      = row?.cooldown_seconds ?? '');
+    els.mLeft && (els.mLeft.value    = row?.uses_left ?? '');
+    els.mKit && (els.mKit.value     = row?.kit_id ?? '');
 
-    loadGroups(row?.id);
-    loadReds(row?.id);
+    // По умолчанию «Общее», лениво грузим остальные вкладки
+    switchTab('overview');
+    groupsLoadedFor = null;
+    redsLoadedFor = null;
   }
 
-  async function onRowEdit(e){
+  function onRowEdit(e){
     const tr = e.target.closest('tr');
     const id = Number(tr.dataset.id);
-    const row = list.find(x=>x.id===id);
-    await loadKitsIntoSelect();
-    fillModal(row);
+    const row = rows.find(x=>x.id===id);
+
+    // Показать модалку мгновенно
     Modal.show();
+    fillModal(row);
+
+    // Подгружаем второстепенные вещи в фоне
+    loadKits().then(()=>{ if(row && els.mKit) els.mKit.value = row.kit_id ?? ''; });
+    loadLpGroupsOnce();
   }
 
   async function onRowDelete(e){
     const tr = e.target.closest('tr');
     const id = Number(tr.dataset.id);
-    const row = list.find(x=>x.id===id);
+    const row = rows.find(x=>x.id===id);
     if (!confirm(`Удалить промокод ${row?.code || ('#'+id)}?`)) return;
     try{
       await json(API+'/promo/delete', {method:'POST', body:JSON.stringify({id})});
@@ -287,25 +369,27 @@
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // ---------- modal actions ----------
-  async function saveCurrent(){
-    const id = els.mId.value ? Number(els.mId.value) : null;
-    const body = {
+  // ---------- save ----------
+  function buildBodyFromModal(){
+    const id = els.mId?.value ? Number(els.mId.value) : null;
+    return {
       id,
-      code: (els.mCode.value||'').trim().toUpperCase(),
-      enabled: Number(els.mEnabled.value||1),
-      realm: (els.mRealm.value||'').trim() || null,
-      expires_at: (els.mExp.value||'').trim() || null,
-      amount: (els.mAmount.value!==''? Number(els.mAmount.value): null),
-      currency_key: (els.mCurr.value||'').trim() || null,
-      uses_total: (els.mTotal.value!==''? Number(els.mTotal.value): null),
-      per_player_uses: (els.mPer.value!==''? Number(els.mPer.value): null),
-      cooldown_seconds: (els.mCd.value!==''? Number(els.mCd.value): null),
-      kit_id: (els.mKit.value ? Number(els.mKit.value) : null)
+      code: (els.mCode?.value||'').trim().toUpperCase(),
+      enabled: Number(els.mEnabled?.value||1),
+      realm: (els.mRealm?.value||'').trim() || null,
+      expires_at: (els.mExp?.value||'').trim() || null,
+      amount: (els.mAmount && els.mAmount.value!==''? Number(els.mAmount.value): null),
+      currency_key: (els.mCurr?.value||'').trim() || null,
+      uses_total: (els.mTotal && els.mTotal.value!==''? Number(els.mTotal.value): null),
+      per_player_uses: (els.mPer && els.mPer.value!==''? Number(els.mPer.value): null),
+      cooldown_seconds: (els.mCd && els.mCd.value!==''? Number(els.mCd.value): null),
+      kit_id: (els.mKit && els.mKit.value ? Number(els.mKit.value) : null)
     };
-
+  }
+  async function saveCurrent(){
+    const body = buildBodyFromModal();
     try{
-      if(!id){
+      if(!body.id){
         const created = await json(API+'/promo/create', {method:'POST', body: JSON.stringify({
           code: body.code || undefined,
           amount: body.amount || 0,
@@ -316,12 +400,12 @@
           expires_at: body.expires_at
         })});
         await loadList();
-        const row = list.find(x=>x.id===created.id) || list.find(x=>x.code===created.code);
+        const row = rows.find(x=>x.id===created.id) || rows.find(x=>x.code===created.code);
         if(row) fillModal(row);
       }else{
         await json(API+'/promo/update', {method:'POST', body: JSON.stringify(body)});
         await loadList();
-        const row = list.find(x=>x.id===id);
+        const row = rows.find(x=>x.id===body.id);
         if(row) fillModal(row);
       }
       toast('Сохранено');
@@ -334,7 +418,7 @@
   function rowGroupTpl(i,g){
     return `<tr>
       <td class="text-secondary">${i+1}</td>
-      <td><input class="form-control form-control-sm g-name" value="${esc(g.group_name||'')}"></td>
+      <td><input class="form-control form-control-sm g-name" list="pc-lp-groups" value="${esc(g.group_name||'')}"></td>
       <td style="width:150px"><input type="number" class="form-control form-control-sm g-temp" value="${g.temp_seconds??''}"></td>
       <td><input class="form-control form-control-sm g-srv" value="${esc(g.context_server||'')}"></td>
       <td><input class="form-control form-control-sm g-wld" value="${esc(g.context_world||'')}"></td>
@@ -343,18 +427,18 @@
     </tr>`;
   }
   function readGroupsFromUI(){
-    const rows=[];
+    const out=[];
     $$('#pc-groups-body tr').forEach((tr,i)=>{
       const g={
         group_name: ($('.g-name',tr).value||'').trim(),
         temp_seconds: $('.g-temp',tr).value ? Number($('.g-temp',tr).value) : null,
-        context_server: ($('.g-srv',tr).value||'').trim()||null,
-        context_world: ($('.g-wld',tr).value||'').trim()||null,
+        context_server: ($('.g-srv',tr).value||'').trim()||'global',
+        context_world: ($('.g-wld',tr).value||'').trim()||'global',
         priority: $('.g-pr',tr).value ? Number($('.g-pr',tr).value) : (i+1)
       };
-      if(g.group_name) rows.push(g);
+      if(g.group_name) out.push(g);
     });
-    return rows;
+    return out;
   }
   function bindGroupRowEvents(){
     $$('.g-del', els.gBody).forEach(btn=>btn.addEventListener('click', (e)=>{
@@ -363,12 +447,15 @@
     }));
   }
   async function loadGroups(codeId){
+    if(!els.gBody) return;
     els.gBody.innerHTML = '';
-    if(!codeId) return;
+    if(!codeId){ els.gBody.innerHTML='<tr><td colspan="7" class="text-secondary small">Сохраните промокод, чтобы добавить группы</td></tr>'; return; }
     try{
-      const rows = await json(API+'/promo/groups/list?code_id='+codeId);
-      els.gBody.innerHTML = rows.map((g,i)=>rowGroupTpl(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
+      await loadLpGroupsOnce();
+      const data = await json(API+'/promo/groups/list?code_id='+codeId);
+      els.gBody.innerHTML = (data||[]).map((g,i)=>rowGroupTpl(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
       bindGroupRowEvents();
+      groupsLoadedFor = codeId;
     }catch(_){
       els.gBody.innerHTML = '<tr><td colspan="7" class="text-secondary small">Не удалось загрузить группы</td></tr>';
     }
@@ -379,7 +466,7 @@
     bindGroupRowEvents();
   }
   async function saveGroups(){
-    const id = Number(els.mId.value||0);
+    const id = Number(els.mId?.value||0);
     if(!id) return alert('Сначала сохраните промокод');
     try{
       const groups = readGroupsFromUI();
@@ -391,26 +478,41 @@
 
   // ---------- redemptions ----------
   async function loadReds(codeId){
+    if(!els.rBody) return;
     els.rBody.innerHTML = '';
-    els.rCount.textContent = '';
+    if(els.rCount) els.rCount.textContent = '';
     if(!codeId) return;
     try{
-      const q = (els.rQuery.value||'').trim();
-      const rows = await json(API+`/promo/redemptions?code_id=${codeId}` + (q?`&q=${encodeURIComponent(q)}`:''));
-      els.rBody.innerHTML = rows.map(r=>`
+      const q = (els.rQuery?.value||'').trim();
+      const data = await json(API+`/promo/redemptions?code_id=${codeId}` + (q?`&q=${encodeURIComponent(q)}`:''));
+      els.rBody.innerHTML = (data||[]).map(r=>`
         <tr>
           <td>${fmt.date(r.created_at)}</td>
           <td>${esc(r.username||'—')}</td>
           <td class="text-secondary small">${esc(r.uuid)}</td>
           <td>${r.granted_amount!=null? (+r.granted_amount).toFixed(2) : '—'}</td>
-          <td>${list.find(x=>x.id===r.code_id)?.currency_key || ''}</td>
+          <td>${rows.find(x=>x.id===r.code_id)?.currency_key || ''}</td>
           <td class="text-secondary">${esc(r.ip||'')}</td>
         </tr>
       `).join('') || `<tr><td colspan="6" class="text-secondary small">Пусто</td></tr>`;
-      els.rCount.textContent = rows.length ? `${rows.length} активаций` : '';
+      if(els.rCount) els.rCount.textContent = (data||[]).length ? `${data.length} активаций` : '';
+      redsLoadedFor = codeId;
     }catch(_){
       els.rBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Ошибка загрузки</td></tr>`;
     }
+  }
+
+  // ---------- tabs (AURORA) ----------
+  function switchTab(key){
+    if(!els.tabNav) return;
+    $$('.pc-tabs .nav-link').forEach(a=>a.classList.toggle('active', a.dataset.tab===key));
+    if(els.tabOver)   els.tabOver.classList.toggle('d-none', key!=='overview');
+    if(els.tabGroups) els.tabGroups.classList.toggle('d-none', key!=='groups');
+    if(els.tabReds)   els.tabReds.classList.toggle('d-none', key!=='reds');
+
+    const id = Number(els.mId?.value||0);
+    if (key==='groups' && id && groupsLoadedFor!==id) loadGroups(id);
+    if (key==='reds'   && id && redsLoadedFor!==id)   loadReds(id);
   }
 
   // ---------- events ----------
@@ -426,21 +528,26 @@
       });
     });
 
+    // фильтры / поиск
     on(els.search, 'input', render);
-    on(els.btnRef, 'click', loadList);
+    on(els.fStatus, 'change', render);
+    on(els.fRealm, 'change', render);
+    on(els.fKit, 'change', render);
 
-    on(els.btnCreate, 'click', async ()=>{
-      await loadKitsIntoSelect();
+    // toolbar
+    on(els.btnRef, 'click', loadList);
+    $$('.btn-neon').forEach(b=> on(b,'pointermove', (e)=>setNeonPointer(b,e)));
+    on(els.btnCreate, 'click', ()=>{
+      Modal.show();           // мгновенно
       fillModal(null);
-      Modal.show();
+      loadKits();
+      loadLpGroupsOnce();
     });
 
-    // неончик на create, если у кнопки есть класс
-    $$('.btn-neon').forEach(b=> on(b,'pointermove', (e)=>setNeonPointer(b,e)));
-
+    // modal actions
     on(els.mSave, 'click', saveCurrent);
     on(els.mDel, 'click', async ()=>{
-      const id = els.mId.value ? Number(els.mId.value) : null;
+      const id = els.mId?.value ? Number(els.mId.value) : null;
       if(!id){ alert('Промокод ещё не сохранён'); return; }
       if(!confirm('Удалить промокод?')) return;
       try{
@@ -451,11 +558,27 @@
       }catch(err){ alert('Ошибка: '+(err.message||err)); }
     });
 
+    // codegen
+    function genCode(){
+      const alph='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let out=''; const len=10+Math.floor(Math.random()*3);
+      for(let i=0;i<len;i++) out+=alph[Math.floor(Math.random()*alph.length)];
+      if(els.mCode) els.mCode.value = out;
+    }
+    on(els.mGen, 'click', (e)=>{ e.preventDefault(); genCode(); toast('Сгенерирован новый код'); });
+    on(els.aGen, 'click', ()=>{ genCode(); toast('Сгенерирован новый код'); });
+    on(els.aCopy,'click', ()=>{ const code=(els.mCode?.value||'').trim(); if(code){ navigator.clipboard?.writeText(code); toast('Код скопирован'); } });
+
+    // groups
     on(els.gAdd, 'click', addGroupRow);
     on(els.gSave, 'click', saveGroups);
 
-    on(els.rBtn, 'click', ()=>loadReds(Number(els.mId.value||0)));
-    on(els.rQuery, 'keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId.value||0)); });
+    // reds
+    on(els.rBtn, 'click', ()=>loadReds(Number(els.mId?.value||0)));
+    on(els.rQuery, 'keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId?.value||0)); });
+
+    // tabs
+    $$('.pc-tabs .nav-link').forEach(a=>a.addEventListener('click', ()=>switchTab(a.dataset.tab)));
   }
 
   // ---------- init ----------
@@ -464,7 +587,7 @@
     Modal.init();
     API = await chooseBase();
     bind();
-    await loadKitsIntoSelect();
+    await loadKits();
     await loadList();
   })();
 
