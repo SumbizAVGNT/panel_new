@@ -1,41 +1,68 @@
-<!-- ===== Toolbar + Table + Modal (Promocodes) ===== -->
+<!-- ===================== PROMOCODES – ULTRA UI ===================== -->
+<!-- Toolbar + Table + Modal + Styles + Logic (one file) -->
 
-<div class="d-flex gap-2 flex-wrap align-items-center mb-2 pc-toolbar">
-  <input id="pc-search" class="form-control form-control-sm" placeholder="Поиск по коду…">
-  <button id="pc-refresh" class="btn btn-sm btn-outline-light">
-    <i class="bi bi-arrow-repeat me-1"></i>Обновить
-  </button>
-  <button id="pc-create" class="btn btn-sm btn-primary">
-    <i class="bi bi-plus-lg me-1"></i>Создать промокод
-  </button>
-  <span id="pc-count" class="text-secondary small ms-auto"></span>
+<!-- ===== Toolbar ===== -->
+<div class="pc-wrap">
+  <div class="pc-toolbar glass-card">
+    <div class="left">
+      <div class="input-icon">
+        <i class="bi bi-search"></i>
+        <input id="pc-search" class="form-control form-control-sm" placeholder="Поиск по коду…">
+      </div>
+
+      <select id="pc-filter-status" class="form-select form-select-sm" title="Статус">
+        <option value="">Статус: все</option>
+        <option value="1">Только активные</option>
+        <option value="0">Только выключенные</option>
+      </select>
+
+      <select id="pc-filter-realm" class="form-select form-select-sm" title="Realm">
+        <option value="">Realm: все</option>
+      </select>
+
+      <select id="pc-filter-kit" class="form-select form-select-sm" title="Kit">
+        <option value="">Kit: любой</option>
+      </select>
+    </div>
+
+    <div class="right">
+      <button id="pc-refresh" class="btn btn-sm btn-outline-light btn-ghost">
+        <i class="bi bi-arrow-repeat me-1"></i>Обновить
+      </button>
+      <button id="pc-create" class="btn btn-sm btn-primary btn-neon">
+        <i class="bi bi-plus-lg me-1"></i>Создать
+      </button>
+      <span id="pc-count" class="text-secondary small"></span>
+    </div>
+  </div>
+
+  <!-- ===== Table ===== -->
+  <div class="table-responsive glass-card">
+    <table id="pc-table" class="table table-dark table-striped table-sm align-middle mb-0">
+      <thead class="text-secondary small sticky-head">
+      <tr>
+        <th data-sort="code"        style="cursor:pointer">Код</th>
+        <th data-sort="enabled"     style="cursor:pointer">Статус</th>
+        <th data-sort="amount"      style="cursor:pointer">Награда</th>
+        <th data-sort="realm"       style="cursor:pointer">Realm</th>
+        <th data-sort="limits"      style="cursor:default">Лимиты</th>
+        <th data-sort="expires_at"  style="cursor:pointer">Срок</th>
+        <th data-sort="kit_name"    style="cursor:pointer">Kit</th>
+        <th data-sort="uses_left"   class="text-end" style="cursor:pointer">Активаций</th>
+        <th class="text-end">Действия</th>
+      </tr>
+      </thead>
+      <tbody id="pc-list">
+        <!-- скелетоны вставляются скриптом -->
+      </tbody>
+    </table>
+  </div>
 </div>
 
-<div class="table-responsive glass-card">
-  <table id="pc-table" class="table table-dark table-striped table-sm align-middle mb-0">
-    <thead class="text-secondary small">
-    <tr>
-      <th data-sort="code"        style="cursor:pointer">Код</th>
-      <th data-sort="enabled"     style="cursor:pointer">Статус</th>
-      <th data-sort="amount"      style="cursor:pointer">Награда</th>
-      <th data-sort="realm"       style="cursor:pointer">Realm</th>
-      <th data-sort="limits"      style="cursor:default">Лимиты</th>
-      <th data-sort="expires_at"  style="cursor:pointer">Срок</th>
-      <th data-sort="kit_name"    style="cursor:pointer">Kit</th>
-      <th data-sort="uses_left"   style="cursor:pointer">Активаций</th>
-      <th class="text-end">Действия</th>
-    </tr>
-    </thead>
-    <tbody id="pc-list">
-      <!-- rows заполняются скриптом -->
-    </tbody>
-  </table>
-</div>
-
-<!-- Modal: редактирование/создание промокода -->
+<!-- ===== Modal: редактирование/создание ===== -->
 <div class="modal fade" id="pcEditModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content bg-dark border-secondary">
+    <div class="modal-content bg-dark border-secondary glass-modal">
       <div class="modal-header">
         <h5 class="modal-title">
           Промокод <span id="pc-f-title" class="text-secondary"></span>
@@ -44,13 +71,14 @@
       </div>
 
       <div class="modal-body">
-
-        <!-- Основные поля -->
         <input type="hidden" id="pc-f-id">
         <div class="row g-2">
           <div class="col-md-4">
             <label class="form-label small">Код</label>
-            <input id="pc-f-code" class="form-control form-control-sm" placeholder="например, SUMMER2025">
+            <div class="input-group input-group-sm">
+              <input id="pc-f-code" class="form-control" placeholder="например, SUMMER2025">
+              <button id="pc-f-gen" class="btn btn-outline-secondary" title="Сгенерировать"><i class="bi bi-magic"></i></button>
+            </div>
           </div>
           <div class="col-md-2">
             <label class="form-label small">Активен</label>
@@ -101,13 +129,13 @@
         </div>
 
         <div class="d-flex align-items-center gap-2 mt-2">
-          <button class="btn btn-sm btn-success" id="pc-f-save">
+          <button class="btn btn-sm btn-success btn-neon" id="pc-f-save">
             <i class="bi bi-check2 me-1"></i>Сохранить
           </button>
           <button class="btn btn-sm btn-outline-danger" id="pc-f-delete">
             <i class="bi bi-trash me-1"></i>Удалить
           </button>
-          <span id="pc-f-hint" class="text-secondary small">Если оставить поле «Код» пустым — сгенерируется автоматически.</span>
+          <span id="pc-f-hint" class="text-secondary small">Если оставить «Код» пустым — сгенерируется автоматически.</span>
         </div>
 
         <hr class="border-secondary my-3">
@@ -117,7 +145,7 @@
           <h6 class="m-0">LuckPerms группы</h6>
           <div class="d-flex gap-2">
             <button class="btn btn-sm btn-outline-light" id="pc-g-add">+ группа</button>
-            <button class="btn btn-sm btn-primary" id="pc-g-save">Сохранить группы</button>
+            <button class="btn btn-sm btn-primary btn-ghost" id="pc-g-save">Сохранить группы</button>
           </div>
         </div>
 
@@ -134,9 +162,7 @@
               <th style="width:64px"></th>
             </tr>
             </thead>
-            <tbody id="pc-groups-body">
-              <!-- строки групп генерируются скриптом -->
-            </tbody>
+            <tbody id="pc-groups-body"></tbody>
           </table>
         </div>
 
@@ -162,14 +188,11 @@
               <th>IP</th>
             </tr>
             </thead>
-            <tbody id="pc-reds-body">
-              <!-- строки активаций генерируются скриптом -->
-            </tbody>
+            <tbody id="pc-reds-body"></tbody>
           </table>
         </div>
 
       </div>
-
       <div class="modal-footer">
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Закрыть</button>
       </div>
@@ -177,20 +200,114 @@
   </div>
 </div>
 
-<!-- ===== Visual polish (glass) ===== -->
+<!-- ===== Toast zone ===== -->
+<div id="pc-toasts" class="pc-toasts"></div>
+
+<!-- ===== Visual polish ===== -->
 <style>
+:root{
+  --pc-bg: rgba(13,17,23,.58);
+  --pc-br: rgba(148,163,184,.18);
+  --pc-blur: 8px;
+  --pc-glow: 0 0 0 1px rgba(96,165,250,.25), 0 6px 30px rgba(2,132,199,.18);
+  --pc-green: #10b981;
+  --pc-red: #ef4444;
+  --pc-cyan: #22d3ee;
+  --pc-blue: #60a5fa;
+  --pc-dim: #94a3b8;
+  --pc-text: #e5e7eb;
+}
+
+.pc-wrap{display:grid;gap:14px}
+.glass-card{
+  background:var(--pc-bg);
+  border:1px solid var(--pc-br);
+  backdrop-filter: blur(var(--pc-blur));
+  border-radius:16px;
+  padding:.75rem;
+}
+.glass-modal{
+  background:rgba(13,17,23,.92)!important;
+  border:1px solid var(--pc-br);
+  box-shadow: var(--pc-glow);
+}
+.pc-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pc-toolbar .left, .pc-toolbar .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pc-toolbar .form-control, .pc-toolbar .form-select{
+  min-width:180px;background:rgba(2,6,23,.55);
+  border-color:rgba(148,163,184,.25);color:var(--pc-text)
+}
+.input-icon{position:relative}
+.input-icon i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--pc-dim)}
+.input-icon input{padding-left:32px}
+
+.btn-ghost{border-color:rgba(148,163,184,.28)!important}
+.btn-neon{
+  position:relative; overflow:hidden; border:0!important; color:#0b1220!important;
+  background: linear-gradient(90deg, #22d3ee, #60a5fa);
+  box-shadow: 0 8px 20px rgba(34,211,238,.25);
+}
+.btn-neon::after{
+  content:""; position:absolute; inset:0;
+  background: radial-gradient(120px 120px at var(--x,50%) var(--y,50%), rgba(255,255,255,.25), transparent 60%);
+  mix-blend-mode: screen; opacity:0; transition:opacity .2s;
+}
+.btn-neon:hover::after{opacity:1}
+
 #pc-table{--bs-table-bg:rgba(15,23,42,.65);--bs-table-striped-bg:rgba(148,163,184,.05)}
 #pc-table th,#pc-table td{vertical-align:middle}
-.pc-toolbar .form-control{min-width:260px;background:rgba(2,6,23,.55);border-color:rgba(148,163,184,.25);color:#e5e7eb}
-.pc-toolbar .btn{border-radius:.65rem}
-.badge-soft{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.22);color:#e5e7eb}
-.text-dim{color:#94a3b8!important}
-.text-expired{color:#ef4444!important}
-.glass-card{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(6px);border-radius:14px}
-.modal-content.bg-dark{background:rgba(13,17,23,.92)!important}
-.table thead th[data-sort]{user-select:none}
-.table thead th[data-sort]::after{content:"";display:inline-block;margin-left:.35rem;border:4px solid transparent;border-top-color:rgba(148,163,184,.55);transform:translateY(-2px)}
+#pc-table tbody tr{transition:.15s}
+#pc-table tbody tr:hover{transform:translateY(-1px); box-shadow:0 6px 24px rgba(0,0,0,.28)}
+.sticky-head{position:sticky;top:0;z-index:1;background:rgba(15,23,42,.85)!important}
+
+.badge-soft{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.22);color:var(--pc-text)}
+.badge-active{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.45);color:#a7f3d0}
+.badge-off{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35);color:#e5e7eb}
+
+.text-dim{color:var(--pc-dim)!important}
+.text-expired{color:var(--pc-red)!important}
+
+.table thead th[data-sort]{user-select:none; position:relative}
+.table thead th[data-sort]::after{
+  content:"";display:inline-block;margin-left:.35rem;border:4px solid transparent;
+  border-top-color:rgba(148,163,184,.55);transform:translateY(-2px)
+}
 .table thead th[data-sort].desc::after{border-top-color:transparent;border-bottom-color:rgba(148,163,184,.75);transform:translateY(3px)}
+
+.pc-code{
+  display:inline-flex; align-items:center; gap:.4rem;
+  padding:.25rem .5rem; border-radius:.65rem;
+  background:linear-gradient(180deg, rgba(148,163,184,.12), rgba(148,163,184,.05));
+  border:1px solid rgba(148,163,184,.25); cursor:copy; transition:.15s;
+}
+.pc-code:hover{border-color:rgba(148,163,184,.5)}
+.pc-code.copied{box-shadow:0 0 0 2px rgba(96,165,250,.25)}
+
+.pc-toasts{position:fixed;right:14px;bottom:14px;display:grid;gap:8px;z-index:1080}
+.pc-toast{
+  background:rgba(2,6,23,.92); color:#e5e7eb; border:1px solid rgba(148,163,184,.22);
+  border-radius:12px; padding:.5rem .65rem; box-shadow:0 10px 30px rgba(0,0,0,.35);
+  animation: toast-in .18s ease-out;
+}
+@keyframes toast-in{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+.skel{position:relative; overflow:hidden; background:rgba(148,163,184,.08)}
+.skel::after{
+  content:""; position:absolute; inset:0; transform:translateX(-100%);
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+  animation: sk 1.1s infinite;
+}
+@keyframes sk{to{transform:translateX(100%)}}
+
+.skel-row td{padding:.65rem .5rem}
+.skel-pill{height:20px;border-radius:10px}
+.skel-txt{height:12px;border-radius:6px}
+
+.modal-content.bg-dark{background:rgba(13,17,23,.92)!important}
+
+@media (max-width: 920px){
+  .pc-toolbar .form-select{min-width:140px}
+}
 </style>
 
 <!-- ===== Logic ===== -->
@@ -198,83 +315,165 @@
 (function(){
   'use strict';
 
-  // -------- helpers
+  // ------------- helpers
   const $ = (s, r=document)=>r.querySelector(s);
   const $$= (s, r=document)=>Array.from(r.querySelectorAll(s));
+  const on = (el, ev, fn)=> el && el.addEventListener(ev, fn);
+  const esc = (s)=> String(s??'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+  const hl  = (txt, q)=>{ if(!q) return esc(txt); const i=String(txt).toLowerCase().indexOf(q.toLowerCase()); if(i<0) return esc(txt);
+    return esc(String(txt).slice(0,i)) + '<mark>'+esc(String(txt).slice(i,i+q.length))+'</mark>' + esc(String(txt).slice(i+q.length));
+  };
+  const toast = (msg)=>{ const z = $('#pc-toasts'); if(!z) return; const el=document.createElement('div'); el.className='pc-toast'; el.textContent=msg; z.appendChild(el); setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),250); }, 2200); };
+  const setNeonPointer = (btn, e)=>{ const r=btn.getBoundingClientRect(); btn.style.setProperty('--x', (e.clientX - r.left)+'px'); btn.style.setProperty('--y', (e.clientY - r.top)+'px'); };
+
   const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
   const chooseBase = async ()=>{
-    for(const b of API_BASES){
-      try{ const r=await fetch(b+'/promo/list',{method:'GET'}); if(r.ok) return b; }catch(_){}
+    for (const b of API_BASES){
+      try{ const r=await fetch(b+'/promo/list',{cache:'no-store'}); if(r.ok) return b; }catch(_){}
     }
     return API_BASES[0];
   };
-  const jget = async (url)=> (await (await fetch(url,{cache:'no-store'})).json());
-  const jpost= async (url,body)=> (await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})).json()));
-  const fmtMoney=(a,k)=> a!=null&&a!==''? `${(+a).toFixed(2)} ${k||''}`.trim():'—';
-  const fmtDate =(s)=> s? String(s).replace('T',' ').slice(0,19):'—';
-  const badge   =(t,cls='badge-soft')=>`<span class="badge ${cls}">${t}</span>`;
-  const copyTxt =(t)=>navigator.clipboard?.writeText(t).catch(()=>{});
+  const json = async (url, opts={})=>{
+    const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+    let j=null; try{ j=await r.json(); }catch(_){}
+    if(!j || !j.ok) throw new Error(j?.error || ('HTTP '+r.status));
+    return j.data;
+  };
+  const fmtMoney=(a,k)=> (a!=null && a!=='') ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—';
+  const fmtDate =(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—';
 
-  // -------- state
-  let API='', rows=[], sortBy='id', sortDir='desc';
-  let modal;
+  // ------------- state + refs
+  let API='', rows=[], kits=[], sortBy='id', sortDir='desc';
   const els = {
     list: $('#pc-list'), cnt: $('#pc-count'), search: $('#pc-search'),
     ref: $('#pc-refresh'), create: $('#pc-create'), table: $('#pc-table'),
+    filterStatus: $('#pc-filter-status'), filterRealm: $('#pc-filter-realm'), filterKit: $('#pc-filter-kit'),
+    // modal
     m: $('#pcEditModal'),
-    mId: $('#pc-f-id'), mTitle: $('#pc-f-title'), mCode: $('#pc-f-code'),
+    mId: $('#pc-f-id'), mTitle: $('#pc-f-title'), mCode: $('#pc-f-code'), mGen: $('#pc-f-gen'),
     mEnabled: $('#pc-f-enabled'), mRealm: $('#pc-f-realm'), mExp: $('#pc-f-exp'),
     mAmount: $('#pc-f-amount'), mCurr: $('#pc-f-currency'),
     mTotal: $('#pc-f-total'), mPer: $('#pc-f-per'), mCd: $('#pc-f-cd'),
     mKit: $('#pc-f-kit'), mLeft: $('#pc-f-left'),
     mSave: $('#pc-f-save'), mDel: $('#pc-f-delete'),
+    // groups / reds
     gBody: $('#pc-groups-body'), gAdd: $('#pc-g-add'), gSave: $('#pc-g-save'),
     rQ: $('#pc-r-player'), rBtn: $('#pc-r-search'), rCnt: $('#pc-r-count'), rBody: $('#pc-reds-body'),
   };
 
-  if (window.bootstrap) modal = bootstrap.Modal.getOrCreateInstance(els.m);
+  // ------------- Modal wrapper (Bootstrap or fallback)
+  let modalBS=null, backdrop=null;
+  const Modal = {
+    init(){
+      if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m);
+      $$('[data-bs-dismiss="modal"]', els.m).forEach(btn=>btn.addEventListener('click', ()=>Modal.hide()));
+      document.addEventListener('keydown',(e)=>{ if(e.key==='Escape' && Modal.isShown() && !modalBS) Modal.hide(); });
+    },
+    isShown(){ return modalBS ? !!els.m.classList.contains('show') : els.m.style.display==='block'; },
+    show(){
+      if (modalBS){ modalBS.show(); return; }
+      els.m.classList.add('show'); els.m.style.display='block'; els.m.removeAttribute('aria-hidden'); document.body.classList.add('modal-open');
+      if(!backdrop){ backdrop=document.createElement('div'); backdrop.className='modal-backdrop fade show'; document.body.appendChild(backdrop); backdrop.addEventListener('click', ()=>Modal.hide()); }
+    },
+    hide(){
+      if (modalBS){ modalBS.hide(); return; }
+      els.m.classList.remove('show'); els.m.style.display='none'; els.m.setAttribute('aria-hidden','true'); document.body.classList.remove('modal-open');
+      if(backdrop){ backdrop.remove(); backdrop=null; }
+    }
+  };
 
-  // -------- kits
-  async function loadKitsSelect(){
-    try{
-      const j = await jget(API+'/kits/list'); if(!j.ok) return;
-      els.mKit.innerHTML = `<option value="">— без кита —</option>` + (j.data||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
-    }catch(_){}
+  // ------------- neon pointer
+  $$('.btn-neon').forEach(b=> on(b,'pointermove', e=>setNeonPointer(b,e)));
+
+  // ------------- skeletons
+  function skeletonRows(n=6){
+    els.list.innerHTML = Array.from({length:n}).map(()=>`
+      <tr class="skel-row">
+        <td><div class="skel skel-pill" style="width:120px"></div></td>
+        <td><div class="skel skel-pill" style="width:70px"></div></td>
+        <td><div class="skel skel-pill" style="width:100px"></div></td>
+        <td><div class="skel skel-pill" style="width:90px"></div></td>
+        <td><div class="skel skel-pill" style="width:80px"></div></td>
+        <td><div class="skel skel-pill" style="width:120px"></div></td>
+        <td><div class="skel skel-pill" style="width:90px"></div></td>
+        <td class="text-end"><div class="skel skel-pill" style="width:60px;float:right"></div></td>
+        <td class="text-end"><div class="skel skel-pill" style="width:140px;float:right"></div></td>
+      </tr>
+    `).join('');
   }
 
-  // -------- table
-  function paint(){
+  // ------------- kits + filters
+  async function loadKits(){
+    try{
+      kits = await json(API+'/kits/list');
+      els.mKit.innerHTML = `<option value="">— без кита —</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
+      // фильтр kit
+      $('#pc-filter-kit').innerHTML = `<option value="">Kit: любой</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
+    }catch(_){ /* ignore */ }
+  }
+
+  function fillRealmFilter(){
+    const uniq = Array.from(new Set(rows.map(r=>r.realm||''))).sort((a,b)=>String(a).localeCompare(String(b)));
+    els.filterRealm.innerHTML = `<option value="">Realm: все</option>` + uniq.map(v=>`<option value="${esc(v)}">${v || 'all'}</option>`).join('');
+  }
+
+  // ------------- table render
+  function filterRows(){
     const q = (els.search.value||'').trim().toLowerCase();
-    let list = rows.filter(x => !q || String(x.code).toLowerCase().includes(q));
+    const st = els.filterStatus.value;
+    const rl = els.filterRealm.value;
+    const kit = els.filterKit.value;
+    return rows.filter(x=>{
+      if (q && !String(x.code).toLowerCase().includes(q)) return false;
+      if (st!=='' && String(+!!x.enabled)!==st) return false;
+      if (rl!=='' && String(x.realm||'')!==rl) return false;
+      if (kit!=='' && String(x.kit_id||'')!==kit) return false;
+      return true;
+    });
+  }
+
+  function render(){
+    let list = filterRows();
+
     list.sort((a,b)=>{
       const A=a[sortBy], B=b[sortBy];
       if(['id','amount','uses_left','uses_total'].includes(sortBy)) return (Number(A)||0)-(Number(B)||0);
       return String(A??'').localeCompare(String(B??''));
     });
-    if(sortDir==='desc') list.reverse();
+    if (sortDir==='desc') list.reverse();
+
     els.cnt.textContent = list.length ? `${list.length} шт.` : '';
 
-    if(!list.length){
-      els.list.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`;
+    if (!list.length){
+      els.list.innerHTML = `<tr><td colspan="9" class="text-secondary small">Ничего не найдено</td></tr>`;
       return;
     }
+
     const now = Date.now();
+    const q = (els.search.value||'').trim();
+
     els.list.innerHTML = list.map(x=>{
       const used = (x.uses_total!=null && x.uses_left!=null) ? (x.uses_total - x.uses_left) : '—';
-      const st = (+x.enabled ? badge('active') : badge('off','bg-secondary'));
+      const st = (+x.enabled ? `<span class="badge badge-active">active</span>` : `<span class="badge badge-off">off</span>`);
       const lim = (x.uses_total!=null) ? `${x.uses_left}/${x.uses_total}` : '∞';
       const expTs = x.expires_at ? Date.parse(String(x.expires_at).replace(' ','T')) : null;
       const expStr = fmtDate(x.expires_at);
       const expHtml = expTs && expTs < now ? `<span class="text-expired" title="истёк">${expStr}</span>` : expStr;
 
-      return `<tr data-id="${x.id}">
-        <td class="fw-semibold">${x.code}</td>
+      return `
+      <tr data-id="${x.id}">
+        <td>
+          <span class="pc-code" title="Скопировать код">
+            <i class="bi bi-qr-code"></i>
+            <span class="code">${hl(x.code, q)}</span>
+          </span>
+        </td>
         <td>${st}</td>
         <td>${fmtMoney(x.amount, x.currency_key)}</td>
-        <td>${x.realm || '<span class="text-dim">all</span>'}</td>
+        <td>${x.realm ? esc(x.realm) : '<span class="text-dim">all</span>'}</td>
         <td>${lim}</td>
         <td>${expHtml}</td>
-        <td>${x.kit_name? badge(x.kit_name): ''}</td>
+        <td>${x.kit_name? `<span class="badge badge-soft">${esc(x.kit_name)}</span>`: ''}</td>
         <td class="text-end">${used}</td>
         <td class="text-end">
           <div class="btn-group btn-group-sm">
@@ -286,41 +485,44 @@
       </tr>`;
     }).join('');
 
-    $$('.act-edit', els.list).forEach(b=>b.addEventListener('click', openEdit));
-    $$('.act-copy', els.list).forEach(b=>b.addEventListener('click', e=>{
-      const tr=e.target.closest('tr'); const r=rows.find(x=>x.id==tr.dataset.id); if(r) copyTxt(r.code);
+    // actions
+    $$('.pc-code', els.list).forEach(el=>el.addEventListener('click', (e)=>{
+      const tr = e.target.closest('tr'); const r = rows.find(x=>x.id==tr.dataset.id);
+      if(!r) return; navigator.clipboard?.writeText(r.code).then(()=>{ el.classList.add('copied'); toast('Код скопирован'); setTimeout(()=>el.classList.remove('copied'), 700); });
     }));
+    $$('.act-copy', els.list).forEach(b=>b.addEventListener('click', (e)=>{
+      const tr=e.target.closest('tr'); const r=rows.find(x=>x.id==tr.dataset.id); if(r){ navigator.clipboard?.writeText(r.code); toast('Код скопирован'); }
+    }));
+    $$('.act-edit', els.list).forEach(b=>b.addEventListener('click', openEdit));
     $$('.act-del', els.list).forEach(b=>b.addEventListener('click', delOne));
   }
 
   async function loadList(){
-    els.list.innerHTML = `<tr><td colspan="9" class="text-secondary small">Загрузка…</td></tr>`;
+    skeletonRows();
     try{
-      const j = await jget(API+'/promo/list');
-      if(!j.ok) throw new Error(j.error||'list');
-      rows = j.data||[];
-      paint();
+      rows = await json(API+'/promo/list');
+      fillRealmFilter();
+      render();
     }catch(e){
-      els.list.innerHTML = `<tr><td colspan="9" class="text-danger">${e.message||e}</td></tr>`;
+      els.list.innerHTML = `<tr><td colspan="9" class="text-danger">${esc(e.message||String(e))}</td></tr>`;
     }
   }
 
-  // -------- modal fill + groups/reds
+  // ------------- modal: fill & open
   function fillModal(row){
-    els.mId.value = row?.id ?? '';
+    els.mId.value      = row?.id ?? '';
     els.mTitle.textContent = row ? `#${row.id}` : '(новый)';
-    els.mCode.value = row?.code ?? '';
+    els.mCode.value    = row?.code ?? '';
     els.mEnabled.value = (row?.enabled ?? 1) ? '1':'0';
-    els.mRealm.value = row?.realm ?? '';
-    els.mExp.value = row?.expires_at ?? '';
-    els.mAmount.value = row?.amount ?? '';
-    els.mCurr.value = row?.currency_key ?? 'rubs';
-    els.mTotal.value = row?.uses_total ?? '';
-    els.mPer.value = row?.per_player_uses ?? '';
-    els.mCd.value = row?.cooldown_seconds ?? '';
-    els.mLeft.value = row?.uses_left ?? '';
-    els.mKit.value = row?.kit_id ?? '';
-    // подтянем группы и активации
+    els.mRealm.value   = row?.realm ?? '';
+    els.mExp.value     = row?.expires_at ?? '';
+    els.mAmount.value  = row?.amount ?? '';
+    els.mCurr.value    = row?.currency_key ?? 'rubs';
+    els.mTotal.value   = row?.uses_total ?? '';
+    els.mPer.value     = row?.per_player_uses ?? '';
+    els.mCd.value      = row?.cooldown_seconds ?? '';
+    els.mLeft.value    = row?.uses_left ?? '';
+    els.mKit.value     = row?.kit_id ?? '';
     loadGroups(row?.id);
     loadReds(row?.id);
   }
@@ -329,9 +531,9 @@
     const tr=e.target.closest('tr');
     const id=Number(tr.dataset.id);
     const row = rows.find(x=>x.id===id);
-    await loadKitsSelect();
+    await loadKits();
     fillModal(row);
-    modal ? modal.show() : els.m.classList.add('show'); // fallback если нет bootstrap.js
+    Modal.show();
   }
 
   async function delOne(e){
@@ -340,16 +542,16 @@
     const row = rows.find(x=>x.id===id);
     if(!confirm(`Удалить промокод ${row?.code || ('#'+id)}?`)) return;
     try{
-      const j = await jpost(API+'/promo/delete',{id});
-      if(!j.ok) throw new Error(j.error||'delete');
+      await json(API+'/promo/delete',{method:'POST', body:JSON.stringify({id})});
       await loadList();
+      toast('Удалено');
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // -------- save (create/update)
-  async function saveCurrent(){
+  // ------------- save (create/update)
+  function buildBodyFromModal(){
     const id = els.mId.value ? Number(els.mId.value) : null;
-    const body = {
+    return {
       id,
       code: (els.mCode.value||'').trim().toUpperCase(),
       enabled: Number(els.mEnabled.value||1),
@@ -362,11 +564,13 @@
       cooldown_seconds: (els.mCd.value!==''? Number(els.mCd.value): null),
       kit_id: (els.mKit.value? Number(els.mKit.value) : null)
     };
+  }
 
+  async function saveCurrent(){
+    const body = buildBodyFromModal();
     try{
-      if(!id){
-        // create (upsert)
-        const j = await jpost(API+'/promo/create',{
+      if(!body.id){
+        const created = await json(API+'/promo/create', {method:'POST', body: JSON.stringify({
           code: body.code || undefined,
           amount: body.amount || 0,
           currency_key: body.currency_key || 'rubs',
@@ -374,42 +578,36 @@
           kit_id: body.kit_id,
           uses: body.uses_total || 1,
           expires_at: body.expires_at
-        });
-        if(!j.ok) throw new Error(j.error||'create');
-        // открыть именно созданный (учёт автогенерации кода)
+        })});
         await loadList();
-        const created = rows.find(x=>x.id===j.data?.id) || rows.find(x=>x.code===j.data?.code);
-        if(created){ fillModal(created); }
+        const row = rows.find(x=>x.id===created.id) || rows.find(x=>x.code===created.code);
+        if(row) fillModal(row);
       }else{
-        // update
-        const resp = await fetch(API+'/promo/update',{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(body)
-        });
-        if(resp.status===404){
-          alert('Обновление недоступно: реализуйте /promo/update на бэке (без сброса uses_left).');
-          return;
-        }
-        const j = await resp.json();
-        if(!j.ok) throw new Error(j.error||'update');
+        await json(API+'/promo/update', {method:'POST', body: JSON.stringify(body)});
         await loadList();
-        const updated = rows.find(x=>x.id===id);
-        if(updated){ fillModal(updated); }
+        const row = rows.find(x=>x.id===body.id);
+        if(row) fillModal(row);
       }
-      alert('Сохранено');
-    }catch(err){
-      alert('Ошибка: '+(err.message||err));
-    }
+      toast('Сохранено');
+    }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // -------- groups (LP)
-  function groupRow(i,g){
+  // ------------- кодоген
+  function genCode(){
+    const alph='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let out=''; const len=10+Math.floor(Math.random()*3);
+    for(let i=0;i<len;i++) out+=alph[Math.floor(Math.random()*alph.length)];
+    els.mCode.value = out;
+  }
+
+  // ------------- groups (LP)
+  function rowGroupTpl(i,g){
     return `<tr>
       <td class="text-secondary">${i+1}</td>
-      <td><input class="form-control form-control-sm g-name" value="${g.group_name||''}"></td>
+      <td><input class="form-control form-control-sm g-name" value="${esc(g.group_name||'')}"></td>
       <td style="width:150px"><input type="number" class="form-control form-control-sm g-temp" value="${g.temp_seconds??''}"></td>
-      <td><input class="form-control form-control-sm g-srv" value="${g.context_server||''}"></td>
-      <td><input class="form-control form-control-sm g-wld" value="${g.context_world||''}"></td>
+      <td><input class="form-control form-control-sm g-srv" value="${esc(g.context_server||'')}"></td>
+      <td><input class="form-control form-control-sm g-wld" value="${esc(g.context_world||'')}"></td>
       <td style="width:110px"><input type="number" class="form-control form-control-sm g-pr" value="${g.priority??(i+1)}"></td>
       <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del">&times;</button></td>
     </tr>`;
@@ -420,8 +618,8 @@
       const g={
         group_name: $('.g-name',tr).value.trim(),
         temp_seconds: $('.g-temp',tr).value ? Number($('.g-temp',tr).value) : null,
-        context_server: $('.g-srv',tr).value.trim()||null,
-        context_world: $('.g-wld',tr).value.trim()||null,
+        context_server: ($('.g-srv',tr).value||'').trim()||null,
+        context_world: ($('.g-wld',tr).value||'').trim()||null,
         priority: $('.g-pr',tr).value ? Number($('.g-pr',tr).value) : (i+1)
       };
       if(g.group_name) out.push(g);
@@ -435,64 +633,47 @@
     els.gBody.innerHTML='';
     if(!codeId) return;
     try{
-      const r = await fetch(API+'/promo/groups/list?code_id='+codeId);
-      if(r.status===404){ els.gBody.innerHTML='<tr><td colspan="7" class="text-secondary small">Endpoint /promo/groups/* не реализован</td></tr>'; return; }
-      const j = await r.json(); if(!j.ok) throw new Error(j.error||'groups');
-      const rows = j.data||[];
-      els.gBody.innerHTML = rows.map((g,i)=>groupRow(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
+      const data = await json(API+'/promo/groups/list?code_id='+codeId);
+      els.gBody.innerHTML = (data||[]).map((g,i)=>rowGroupTpl(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
       bindGroupRowEvents();
     }catch(_){
-      els.gBody.innerHTML='<tr><td colspan="7" class="text-secondary small">Не удалось загрузить группы</td></tr>';
+      els.gBody.innerHTML = '<tr><td colspan="7" class="text-secondary small">Endpoint /promo/groups/* не реализован</td></tr>';
     }
-  }
-  function addGroupRow(){
-    const i=$$('#pc-groups-body tr').length;
-    els.gBody.insertAdjacentHTML('beforeend', groupRow(i,{}));
-    bindGroupRowEvents();
   }
   async function saveGroups(){
     const id = Number(els.mId.value||0);
     if(!id) return alert('Сначала сохраните промокод');
     try{
-      const resp = await fetch(API+'/promo/groups/save',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({code_id:id, groups: groupsFromUI()})
-      });
-      if(resp.status===404){ alert('Реализуйте /promo/groups/save на бэке'); return; }
-      const j = await resp.json(); if(!j.ok) throw new Error(j.error||'save groups');
-      alert('Группы сохранены');
+      await json(API+'/promo/groups/save',{method:'POST', body: JSON.stringify({code_id:id, groups: groupsFromUI()})});
+      toast('Группы сохранены');
       await loadGroups(id);
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // -------- redemptions
+  // ------------- redemptions
   async function loadReds(codeId){
-    els.rBody.innerHTML='';
-    els.rCnt.textContent='';
+    els.rBody.innerHTML=''; els.rCnt.textContent='';
     if(!codeId) return;
     try{
       const q=(els.rQ.value||'').trim();
-      const codeRow = rows.find(x=>x.id===codeId);
-      const url = API+`/promo/redemptions?code=${encodeURIComponent(codeRow?.code||'')}` + (q?`&q=${encodeURIComponent(q)}`:'');
-      const j = await jget(url); if(!j.ok) throw new Error(j.error||'reds');
-      const data = j.data||[];
-      els.rBody.innerHTML = data.map(r=>`
+      const data = await json(API+`/promo/redemptions?code_id=${codeId}` + (q?`&q=${encodeURIComponent(q)}`:''));
+      els.rBody.innerHTML = (data||[]).map(r=>`
         <tr>
           <td>${fmtDate(r.created_at)}</td>
-          <td>${r.username||'—'}</td>
-          <td class="text-secondary small">${r.uuid}</td>
+          <td>${esc(r.username||'—')}</td>
+          <td class="text-secondary small">${esc(r.uuid)}</td>
           <td>${r.granted_amount!=null? (+r.granted_amount).toFixed(2) : '—'}</td>
           <td>${rows.find(x=>x.id===r.code_id)?.currency_key || ''}</td>
-          <td class="text-secondary">${r.ip||''}</td>
+          <td class="text-secondary">${esc(r.ip||'')}</td>
         </tr>
       `).join('') || `<tr><td colspan="6" class="text-secondary small">Пусто</td></tr>`;
-      els.rCnt.textContent = data.length ? `${data.length} активаций` : '';
+      els.rCnt.textContent = (data||[]).length ? `${data.length} активаций` : '';
     }catch(_){
       els.rBody.innerHTML = `<tr><td colspan="6" class="text-secondary small">Ошибка загрузки</td></tr>`;
     }
   }
 
-  // -------- events
+  // ------------- events
   function bind(){
     // сорт
     $$('th[data-sort]', els.table).forEach(th=>{
@@ -501,43 +682,50 @@
         if(sortBy===k) sortDir = (sortDir==='asc'?'desc':'asc'); else { sortBy=k; sortDir='asc'; }
         $$('th[data-sort]', els.table).forEach(x=>x.classList.remove('desc'));
         if(sortDir==='desc') th.classList.add('desc');
-        paint();
+        render();
       });
     });
-    els.search.addEventListener('input', paint);
-    els.ref.addEventListener('click', loadList);
-    els.create.addEventListener('click', async ()=>{
-      await loadKitsSelect();
+
+    // фильтры / поиск
+    on(els.search,'input', render);
+    on(els.filterStatus,'change', render);
+    on(els.filterRealm,'change', render);
+    on(els.filterKit,'change', render);
+
+    on(els.ref,'click', loadList);
+    on(els.create,'mousemove', (e)=>setNeonPointer(els.create, e));
+    on(els.create,'click', async ()=>{
+      await loadKits();
       fillModal(null);
-      modal ? modal.show() : els.m.classList.add('show');
+      Modal.show();
     });
-    els.mSave.addEventListener('click', saveCurrent);
-    els.mDel.addEventListener('click', async ()=>{
+
+    on(els.mSave,'click', saveCurrent);
+    on(els.mDel,'click', async ()=>{
       const id = els.mId.value ? Number(els.mId.value) : null;
       if(!id){ alert('Промокод ещё не сохранён'); return; }
       if(!confirm('Удалить промокод?')) return;
-      const j = await jpost(API+'/promo/delete',{id});
-      if(!j.ok){ alert(j.error||'Ошибка удаления'); return; }
-      modal && modal.hide();
-      await loadList();
+      try{
+        await json(API+'/promo/delete',{method:'POST', body:JSON.stringify({id})});
+        Modal.hide(); await loadList(); toast('Удалено');
+      }catch(err){ alert('Ошибка: '+(err.message||err)); }
     });
-    els.gAdd.addEventListener('click', addGroupRow);
-    els.gSave.addEventListener('click', saveGroups);
-    els.rBtn.addEventListener('click', ()=>loadReds(Number(els.mId.value||0)));
-    els.rQ.addEventListener('keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId.value||0)); });
-    // быстрый копи по клику на код
-    els.list.addEventListener('click', (e)=>{
-      const cell = e.target.closest('td'); const tr = e.target.closest('tr');
-      if(!cell || !tr) return;
-      if(cell.cellIndex===0){ const r=rows.find(x=>x.id==tr.dataset.id); if(r) copyTxt(r.code); }
-    });
+
+    on(els.gAdd,'click', ()=>{ const i=$$('#pc-groups-body tr').length; els.gBody.insertAdjacentHTML('beforeend', rowGroupTpl(i, {})); bindGroupRowEvents(); });
+    on(els.gSave,'click', saveGroups);
+
+    on(els.rBtn,'click', ()=>loadReds(Number(els.mId.value||0)));
+    on(els.rQ,'keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId.value||0)); });
+
+    on(els.mGen,'click', (e)=>{ e.preventDefault(); genCode(); });
   }
 
-  // -------- init
+  // ------------- init
   (async function init(){
+    Modal.init();
     API = await chooseBase();
     bind();
-    await loadKitsSelect();
+    await loadKits();
     await loadList();
   })();
 
