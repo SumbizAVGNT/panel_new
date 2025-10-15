@@ -5,56 +5,89 @@
   // ---------- helpers ----------
   const $  = (s, r=document)=>r.querySelector(s);
   const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
-
-  const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
-  const chooseBase = async ()=>{
-    for (const base of API_BASES){
-      try{
-        const r = await fetch(base + '/promo/list', {cache:'no-store'});
-        if (r.ok) return base;
-      }catch(_){}
-    }
-    return API_BASES[0];
-  };
-
-  const json = async (url, opts={})=>{
-    const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
-    let j = null; try{ j = await r.json(); }catch(_){}
-    if(!j || !j.ok) throw new Error(j?.error || ('HTTP '+r.status));
-    return j.data;
-  };
-
+  const on = (el, ev, fn)=> el && el.addEventListener(ev, fn);
+  const esc = (s)=> String(s??'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
   const fmt = {
     money:(a,k)=> (a!=null && a!=='') ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—',
     date:(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—'
   };
   const badge = (t,cls='badge-soft')=>`<span class="badge ${cls}">${t}</span>`;
-  const copy  = (t)=>navigator.clipboard?.writeText(t).catch(()=>{});
+
+  // toast (создаст контейнер при первом вызове)
+  function toast(msg){
+    let zone = $('#pc-toasts');
+    if(!zone){
+      zone = document.createElement('div');
+      zone.id = 'pc-toasts';
+      zone.className = 'pc-toasts';
+      document.body.appendChild(zone);
+    }
+    const el = document.createElement('div');
+    el.className = 'pc-toast';
+    el.textContent = msg;
+    zone.appendChild(el);
+    setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 250); }, 2200);
+  }
+  const copy = (t)=> navigator.clipboard?.writeText(t).then(()=>toast('Скопировано')).catch(()=>{});
+
+  // neon hover (для .btn-neon)
+  function setNeonPointer(btn, e){
+    const r = btn.getBoundingClientRect();
+    btn.style.setProperty('--x', (e.clientX - r.left)+'px');
+    btn.style.setProperty('--y', (e.clientY - r.top)+'px');
+  }
+
+  // skeletons
+  function skeletonRows(target, n=6){
+    if(!target) return;
+    target.innerHTML = Array.from({length:n}).map(()=>`
+      <tr class="skel-row">
+        <td><div class="skel skel-pill" style="width:120px"></div></td>
+        <td><div class="skel skel-pill" style="width:70px"></div></td>
+        <td><div class="skel skel-pill" style="width:100px"></div></td>
+        <td><div class="skel skel-pill" style="width:90px"></div></td>
+        <td><div class="skel skel-pill" style="width:80px"></div></td>
+        <td><div class="skel skel-pill" style="width:120px"></div></td>
+        <td><div class="skel skel-pill" style="width:90px"></div></td>
+        <td class="text-end"><div class="skel skel-pill" style="width:60px;float:right"></div></td>
+        <td class="text-end"><div class="skel skel-pill" style="width:140px;float:right"></div></td>
+      </tr>
+    `).join('');
+  }
+
+  // ---------- API ----------
+  const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
+  const chooseBase = async ()=>{
+    for (const base of API_BASES){
+      try{ const r = await fetch(base + '/promo/list', {cache:'no-store'}); if (r.ok) return base; }catch(_){}
+    }
+    return API_BASES[0];
+  };
+  const json = async (url, opts={})=>{
+    const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+    let j=null; try{ j=await r.json(); }catch(_){}
+    if(!j || !j.ok) throw new Error(j?.error || ('HTTP '+r.status));
+    return j.data;
+  };
 
   // ---------- state ----------
   let API = '';
   let list = [];
   let sortBy = 'id', sortDir = 'desc';
-  let modalBS = null;           // bootstrap instance (если есть)
-  let backdropEl = null;        // fallback backdrop
+  let modalBS = null, backdropEl = null; // modal
+  let bodyDelegBound = false;            // чтоб не вешать копирование много раз
   const els = {};
 
   // ---------- Modal wrapper (BS or fallback) ----------
   const Modal = {
     init(){
       if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m);
-      // навесим закрытие по data-bs-dismiss в любом случае (fallback friendly)
-      $$('[data-bs-dismiss="modal"]', els.m).forEach(btn=>{
-        btn.addEventListener('click', ()=>Modal.hide());
-      });
-      // Esc в fallback
-      document.addEventListener('keydown', (e)=>{
-        if(e.key==='Escape' && Modal.isShown() && !modalBS) Modal.hide();
-      });
+      // закрытие через data-bs-dismiss — и для fallback тоже
+      $$('[data-bs-dismiss="modal"]', els.m).forEach(btn=> btn.addEventListener('click', ()=>Modal.hide()));
+      // Esc — для fallback
+      document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && Modal.isShown() && !modalBS) Modal.hide(); });
     },
-    isShown(){
-      return modalBS ? !!els.m.classList.contains('show') : els.m.style.display==='block';
-    },
+    isShown(){ return modalBS ? !!els.m.classList.contains('show') : els.m.style.display==='block'; },
     show(){
       if (modalBS) { modalBS.show(); return; }
       els.m.classList.add('show');
@@ -63,7 +96,7 @@
       document.body.classList.add('modal-open');
       if(!backdropEl){
         backdropEl = document.createElement('div');
-        backdropEl.className='modal-backdrop fade show';
+        backdropEl.className = 'modal-backdrop fade show';
         document.body.appendChild(backdropEl);
         backdropEl.addEventListener('click', ()=>Modal.hide());
       }
@@ -118,16 +151,17 @@
 
   // ---------- kits ----------
   async function loadKitsIntoSelect(){
+    if(!els.mKit) return;
     els.mKit.innerHTML = `<option value="">— без кита —</option>`;
     try{
       const kits = await json(API+'/kits/list');
-      els.mKit.innerHTML += (kits||[]).map(k=>`<option value="${k.id}">${k.name}</option>`).join('');
+      els.mKit.innerHTML += (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
     }catch(_){}
   }
 
   // ---------- table ----------
   function render(){
-    const q = (els.search.value||'').trim().toLowerCase();
+    const q = (els.search?.value||'').trim().toLowerCase();
     let rows = list.filter(x => !q || String(x.code).toLowerCase().includes(q));
 
     rows.sort((a,b)=>{
@@ -137,7 +171,7 @@
     });
     if (sortDir==='desc') rows.reverse();
 
-    els.count.textContent = rows.length ? `${rows.length} шт.` : '';
+    els.count && (els.count.textContent = rows.length ? `${rows.length} шт.` : '');
 
     if (!rows.length){
       els.body.innerHTML = `<tr><td colspan="9" class="text-secondary small">Нет данных</td></tr>`;
@@ -153,15 +187,22 @@
       const expStr = fmt.date(x.expires_at);
       const expHtml = expTs && expTs < now ? `<span class="text-expired" title="истёк">${expStr}</span>` : expStr;
 
+      // подсветка совпадения в коде
+      const code = String(x.code);
+      const i = q ? code.toLowerCase().indexOf(q) : -1;
+      const codeHtml = (i>=0)
+        ? esc(code.slice(0,i)) + '<mark>' + esc(code.slice(i,i+q.length)) + '</mark>' + esc(code.slice(i+q.length))
+        : esc(code);
+
       return `
       <tr data-id="${x.id}">
-        <td class="fw-semibold">${x.code}</td>
+        <td class="fw-semibold">${codeHtml}</td>
         <td>${st}</td>
         <td>${fmt.money(x.amount, x.currency_key)}</td>
-        <td>${x.realm || '<span class="text-dim">all</span>'}</td>
+        <td>${x.realm ? esc(x.realm) : '<span class="text-dim">all</span>'}</td>
         <td>${lim}</td>
         <td>${expHtml}</td>
-        <td>${x.kit_name? badge(x.kit_name): ''}</td>
+        <td>${x.kit_name? badge(esc(x.kit_name)): ''}</td>
         <td class="text-end">${used}</td>
         <td class="text-end">
           <div class="btn-group btn-group-sm">
@@ -176,25 +217,32 @@
     // actions
     $$('.act-edit', els.body).forEach(btn=>btn.addEventListener('click', onRowEdit));
     $$('.act-copy', els.body).forEach(btn=>btn.addEventListener('click', (e)=>{
-      const tr = e.target.closest('tr'); const r = list.find(x=>x.id==tr.dataset.id); if(r) copy(r.code);
+      const tr = e.target.closest('tr'); const r = list.find(x=>x.id==tr.dataset.id);
+      if(r) copy(r.code);
     }));
     $$('.act-del', els.body).forEach(btn=>btn.addEventListener('click', onRowDelete));
 
-    // быстрый копи по клику на код
-    els.body.addEventListener('click', (e)=>{
-      const td = e.target.closest('td'); const tr = e.target.closest('tr');
-      if(!td || !tr) return;
-      if(td.cellIndex===0){ const r = list.find(x=>x.id==tr.dataset.id); if(r) copy(r.code); }
-    }, {once:true});
+    // делегат для клика по первой ячейке (копирование), навешиваем один раз
+    if(!bodyDelegBound){
+      bodyDelegBound = true;
+      els.body.addEventListener('click', (e)=>{
+        const td = e.target.closest('td'); const tr = e.target.closest('tr');
+        if(!td || !tr) return;
+        if(td.cellIndex===0){
+          const r = list.find(x=>x.id==tr.dataset.id);
+          if(r) copy(r.code);
+        }
+      });
+    }
   }
 
   async function loadList(){
-    els.body.innerHTML = `<tr><td colspan="9" class="text-secondary small">Загрузка…</td></tr>`;
+    skeletonRows(els.body);
     try{
       list = await json(API+'/promo/list');
       render();
     }catch(e){
-      els.body.innerHTML = `<tr><td colspan="9" class="text-danger">${e.message||e}</td></tr>`;
+      els.body.innerHTML = `<tr><td colspan="9" class="text-danger">${esc(e.message||String(e))}</td></tr>`;
     }
   }
 
@@ -235,6 +283,7 @@
     try{
       await json(API+'/promo/delete', {method:'POST', body:JSON.stringify({id})});
       await loadList();
+      toast('Удалено');
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
@@ -275,7 +324,7 @@
         const row = list.find(x=>x.id===id);
         if(row) fillModal(row);
       }
-      alert('Сохранено');
+      toast('Сохранено');
     }catch(err){
       alert('Ошибка: '+(err.message||err));
     }
@@ -285,10 +334,10 @@
   function rowGroupTpl(i,g){
     return `<tr>
       <td class="text-secondary">${i+1}</td>
-      <td><input class="form-control form-control-sm g-name" value="${g.group_name||''}"></td>
+      <td><input class="form-control form-control-sm g-name" value="${esc(g.group_name||'')}"></td>
       <td style="width:150px"><input type="number" class="form-control form-control-sm g-temp" value="${g.temp_seconds??''}"></td>
-      <td><input class="form-control form-control-sm g-srv" value="${g.context_server||''}"></td>
-      <td><input class="form-control form-control-sm g-wld" value="${g.context_world||''}"></td>
+      <td><input class="form-control form-control-sm g-srv" value="${esc(g.context_server||'')}"></td>
+      <td><input class="form-control form-control-sm g-wld" value="${esc(g.context_world||'')}"></td>
       <td style="width:110px"><input type="number" class="form-control form-control-sm g-pr" value="${g.priority??(i+1)}"></td>
       <td class="text-end"><button class="btn btn-sm btn-outline-danger g-del">&times;</button></td>
     </tr>`;
@@ -297,15 +346,21 @@
     const rows=[];
     $$('#pc-groups-body tr').forEach((tr,i)=>{
       const g={
-        group_name: $('.g-name',tr).value.trim(),
+        group_name: ($('.g-name',tr).value||'').trim(),
         temp_seconds: $('.g-temp',tr).value ? Number($('.g-temp',tr).value) : null,
-        context_server: $('.g-srv',tr).value.trim()||null,
-        context_world: $('.g-wld',tr).value.trim()||null,
+        context_server: ($('.g-srv',tr).value||'').trim()||null,
+        context_world: ($('.g-wld',tr).value||'').trim()||null,
         priority: $('.g-pr',tr).value ? Number($('.g-pr',tr).value) : (i+1)
       };
       if(g.group_name) rows.push(g);
     });
     return rows;
+  }
+  function bindGroupRowEvents(){
+    $$('.g-del', els.gBody).forEach(btn=>btn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      e.target.closest('tr').remove();
+    }));
   }
   async function loadGroups(codeId){
     els.gBody.innerHTML = '';
@@ -318,12 +373,6 @@
       els.gBody.innerHTML = '<tr><td colspan="7" class="text-secondary small">Не удалось загрузить группы</td></tr>';
     }
   }
-  function bindGroupRowEvents(){
-    $$('.g-del', els.gBody).forEach(btn=>btn.addEventListener('click', (e)=>{
-      e.preventDefault();
-      e.target.closest('tr').remove();
-    }));
-  }
   function addGroupRow(){
     const i = $$('#pc-groups-body tr').length;
     els.gBody.insertAdjacentHTML('beforeend', rowGroupTpl(i, {}));
@@ -335,7 +384,7 @@
     try{
       const groups = readGroupsFromUI();
       await json(API+'/promo/groups/save', {method:'POST', body: JSON.stringify({code_id:id, groups})});
-      alert('Группы сохранены');
+      toast('Группы сохранены');
       await loadGroups(id);
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
@@ -351,11 +400,11 @@
       els.rBody.innerHTML = rows.map(r=>`
         <tr>
           <td>${fmt.date(r.created_at)}</td>
-          <td>${r.username||'—'}</td>
-          <td class="text-secondary small">${r.uuid}</td>
+          <td>${esc(r.username||'—')}</td>
+          <td class="text-secondary small">${esc(r.uuid)}</td>
           <td>${r.granted_amount!=null? (+r.granted_amount).toFixed(2) : '—'}</td>
           <td>${list.find(x=>x.id===r.code_id)?.currency_key || ''}</td>
-          <td class="text-secondary">${r.ip||''}</td>
+          <td class="text-secondary">${esc(r.ip||'')}</td>
         </tr>
       `).join('') || `<tr><td colspan="6" class="text-secondary small">Пусто</td></tr>`;
       els.rCount.textContent = rows.length ? `${rows.length} активаций` : '';
@@ -377,17 +426,20 @@
       });
     });
 
-    els.search.addEventListener('input', render);
-    els.btnRef.addEventListener('click', loadList);
+    on(els.search, 'input', render);
+    on(els.btnRef, 'click', loadList);
 
-    els.btnCreate.addEventListener('click', async ()=>{
+    on(els.btnCreate, 'click', async ()=>{
       await loadKitsIntoSelect();
       fillModal(null);
       Modal.show();
     });
 
-    els.mSave.addEventListener('click', saveCurrent);
-    els.mDel.addEventListener('click', async ()=>{
+    // неончик на create, если у кнопки есть класс
+    $$('.btn-neon').forEach(b=> on(b,'pointermove', (e)=>setNeonPointer(b,e)));
+
+    on(els.mSave, 'click', saveCurrent);
+    on(els.mDel, 'click', async ()=>{
       const id = els.mId.value ? Number(els.mId.value) : null;
       if(!id){ alert('Промокод ещё не сохранён'); return; }
       if(!confirm('Удалить промокод?')) return;
@@ -395,14 +447,15 @@
         await json(API+'/promo/delete',{method:'POST', body:JSON.stringify({id})});
         Modal.hide();
         await loadList();
+        toast('Удалено');
       }catch(err){ alert('Ошибка: '+(err.message||err)); }
     });
 
-    els.gAdd.addEventListener('click', addGroupRow);
-    els.gSave.addEventListener('click', saveGroups);
+    on(els.gAdd, 'click', addGroupRow);
+    on(els.gSave, 'click', saveGroups);
 
-    els.rBtn.addEventListener('click', ()=>loadReds(Number(els.mId.value||0)));
-    els.rQuery.addEventListener('keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId.value||0)); });
+    on(els.rBtn, 'click', ()=>loadReds(Number(els.mId.value||0)));
+    on(els.rQuery, 'keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId.value||0)); });
   }
 
   // ---------- init ----------
