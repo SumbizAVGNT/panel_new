@@ -57,10 +57,13 @@
     #kits-root .chip .x{border:0;background:transparent;color:#e5e7eb;line-height:1;padding:0 .1rem;cursor:pointer}
     #kits-root #ench-input{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.55);color:#e5e7eb;border-radius:10px;padding:.48rem .6rem;width:100%}
 
-    /* Pager (single, top) */
+    /* Pager (single, inside catalog box) */
     #kits-root .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;width:100%;box-sizing:border-box}
     #kits-root .pager .pages{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
     #kits-root .pager .info{color:#94a3b8;font-size:.86rem}
+
+    /* Жёстко убираем любые дублёры пагинатора внутри каталога */
+    #kits-root #catalog-box .pager:not(:first-of-type){display:none!important}
   </style>
 
   <!-- Header -->
@@ -143,7 +146,7 @@
       </div>
 
       <!-- Catalog -->
-      <div class="glass p-3">
+      <div id="catalog-box" class="glass p-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div class="sec-title">Каталог предметов</div>
           <div class="d-flex align-items-center gap-2">
@@ -528,6 +531,7 @@ window.kitsInit = function() {
       }));
       state.page = 1;
       renderCatalog();
+      ensureSinglePager(); // на всякий случай удалим дубли в DOM
     }catch(e){ toast("Ошибка сети при загрузке каталога","error"); }
   };
 
@@ -576,7 +580,7 @@ window.kitsInit = function() {
 
     $('#items-empty').hidden = pageItems.length>0;
     wrap.innerHTML = pageItems.map(it=>`
-      <div class="item" draggable="true" data-ns="${it.ns}" data-id="${it.id}" data-icon="${it.icon}" title="${it.name||it.ns+':'+it.id}\n${it.ns}:${it.id}">
+      <div class="item" draggable="true" data-ns="${it.ns}" data-id="${it.id}" data-icon="${it.icon}" title="${(it.name||'').replace(/"/g,'&quot;')}\n${it.ns}:${it.id}">
         <img class="icon" alt="${it.ns}:${it.id}" src="${it.icon}" loading="lazy" onerror="this.style.visibility='hidden'">
         <div class="n">${it.ns}:${it.id}</div>
       </div>`).join('');
@@ -593,6 +597,14 @@ window.kitsInit = function() {
         markDirty(true);
       });
     });
+  }
+
+  // Удалить любые дубликаты пагинаторов внутри каталога (на случай старой вёрстки)
+  function ensureSinglePager(){
+    const box = document.getElementById('catalog-box');
+    if (!box) return;
+    const all = Array.from(box.querySelectorAll('.pager'));
+    for (let i=1;i<all.length;i++) all[i].remove();
   }
 
   /* ---------- events ---------- */
@@ -708,6 +720,7 @@ window.kitsInit = function() {
   (async function boot(){
     await Promise.all([loadKits(), loadCatalog()]);
     if (state.list.length) openKit(state.list[0]); else newKit();
+    ensureSinglePager(); // финальная страховка от дублей
   })();
 };
 
