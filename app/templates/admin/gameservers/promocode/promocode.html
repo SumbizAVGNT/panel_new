@@ -1,12 +1,8 @@
-<!-- ===================== PROMOCODES – AURORA/GLASS UI ===================== -->
-<!-- Toolbar + Table + Modal + Styles + Logic (one file) -->
+<!-- ===================== PROMOCODES – AURORA/GLASS ===================== -->
+<!-- One-file build: Toolbar + Table + Modal (tabs) + Styles + Logic -->
 
 <!-- ===== Toolbar + Table ===== -->
 <div class="pc-wrap">
-  <!-- Aurora background -->
-  <div class="aurora-overlay"></div>
-
-  <!-- Toolbar -->
   <div class="pc-toolbar glass-card">
     <div class="left">
       <div class="input-icon">
@@ -40,7 +36,6 @@
     </div>
   </div>
 
-  <!-- Table -->
   <div class="table-responsive glass-card">
     <table id="pc-table" class="table table-dark table-striped table-sm align-middle mb-0">
       <thead class="text-secondary small sticky-head">
@@ -56,157 +51,195 @@
         <th class="text-end">Действия</th>
       </tr>
       </thead>
-      <tbody id="pc-list">
-        <!-- скелетоны вставляются скриптом -->
-      </tbody>
+      <tbody id="pc-list"></tbody>
     </table>
   </div>
 </div>
 
-<!-- ===== Modal: редактирование/создание ===== -->
+<!-- ===== Modal: редактирование/создание (AURORA/GLASS) ===== -->
 <div class="modal fade" id="pcEditModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content glass-modal">
+    <div class="modal-content glass-modal pc-modal">
 
-      <!-- Aurora header -->
-      <div class="modal-header mod-aurora">
-        <div class="mod-aurora__title">
-          <div class="mod-aurora__dot"></div>
-          <div>
-            <div class="mod-aurora__caption">Промокод</div>
-            <div class="mod-aurora__sub">Редактор <span id="pc-f-title" class="text-secondary"></span></div>
+      <!-- AURORA HEADER -->
+      <div class="modal-aurora">
+        <div class="aurora-bg"></div>
+        <div class="aurora-bar">
+          <div class="aurora-left">
+            <div class="aurora-icon">
+              <i class="bi bi-qr-code-scan"></i>
+            </div>
+            <div class="aurora-titles">
+              <div class="aurora-title">
+                Промокод <span id="pc-f-title" class="text-secondary">(новый)</span>
+              </div>
+              <div class="aurora-sub text-dim">Создание / редактирование</div>
+            </div>
+          </div>
+          <div class="aurora-right">
+            <button type="button" class="btn btn-sm btn-outline-light" data-bs-dismiss="modal">
+              <i class="bi bi-x-lg me-1"></i>Закрыть
+            </button>
           </div>
         </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+
+        <!-- Tabs (seg) -->
+        <ul class="nav seg pc-tabs" id="pc-mTabs" role="tablist">
+          <li class="nav-item"><a class="nav-link active" data-tab="overview"><i class="bi bi-sliders me-1"></i>Общее</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="groups"><i class="bi bi-people me-1"></i>Группы</a></li>
+          <li class="nav-item"><a class="nav-link" data-tab="reds"><i class="bi bi-clock-history me-1"></i>Активации</a></li>
+        </ul>
       </div>
 
       <div class="modal-body">
         <input type="hidden" id="pc-f-id">
 
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label small text-dim">Код</label>
-            <div class="input-group input-group-sm">
-              <input id="pc-f-code" class="form-control" placeholder="например, SUMMER2025">
-              <button id="pc-f-gen" class="btn btn-outline-secondary" title="Сгенерировать"><i class="bi bi-magic"></i></button>
+        <!-- OVERVIEW -->
+        <section id="pc-tab-overview">
+          <div class="row g-2">
+            <div class="col-xl-8">
+              <div class="card glass aurora-card">
+                <div class="card-body">
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <label class="form-label small">Код</label>
+                      <div class="input-group input-group-sm">
+                        <input id="pc-f-code" class="form-control" placeholder="например, SUMMER2025">
+                        <button id="pc-f-gen" class="btn btn-outline-secondary" title="Сгенерировать"><i class="bi bi-magic"></i></button>
+                      </div>
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label small">Активен</label>
+                      <select id="pc-f-enabled" class="form-select form-select-sm">
+                        <option value="1">Да</option>
+                        <option value="0">Нет</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small">Истекает (YYYY-MM-DD HH:MM:SS)</label>
+                      <input id="pc-f-exp" class="form-control form-control-sm" placeholder="">
+                    </div>
+
+                    <div class="col-md-4">
+                      <label class="form-label small">Realm</label>
+                      <input id="pc-f-realm" class="form-control form-control-sm" placeholder="anarchy / пусто = любой">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small">Kit</label>
+                      <select id="pc-f-kit" class="form-select form-select-sm">
+                        <option value="">— без кита —</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small">Осталось использ.</label>
+                      <input id="pc-f-left" type="number" class="form-control form-control-sm" disabled>
+                    </div>
+
+                    <div class="col-md-3">
+                      <label class="form-label small">Сумма</label>
+                      <input id="pc-f-amount" type="number" step="0.01" class="form-control form-control-sm" placeholder="0">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small">Валюта</label>
+                      <input id="pc-f-currency" class="form-control form-control-sm" placeholder="rubs / coins / …" value="rubs">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small">Всего использований</label>
+                      <input id="pc-f-total" type="number" min="0" class="form-control form-control-sm" placeholder="0 = безлимит">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small">Per-player</label>
+                      <input id="pc-f-per" type="number" min="0" class="form-control form-control-sm" placeholder="null">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small">Кулдаун (сек)</label>
+                      <input id="pc-f-cd" type="number" min="0" class="form-control form-control-sm">
+                    </div>
+                  </div>
+
+                  <div class="d-flex align-items-center gap-2 mt-3">
+                    <button class="btn btn-sm btn-success btn-neon" id="pc-f-save">
+                      <i class="bi bi-check2 me-1"></i>Сохранить
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" id="pc-f-delete">
+                      <i class="bi bi-trash me-1"></i>Удалить
+                    </button>
+                    <span class="text-secondary small">Если оставить «Код» пустым — сгенерируется автоматически.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-xl-4">
+              <div class="card glass aurora-card h-100">
+                <div class="card-body">
+                  <div class="fw-semibold mb-2"><i class="bi bi-lightning-charge me-1"></i>Быстрые действия</div>
+                  <div class="vstack gap-2">
+                    <button class="btn btn-outline-light btn-sm" id="pc-a-gen"><i class="bi bi-stars me-1"></i>Сгенерировать код</button>
+                    <button class="btn btn-outline-secondary btn-sm" id="pc-a-copy"><i class="bi bi-clipboard-check me-1"></i>Копировать код</button>
+                    <div class="small text-dim">Подтягиваются группы/активации на соседних вкладках.</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="col-md-2">
-            <label class="form-label small text-dim">Активен</label>
-            <select id="pc-f-enabled" class="form-select form-select-sm">
-              <option value="1">Да</option>
-              <option value="0">Нет</option>
-            </select>
-          </div>
-          <div class="col-md-3">
-            <label class="form-label small text-dim">Realm</label>
-            <input id="pc-f-realm" class="form-control form-control-sm" placeholder="anarchy / пусто = любой">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label small text-dim">Истекает (YYYY-MM-DD HH:MM:SS)</label>
-            <input id="pc-f-exp" class="form-control form-control-sm">
-          </div>
+        </section>
 
-          <div class="col-md-3">
-            <label class="form-label small text-dim">Сумма</label>
-            <input id="pc-f-amount" type="number" step="0.01" class="form-control form-control-sm" placeholder="0">
+        <!-- GROUPS -->
+        <section id="pc-tab-groups" class="d-none">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <h6 class="m-0">LuckPerms группы</h6>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-light" id="pc-g-add">+ группа</button>
+              <button class="btn btn-sm btn-primary btn-ghost" id="pc-g-save">Сохранить группы</button>
+            </div>
           </div>
-          <div class="col-md-3">
-            <label class="form-label small text-dim">Валюта</label>
-            <input id="pc-f-currency" class="form-control form-control-sm" placeholder="rubs / coins / …" value="rubs">
+          <div class="table-responsive">
+            <table class="table table-dark table-sm align-middle nice-table">
+              <thead class="text-secondary small">
+              <tr>
+                <th style="width:50px">#</th>
+                <th>group</th>
+                <th style="width:150px">temp_seconds</th>
+                <th>server</th>
+                <th>world</th>
+                <th style="width:110px">priority</th>
+                <th style="width:64px"></th>
+              </tr>
+              </thead>
+              <tbody id="pc-groups-body"></tbody>
+            </table>
           </div>
-          <div class="col-md-2">
-            <label class="form-label small text-dim">Всего использований</label>
-            <input id="pc-f-total" type="number" min="0" class="form-control form-control-sm" placeholder="0 = безлимит">
+        </section>
+
+        <!-- REDEMPTIONS -->
+        <section id="pc-tab-reds" class="d-none">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <h6 class="m-0">Активации игроков</h6>
+            <input id="pc-r-player" class="form-control form-control-sm" placeholder="поиск по нику/uuid" style="max-width:260px">
+            <button class="btn btn-sm btn-outline-light" id="pc-r-search"><i class="bi bi-search"></i></button>
+            <span id="pc-r-count" class="text-secondary small ms-auto"></span>
           </div>
-          <div class="col-md-2">
-            <label class="form-label small text-dim">Per-player</label>
-            <input id="pc-f-per" type="number" min="0" class="form-control form-control-sm" placeholder="null">
+          <div class="table-responsive">
+            <table class="table table-dark table-sm align-middle nice-table">
+              <thead class="text-secondary small">
+              <tr>
+                <th>Время</th>
+                <th>Игрок</th>
+                <th>UUID</th>
+                <th>Сумма</th>
+                <th>Валюта</th>
+                <th>IP</th>
+              </tr>
+              </thead>
+              <tbody id="pc-reds-body"></tbody>
+            </table>
           </div>
-          <div class="col-md-2">
-            <label class="form-label small text-dim">Кулдаун (сек)</label>
-            <input id="pc-f-cd" type="number" min="0" class="form-control form-control-sm">
-          </div>
-          <div class="col-md-2">
-            <label class="form-label small text-dim">Kit</label>
-            <select id="pc-f-kit" class="form-select form-select-sm">
-              <option value="">— без кита —</option>
-            </select>
-          </div>
-          <div class="col-md-2">
-            <label class="form-label small text-dim">Осталось использ.</label>
-            <input id="pc-f-left" type="number" class="form-control form-control-sm" disabled>
-          </div>
-        </div>
-
-        <div class="d-flex align-items-center gap-2 mt-3">
-          <button class="btn btn-sm btn-success btn-neon" id="pc-f-save">
-            <i class="bi bi-check2 me-1"></i>Сохранить
-          </button>
-          <button class="btn btn-sm btn-outline-danger" id="pc-f-delete">
-            <i class="bi bi-trash me-1"></i>Удалить
-          </button>
-          <span id="pc-f-hint" class="text-secondary small">Оставьте «Код» пустым — сгенерируется автоматически.</span>
-        </div>
-
-        <hr class="border-secondary my-4">
-
-        <!-- LuckPerms группы -->
-        <div class="d-flex align-items-center justify-content-between">
-          <h6 class="m-0">LuckPerms группы</h6>
-          <div class="d-flex gap-2">
-            <button class="btn btn-sm btn-outline-light" id="pc-g-add">+ группа</button>
-            <button class="btn btn-sm btn-primary btn-ghost" id="pc-g-save">Сохранить группы</button>
-          </div>
-        </div>
-
-        <div class="table-responsive mt-2 glass-subcard">
-          <table class="table table-dark table-sm align-middle nice-table">
-            <thead class="text-secondary small">
-            <tr>
-              <th style="width:50px">#</th>
-              <th>group</th>
-              <th>temp_seconds</th>
-              <th>server</th>
-              <th>world</th>
-              <th style="width:110px">priority</th>
-              <th style="width:64px"></th>
-            </tr>
-            </thead>
-            <tbody id="pc-groups-body"></tbody>
-          </table>
-        </div>
-
-        <hr class="border-secondary my-4">
-
-        <!-- Активации игроков -->
-        <div class="d-flex align-items-center gap-2">
-          <h6 class="m-0">Активации игроков</h6>
-          <input id="pc-r-player" class="form-control form-control-sm" placeholder="поиск по нику/uuid" style="max-width:260px">
-          <button class="btn btn-sm btn-outline-light" id="pc-r-search"><i class="bi bi-search"></i></button>
-          <span id="pc-r-count" class="text-secondary small ms-auto"></span>
-        </div>
-
-        <div class="table-responsive mt-2 glass-subcard">
-          <table class="table table-dark table-sm align-middle nice-table">
-            <thead class="text-secondary small">
-            <tr>
-              <th>Время</th>
-              <th>Игрок</th>
-              <th>UUID</th>
-              <th>Сумма</th>
-              <th>Валюта</th>
-              <th>IP</th>
-            </tr>
-            </thead>
-            <tbody id="pc-reds-body"></tbody>
-          </table>
-        </div>
-
+        </section>
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+        <button class="btn btn-sm btn-outline-light" data-bs-dismiss="modal">Закрыть</button>
       </div>
     </div>
   </div>
@@ -215,126 +248,77 @@
 <!-- ===== Toast zone ===== -->
 <div id="pc-toasts" class="pc-toasts"></div>
 
-<!-- ===== Visual: AURORA + GLASS ===== -->
+<!-- ===== Styles (AURORA/GLASS) ===== -->
 <style>
 :root{
-  --pc-bg: rgba(13,17,23,.55);
+  --pc-bg: rgba(13,17,23,.58);
   --pc-br: rgba(148,163,184,.18);
-  --pc-blur: 10px;
-  --pc-glow: 0 0 0 1px rgba(96,165,250,.20), 0 12px 42px rgba(2,132,199,.22);
+  --pc-blur: 8px;
   --pc-green: #10b981;
   --pc-red: #ef4444;
-  --pc-cyan: #22d3ee;
-  --pc-blue: #60a5fa;
-  --pc-violet:#a78bfa;
   --pc-dim: #94a3b8;
   --pc-text: #e5e7eb;
+  --pc-blue: #60a5fa;
+  --pc-cyan: #22d3ee;
 }
 
-.pc-wrap{position:relative; display:grid; gap:14px}
+.pc-wrap{display:grid;gap:14px}
 
-/* Aurora background */
-.aurora-overlay{
-  position:absolute; inset:-40px;
-  pointer-events:none; z-index:0;
-  background:
-    radial-gradient(500px 300px at 15% 0%, rgba(34,211,238,.12), transparent 50%),
-    radial-gradient(700px 420px at 85% 10%, rgba(96,165,250,.10), transparent 55%),
-    conic-gradient(from 180deg at 70% 10%, rgba(167,139,250,.12), rgba(34,211,238,.10), rgba(96,165,250,.10), transparent 60%);
-  filter: blur(28px) saturate(120%);
-  animation: auroraShift 16s ease-in-out infinite alternate;
-}
-@keyframes auroraShift{
-  0%{ transform:translateY(-6px) scale(1.02); opacity:.75 }
-  100%{ transform:translateY(6px) scale(1.03); opacity:.9 }
-}
-
-/* Glass cards */
+/* Glass cards / modal */
 .glass-card{
-  position:relative; z-index:1;
   background:var(--pc-bg);
   border:1px solid var(--pc-br);
   backdrop-filter: blur(var(--pc-blur));
   border-radius:16px;
   padding:.75rem;
-  box-shadow: var(--pc-glow);
 }
-.glass-subcard{
-  background:rgba(2,6,23,.45);
-  border:1px solid rgba(148,163,184,.15);
-  border-radius:14px;
-  padding:.5rem;
-}
-
-/* Modal glass */
 .glass-modal{
   background:rgba(13,17,23,.92)!important;
   border:1px solid var(--pc-br);
   border-radius:16px;
-  box-shadow: var(--pc-glow);
   overflow:hidden;
+  box-shadow: 0 0 0 1px rgba(96,165,250,.25), 0 18px 50px rgba(2,132,199,.18);
 }
-.mod-aurora{
-  position:relative;
-  border-bottom:1px solid rgba(148,163,184,.2);
-}
-.mod-aurora::before{
-  content:""; position:absolute; inset:-30% -10% auto -10%; height:140%;
-  background:
-    radial-gradient(300px 160px at 10% 70%, rgba(34,211,238,.25), transparent 55%),
-    radial-gradient(340px 200px at 90% 30%, rgba(96,165,250,.25), transparent 60%),
-    conic-gradient(from 200deg at 50% 0%, rgba(167,139,250,.28), rgba(34,211,238,.18), transparent 70%);
-  filter: blur(26px);
-  opacity:.6; pointer-events:none;
-}
-.mod-aurora__title{display:flex; align-items:center; gap:.75rem}
-.mod-aurora__dot{
-  width:32px;height:32px;border-radius:10px;
-  background: linear-gradient(145deg, var(--pc-cyan), var(--pc-blue));
-  box-shadow: 0 6px 18px rgba(34,211,238,.35);
-}
-.mod-aurora__caption{font-weight:700; letter-spacing:.3px}
-.mod-aurora__sub{font-size:.9rem; color:var(--pc-dim)}
 
-.pc-toolbar{position:relative; display:flex;justify-content:space-between;align-items:center;gap:10px}
-.pc-toolbar .left, .pc-toolbar .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.pc-toolbar .form-control, .pc-toolbar .form-select{
-  min-width:180px;background:rgba(2,6,23,.55)!important;
+/* Toolbar */
+.pc-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pc-toolbar .left,.pc-toolbar .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pc-toolbar .form-control,.pc-toolbar .form-select{
+  min-width:180px;background:rgba(2,6,23,.55);
   border-color:rgba(148,163,184,.25);color:var(--pc-text)
 }
 .input-icon{position:relative}
 .input-icon i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--pc-dim)}
 .input-icon input{padding-left:32px}
 
-/* Neon button */
+/* Buttons */
 .btn-ghost{border-color:rgba(148,163,184,.28)!important}
 .btn-neon{
   position:relative; overflow:hidden; border:0!important; color:#0b1220!important;
-  background: linear-gradient(90deg, var(--pc-cyan), var(--pc-blue));
-  box-shadow: 0 8px 24px rgba(34,211,238,.28);
+  background: linear-gradient(90deg, #22d3ee, #60a5fa);
+  box-shadow: 0 8px 20px rgba(34,211,238,.25);
 }
 .btn-neon::after{
   content:""; position:absolute; inset:0;
-  background: radial-gradient(130px 130px at var(--x,50%) var(--y,50%), rgba(255,255,255,.25), transparent 60%);
+  background: radial-gradient(120px 120px at var(--x,50%) var(--y,50%), rgba(255,255,255,.25), transparent 60%);
   mix-blend-mode: screen; opacity:0; transition:opacity .18s;
 }
 .btn-neon:hover::after{opacity:1}
 
 /* Table */
-#pc-table{--bs-table-bg:rgba(15,23,42,.6);--bs-table-striped-bg:rgba(148,163,184,.06)}
+#pc-table{--bs-table-bg:rgba(15,23,42,.65);--bs-table-striped-bg:rgba(148,163,184,.05)}
 #pc-table th,#pc-table td{vertical-align:middle}
-#pc-table tbody tr{transition:.16s}
-#pc-table tbody tr:hover{transform:translateY(-1px); box-shadow:0 8px 28px rgba(0,0,0,.28)}
+#pc-table tbody tr{transition:.15s}
+#pc-table tbody tr:hover{transform:translateY(-1px); box-shadow:0 6px 24px rgba(0,0,0,.28)}
 .sticky-head{position:sticky;top:0;z-index:1;background:rgba(15,23,42,.85)!important}
 
-/* Badges */
 .badge-soft{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.22);color:var(--pc-text)}
-.badge-active{background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.45);color:#a7f3d0}
+.badge-active{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.45);color:#a7f3d0}
 .badge-off{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35);color:#e5e7eb}
 
-/* Misc */
 .text-dim{color:var(--pc-dim)!important}
 .text-expired{color:var(--pc-red)!important}
+
 .table thead th[data-sort]{user-select:none; position:relative}
 .table thead th[data-sort]::after{
   content:"";display:inline-block;margin-left:.35rem;border:4px solid transparent;
@@ -342,41 +326,81 @@
 }
 .table thead th[data-sort].desc::after{border-top-color:transparent;border-bottom-color:rgba(148,163,184,.75);transform:translateY(3px)}
 
-/* Code pill */
-.pc-code{
-  display:inline-flex; align-items:center; gap:.45rem;
-  padding:.25rem .55rem; border-radius:.7rem;
-  background:linear-gradient(180deg, rgba(148,163,184,.12), rgba(148,163,184,.05));
-  border:1px solid rgba(148,163,184,.25); cursor:copy; transition:.15s;
-}
-.pc-code:hover{border-color:rgba(148,163,184,.5)}
-.pc-code.copied{box-shadow:0 0 0 2px rgba(96,165,250,.28)}
-
-/* Toasts */
+/* Toasts + skeletons */
 .pc-toasts{position:fixed;right:14px;bottom:14px;display:grid;gap:8px;z-index:1080}
 .pc-toast{
-  background:rgba(2,6,23,.96); color:#e5e7eb; border:1px solid rgba(148,163,184,.22);
-  border-radius:12px; padding:.5rem .65rem; box-shadow:0 14px 34px rgba(0,0,0,.35);
+  background:rgba(2,6,23,.92); color:#e5e7eb; border:1px solid rgba(148,163,184,.22);
+  border-radius:12px; padding:.5rem .65rem; box-shadow:0 10px 30px rgba(0,0,0,.35);
   animation: toast-in .18s ease-out;
 }
 @keyframes toast-in{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
 
-/* Skeletons */
-.skel{position:relative; overflow:hidden; background:rgba(148,163,184,.08)}
+.skel{position:relative; overflow:hidden; background:rgba(148,163,184,.08); border-radius:10px}
 .skel::after{
   content:""; position:absolute; inset:0; transform:translateX(-100%);
-  background:linear-gradient(90deg, transparent, rgba(255,255,255,.09), transparent);
-  animation: sk 1.05s infinite;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+  animation: sk 1.1s infinite;
 }
 @keyframes sk{to{transform:translateX(100%)}}
 .skel-row td{padding:.65rem .5rem}
 .skel-pill{height:20px;border-radius:10px}
 
-.modal-content .form-control, .modal-content .form-select{
-  background:rgba(2,6,23,.6)!important; border-color:rgba(148,163,184,.28)!important;
-  color:var(--pc-text)!important;
+/* Modal AURORA header */
+.modal-aurora{position:relative}
+.aurora-bg{
+  height:120px; filter: blur(18px); opacity:.8;
+  background:
+    radial-gradient(160px 80px at 15% 40%, rgba(96,165,250,.45), transparent 60%),
+    radial-gradient(200px 100px at 85% 30%, rgba(34,211,238,.30), transparent 60%),
+    radial-gradient(220px 120px at 50% 10%, rgba(168,85,247,.25), transparent 60%);
 }
-.nice-table thead th{background:rgba(2,6,23,.5)}
+.aurora-bar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:.75rem; border-bottom:1px solid var(--pc-br);
+}
+.aurora-left{display:flex; align-items:center; gap:12px}
+.aurora-icon{
+  width:42px;height:42px;border-radius:12px;display:grid;place-items:center;
+  background:linear-gradient(180deg, rgba(148,163,184,.18), rgba(148,163,184,.06));
+  border:1px solid rgba(148,163,184,.28); color:#bfe3ff; font-size:20px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+}
+.aurora-title{font-weight:700;color:#e5e7eb}
+.aurora-sub{font-size:.85rem}
+.pc-tabs{padding:.35rem .75rem; border-bottom:1px solid var(--pc-br)}
+.seg .nav-link{
+  color:#cbd5e1; border:1px solid rgba(148,163,184,.18); padding:.35rem .65rem;
+  border-radius:999px; margin:.15rem; background:rgba(13,17,23,.55); font-weight:600;
+}
+.seg .nav-link.active{
+  color:#0b1220; background:linear-gradient(90deg, #22d3ee, #60a5fa); border-color:transparent;
+  box-shadow: 0 0 0 1px rgba(96,165,250,.25), 0 8px 20px rgba(2,132,199,.18);
+}
+
+/* Card polish like accounts */
+.glass.aurora-card,.aurora-card{
+  background:rgba(13,17,23,.58);
+  border:1px solid var(--pc-br);
+  border-radius:16px;
+}
+.nice-table thead th{position:sticky;top:0;background:rgba(15,23,42,.85)}
+
+/* Code chip */
+.pc-code{
+  display:inline-flex; align-items:center; gap:.4rem;
+  padding:.25rem .5rem; border-radius:.65rem;
+  background:linear-gradient(180deg, rgba(148,163,184,.12), rgba(148,163,184,.05));
+  border:1px solid rgba(148,163,184,.25); cursor:copy; transition:.15s;
+}
+.pc-code:hover{border-color:rgba(148,163,184,.5)}
+.pc-code.copied{box-shadow:0 0 0 2px rgba(96,165,250,.25)}
+
+.modal-content.bg-dark{background:rgba(13,17,23,.92)!important}
+
+@media (max-width: 920px){
+  .pc-toolbar .form-select{min-width:140px}
+  .aurora-bg{height:90px}
+}
 </style>
 
 <!-- ===== Logic ===== -->
@@ -387,16 +411,19 @@
   // ---------- helpers ----------
   const $  = (s, r=document)=>r.querySelector(s);
   const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
-  const on = (el, ev, fn)=> el && el.addEventListener(ev, fn);
+  const on = (el,ev,fn)=> el && el.addEventListener(ev,fn);
   const esc = (s)=> String(s??'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
-  const hl  = (txt, q)=>{ if(!q) return esc(txt); const i=String(txt).toLowerCase().indexOf(q.toLowerCase()); if(i<0) return esc(txt);
-    return esc(String(txt).slice(0,i)) + '<mark>'+esc(String(txt).slice(i,i+q.length))+'</mark>' + esc(String(txt).slice(i+q.length));
-  };
-  const toast = (msg)=>{ const z = $('#pc-toasts'); if(!z) return; const el=document.createElement('div'); el.className='pc-toast'; el.textContent=msg; z.appendChild(el); setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),250); }, 2200); };
-  const setNeonPointer = (btn, e)=>{ const r=btn.getBoundingClientRect(); btn.style.setProperty('--x', (e.clientX - r.left)+'px'); btn.style.setProperty('--y', (e.clientY - r.top)+'px'); };
+  const toast = (msg)=>{ const z=$('#pc-toasts'); if(!z) return; const el=document.createElement('div'); el.className='pc-toast'; el.textContent=msg; z.appendChild(el); setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),250); }, 2200); };
+  const setNeonPointer = (btn, e)=>{ const r=btn.getBoundingClientRect(); btn.style.setProperty('--x',(e.clientX-r.left)+'px'); btn.style.setProperty('--y',(e.clientY-r.top)+'px'); };
 
   const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
-  const chooseBase = async ()=>{ for (const b of API_BASES){ try{ const r=await fetch(b+'/promo/list',{cache:'no-store'}); if(r.ok) return b; }catch(_){}} return API_BASES[0]; };
+  const chooseBase = async ()=>{
+    for (const b of API_BASES){
+      try{ const r=await fetch(b+'/promo/list',{cache:'no-store'}); if(r.ok) return b; }catch(_){}
+    }
+    return API_BASES[0];
+  };
+
   const json = async (url, opts={})=>{
     const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
     let j=null; try{ j=await r.json(); }catch(_){}
@@ -405,10 +432,11 @@
   };
   const fmtMoney=(a,k)=> (a!=null && a!=='') ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—';
   const fmtDate =(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—';
+  const badge   =(t,cls='badge-soft')=>`<span class="badge ${cls}">${t}</span>`;
 
   // ---------- state + refs ----------
   let API='', rows=[], kits=[], sortBy='id', sortDir='desc';
-  let modalBS=null, backdrop=null, bodyDelegBound=false;
+  let modalBS=null, backdrop=null;
   const els = {
     list: $('#pc-list'), cnt: $('#pc-count'), search: $('#pc-search'),
     ref: $('#pc-refresh'), create: $('#pc-create'), table: $('#pc-table'),
@@ -421,12 +449,17 @@
     mTotal: $('#pc-f-total'), mPer: $('#pc-f-per'), mCd: $('#pc-f-cd'),
     mKit: $('#pc-f-kit'), mLeft: $('#pc-f-left'),
     mSave: $('#pc-f-save'), mDel: $('#pc-f-delete'),
+    // quick actions
+    aGen: $('#pc-a-gen'), aCopy: $('#pc-a-copy'),
+    // tabs
+    tabNav: $('#pc-mTabs'),
+    tabOver: $('#pc-tab-overview'), tabGroups: $('#pc-tab-groups'), tabReds: $('#pc-tab-reds'),
     // groups / reds
     gBody: $('#pc-groups-body'), gAdd: $('#pc-g-add'), gSave: $('#pc-g-save'),
     rQ: $('#pc-r-player'), rBtn: $('#pc-r-search'), rCnt: $('#pc-r-count'), rBody: $('#pc-reds-body'),
   };
 
-  // ---------- Modal wrapper (Bootstrap or fallback) ----------
+  // ---------- Modal (Bootstrap or fallback) ----------
   const Modal = {
     init(){
       if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m);
@@ -468,7 +501,6 @@
     try{
       kits = await json(API+'/kits/list');
       els.mKit.innerHTML = `<option value="">— без кита —</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
-      // фильтр kit
       $('#pc-filter-kit').innerHTML = `<option value="">Kit: любой</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
     }catch(_){ /* ignore */ }
   }
@@ -499,7 +531,6 @@
       return String(A??'').localeCompare(String(B??''));
     });
     if (sortDir==='desc') list.reverse();
-
     els.cnt.textContent = list.length ? `${list.length} шт.` : '';
 
     if (!list.length){
@@ -520,7 +551,9 @@
 
       return `
       <tr data-id="${x.id}">
-        <td><span class="pc-code" title="Скопировать код"><i class="bi bi-qr-code"></i><span class="code">${hl(x.code, q)}</span></span></td>
+        <td>
+          <span class="pc-code" title="Скопировать код"><i class="bi bi-qr-code"></i><span class="code">${esc(x.code)}</span></span>
+        </td>
         <td>${st}</td>
         <td>${fmtMoney(x.amount, x.currency_key)}</td>
         <td>${x.realm ? esc(x.realm) : '<span class="text-dim">all</span>'}</td>
@@ -538,27 +571,15 @@
       </tr>`;
     }).join('');
 
-    // actions
     $$('.pc-code', els.list).forEach(el=>el.addEventListener('click', (e)=>{
       const tr = e.target.closest('tr'); const r = rows.find(x=>x.id==tr.dataset.id);
-      if(!r) return;
-      navigator.clipboard?.writeText(r.code).then(()=>{ el.classList.add('copied'); toast('Код скопирован'); setTimeout(()=>el.classList.remove('copied'), 700); });
+      if(!r) return; navigator.clipboard?.writeText(r.code).then(()=>{ el.classList.add('copied'); toast('Код скопирован'); setTimeout(()=>el.classList.remove('copied'), 700); });
     }));
     $$('.act-copy', els.list).forEach(b=>b.addEventListener('click', (e)=>{
       const tr=e.target.closest('tr'); const r=rows.find(x=>x.id==tr.dataset.id); if(r){ navigator.clipboard?.writeText(r.code); toast('Код скопирован'); }
     }));
     $$('.act-edit', els.list).forEach(b=>b.addEventListener('click', openEdit));
     $$('.act-del', els.list).forEach(b=>b.addEventListener('click', delOne));
-
-    // делегат на один раз (клик по первой ячейке = копировать)
-    if(!bodyDelegBound){
-      bodyDelegBound = true;
-      els.list.addEventListener('click', (e)=>{
-        const td = e.target.closest('td'); const tr = e.target.closest('tr');
-        if(!td || !tr) return;
-        if(td.cellIndex===0){ const r=rows.find(x=>x.id==tr.dataset.id); if(r) { navigator.clipboard?.writeText(r.code); toast('Код скопирован'); } }
-      });
-    }
   }
 
   async function loadList(){
@@ -587,9 +608,14 @@
     els.mCd.value      = row?.cooldown_seconds ?? '';
     els.mLeft.value    = row?.uses_left ?? '';
     els.mKit.value     = row?.kit_id ?? '';
+
+    // tabs default
+    switchTab('overview');
+
     loadGroups(row?.id);
     loadReds(row?.id);
   }
+
   async function openEdit(e){
     const tr=e.target.closest('tr');
     const id=Number(tr.dataset.id);
@@ -598,6 +624,7 @@
     fillModal(row);
     Modal.show();
   }
+
   async function delOne(e){
     const tr=e.target.closest('tr');
     const id=Number(tr.dataset.id);
@@ -653,15 +680,7 @@
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // ---------- кодоген ----------
-  function genCode(){
-    const alph='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let out=''; const len=10+Math.floor(Math.random()*3);
-    for(let i=0;i<len;i++) out+=alph[Math.floor(Math.random()*alph.length)];
-    els.mCode.value = out;
-  }
-
-  // ---------- groups (LP) ----------
+  // ---------- groups ----------
   function rowGroupTpl(i,g){
     return `<tr>
       <td class="text-secondary">${i+1}</td>
@@ -687,12 +706,9 @@
     });
     return out;
   }
-  function bindGroupRowEvents(){
-    $$('.g-del', els.gBody).forEach(b=>b.addEventListener('click', e=>e.target.closest('tr').remove()));
-  }
   async function loadGroups(codeId){
     els.gBody.innerHTML='';
-    if(!codeId) return;
+    if(!codeId){ els.gBody.innerHTML='<tr><td colspan="7" class="text-secondary small">Сохраните промокод, чтобы добавить группы</td></tr>'; return; }
     try{
       const data = await json(API+'/promo/groups/list?code_id='+codeId);
       els.gBody.innerHTML = (data||[]).map((g,i)=>rowGroupTpl(i,g)).join('') || '<tr><td colspan="7" class="text-secondary small">Нет групп</td></tr>';
@@ -700,6 +716,9 @@
     }catch(_){
       els.gBody.innerHTML = '<tr><td colspan="7" class="text-secondary small">Endpoint /promo/groups/* не реализован</td></tr>';
     }
+  }
+  function bindGroupRowEvents(){
+    $$('.g-del', els.gBody).forEach(b=>b.addEventListener('click', e=>e.target.closest('tr').remove()));
   }
   async function saveGroups(){
     const id = Number(els.mId.value||0);
@@ -734,28 +753,43 @@
     }
   }
 
-  // ---------- bind ----------
+  // ---------- tabs ----------
+  function switchTab(key){
+    $$('.pc-tabs .nav-link').forEach(a=>a.classList.toggle('active', a.dataset.tab===key));
+    els.tabOver.classList.toggle('d-none', key!=='overview');
+    els.tabGroups.classList.toggle('d-none', key!=='groups');
+    els.tabReds.classList.toggle('d-none', key!=='reds');
+  }
+
+  // ---------- events ----------
   function bind(){
-    // сорт
+    // sorting
     $$('th[data-sort]', els.table).forEach(th=>{
       th.addEventListener('click', ()=>{
         const k = th.getAttribute('data-sort');
-        if(sortBy===k) sortDir = (sortDir==='asc'?'desc':'asc'); else { sortBy=k; sortDir='asc'; }
+        if (sortBy===k) sortDir = (sortDir==='asc'?'desc':'asc'); else { sortBy=k; sortDir='asc'; }
         $$('th[data-sort]', els.table).forEach(x=>x.classList.remove('desc'));
-        if(sortDir==='desc') th.classList.add('desc');
+        if (sortDir==='desc') th.classList.add('desc');
         render();
       });
     });
 
+    // filters / search
     on(els.search,'input', render);
     on(els.filterStatus,'change', render);
     on(els.filterRealm,'change', render);
     on(els.filterKit,'change', render);
 
+    // toolbar
     on(els.ref,'click', loadList);
     on(els.create,'mousemove', (e)=>setNeonPointer(els.create, e));
-    on(els.create,'click', async ()=>{ await loadKits(); fillModal(null); Modal.show(); });
+    on(els.create,'click', async ()=>{
+      await loadKits();
+      fillModal(null);
+      Modal.show();
+    });
 
+    // modal actions
     on(els.mSave,'click', saveCurrent);
     on(els.mDel,'click', async ()=>{
       const id = els.mId.value ? Number(els.mId.value) : null;
@@ -767,13 +801,34 @@
       }catch(err){ alert('Ошибка: '+(err.message||err)); }
     });
 
+    // quick actions
+    on(els.aGen,'click', ()=>{ genCode(); toast('Сгенерирован новый код'); });
+    on(els.aCopy,'click', ()=>{ const code=(els.mCode.value||'').trim(); if(code){ navigator.clipboard?.writeText(code); toast('Код скопирован'); } });
+
+    // codegen button near input
+    on(els.mGen,'click', (e)=>{ e.preventDefault(); genCode(); });
+
+    // groups
     on(els.gAdd,'click', ()=>{ const i=$$('#pc-groups-body tr').length; els.gBody.insertAdjacentHTML('beforeend', rowGroupTpl(i, {})); bindGroupRowEvents(); });
     on(els.gSave,'click', saveGroups);
 
+    // reds
     on(els.rBtn,'click', ()=>loadReds(Number(els.mId.value||0)));
     on(els.rQ,'keydown', (e)=>{ if(e.key==='Enter') loadReds(Number(els.mId.value||0)); });
 
-    on(els.mGen,'click', (e)=>{ e.preventDefault(); genCode(); });
+    // tabs
+    $$('.pc-tabs .nav-link').forEach(a=>a.addEventListener('click', ()=>{
+      switchTab(a.dataset.tab);
+      if(a.dataset.tab==='reds') loadReds(Number(els.mId.value||0));
+    }));
+  }
+
+  // ---------- codegen ----------
+  function genCode(){
+    const alph='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let out=''; const len=10+Math.floor(Math.random()*3);
+    for(let i=0;i<len;i++) out+=alph[Math.floor(Math.random()*alph.length)];
+    els.mCode.value = out;
   }
 
   // ---------- init ----------
