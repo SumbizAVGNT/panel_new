@@ -227,57 +227,123 @@ def api_kits_list():
 @bp.post("/api/kits/save")
 @login_required
 def api_kits_save():
+    """
+    Create/Update kit + replace items atomically.
+    Body: { id?: int, name: str, description?: str, items: [
+      {namespace, item_id, amount, display_name, enchants, nbt, slot}
+    ] }
+    """
     js = request.get_json(silent=True) or {}
     kit_id = js.get("id")
     name = (js.get("name") or "").strip()
-    desc = (js.get("description") or "").strip()
-    items = js.get("items") or []
+    description = (js.get("description") or "").strip() or None
+    raw_items = js.get("items") or []
 
     if not name:
-        return _err("name is required")
+        return jsonify({"ok": False, "error": "name is required"}), 400
 
-    with get_db_connection() as conn:
-        _ensure_schema(conn)
+    # TODO: замените на ваш способ получить соединение для промокодов
+    try:
+        # Если у вас уже есть conn в замыкании файла — используйте его
+        from ...database import get_default_connection  # если есть такой
+        conn = get_default_connection()
+    except Exception:
+        # fallback: используем тот же коннектор, что и AuthMe, если БД общая
+        conn = get_authme_connection()
 
+    try:
+        # --- begin tx
+        conn.execute("START TRANSACTION")
+
+        # 1) upsert kit
         if kit_id:
-            conn.execute("UPDATE promo_kits SET name=?, description=? WHERE id=?", (name, desc, int(kit_id)))
-            conn.execute("DELETE FROM promo_kit_items WHERE kit_id=?", (int(kit_id),))
-            kid = int(kit_id)
+            # update existing
+            conn.execute(
+                "UPDATE `promocode_kits` SET `name` = ?, `description` = ? WHERE `id` = ?",
+                (name, description, int(kit_id)),
+            )
+            # убедимся, что такая запись есть
+            row = conn.query_one("SELECT `id` FROM `promocode_kits` WHERE `id` = ? LIMIT 1", (int(kit_id),))
+            if not row:
+                conn.execute(
+                    "INSERT INTO `promocode_kits` (`id`, `name`, `description`) VALUES (?, ?, ?)",
+                    (int(kit_id), name, description),
+                )
         else:
-            conn.execute("INSERT INTO promo_kits(name, description) VALUES (?,?)", (name, desc))
-            conn.commit()
-            kid = int(conn.lastrowid)
+            # insert new
+            conn.execute(
+                "INSERT INTO `promocode_kits` (`name`, `description`) VALUES (?, ?)",
+                (name, description),
+            )
+            rid = conn.query_one("SELECT LAST_INSERT_ID() AS id") or {}
+            kit_id = int(rid.get("id") or 0)
 
-        bulk = []
-        pos = 0
-        for it in items:
-            ns = (it.get("ns") or it.get("namespace") or "minecraft").strip()
-            iid = (it.get("id") or it.get("item_id") or "").strip()
+        if not kit_id:
+            raise RuntimeError("Failed to obtain kit id")
+
+        # 2) replace items
+        conn.execute("DELETE FROM `promocode_kits_items` WHERE `kit_id` = ?", (int(kit_id),))
+
+        # нормализуем список предметов
+        items_params = []
+        for it in raw_items:
+            if not it:
+                continue
+            ns = (it.get("namespace") or it.get("ns") or "minecraft").strip().lower()
+            iid = str(it.get("item_id") or it.get("id") or "").strip()
             if not iid:
                 continue
             amount = int(it.get("amount") or it.get("qty") or 1)
-            display_name = (it.get("display_name") or "").strip() or None
-            ench = _json(it.get("enchants") or [])
-            nbt = _json(it.get("nbt") or [])
+            if amount < 1:
+                amount = 1
+            if amount > 64:
+                amount = 64
+            dname = (it.get("display_name") or it.get("display") or "").strip() or None
+            ench = it.get("enchants") or it.get("enchants_json") or []
+            nbt  = it.get("nbt") or it.get("nbt_json") or []
+            try:
+                ench_json = json.dumps(ench, ensure_ascii=False)
+            except Exception:
+                ench_json = "[]"
+            try:
+                nbt_json = json.dumps(nbt, ensure_ascii=False)
+            except Exception:
+                nbt_json = "[]"
             slot = it.get("slot")
             try:
-                slot = int(slot) if slot is not None else None
+                slot = int(slot)
             except Exception:
                 slot = None
-            bulk.append((kid, ns, iid, amount, display_name, ench, nbt, slot if slot is not None else pos))
-            pos += 1
+            if slot is None or slot < 0 or slot > 26:
+                # безопасно проставим по порядку
+                slot = len(items_params)
+                if slot > 26:
+                    # ограничим 27 слотов
+                    break
 
-        if bulk:
+            items_params.append((
+                int(kit_id), slot, ns, iid, amount, dname, ench_json, nbt_json
+            ))
+
+        if items_params:
             conn.executemany(
-                """
-                INSERT INTO promo_kit_items(
-                  kit_id, namespace, item_id, amount, display_name, enchants_json, nbt_json, slot
-                ) VALUES (?,?,?,?,?,?,?,?)
-                """,
-                bulk,
+                "INSERT INTO `promocode_kits_items` "
+                "(`kit_id`,`slot`,`namespace`,`item_id`,`amount`,`display_name`,`enchants_json`,`nbt_json`) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                items_params
             )
+
         conn.commit()
-        return _ok({"id": kid}, id=kid)
+        return jsonify({"ok": True, "data": {"id": int(kit_id), "name": name}})
+
+    except Exception as e:
+        current_app.logger.exception("kits save failed: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        # если это IntegrityError по FK — вернём дружелюбно
+        return jsonify({"ok": False, "error": "Kit save failed (FK). Make sure kit exists before inserting items."}), 500
 
 @bp.post("/api/kits/delete")
 @login_required
@@ -285,13 +351,30 @@ def api_kits_delete():
     js = request.get_json(silent=True) or {}
     kit_id = js.get("id")
     if not kit_id:
-        return _err("id is required")
-    with get_db_connection() as conn:
-        _ensure_schema(conn)
-        conn.execute("DELETE FROM promo_kit_items WHERE kit_id=?", (int(kit_id),))
-        conn.execute("DELETE FROM promo_kits WHERE id=?", (int(kit_id),))
+        return jsonify({"ok": False, "error": "id is required"}), 400
+
+    # TODO: замените на ваш коннектор, как и выше
+    try:
+        from ...database import get_default_connection
+        conn = get_default_connection()
+    except Exception:
+        conn = get_authme_connection()
+
+    try:
+        conn.execute("START TRANSACTION")
+        # если FK настроен ON DELETE CASCADE, достаточно удалить родителя
+        # но на всякий случай чистим явно
+        conn.execute("DELETE FROM `promocode_kits_items` WHERE `kit_id` = ?", (int(kit_id),))
+        conn.execute("DELETE FROM `promocode_kits` WHERE `id` = ?", (int(kit_id),))
         conn.commit()
-    return _ok()
+        return jsonify({"ok": True, "data": True})
+    except Exception as e:
+        current_app.logger.exception("kits delete failed: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": "Kit delete failed"}), 500
 
 # =========================================================
 # API: promocodes (CRUD + details)

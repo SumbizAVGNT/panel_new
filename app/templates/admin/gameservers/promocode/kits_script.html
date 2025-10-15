@@ -1,5 +1,5 @@
 <script>
-/* Kits module + автокомплит + CRUD киты (расширено: d&d между слотами, Alt/ПКМ-очистка, клик по lvl, режим "All") */
+/* Kits module + автокомплит + CRUD киты (расширено: корректное сохранение/открытие по id, счётчик items_count, иконки, D&D между слотами) */
 (function(){
   'use strict';
 
@@ -44,7 +44,7 @@
     inited:false,
     items:[],                 // [{id:'ns:id', ns, name, icon}]
     version: VERSIONS[0],
-    slots: Array(SLOT_COUNT).fill(null), // [{ns,id,qty,display,extra:{ench:[{id,lvl}],attr:[{id,val}]}}, ...]
+    slots: Array(SLOT_COUNT).fill(null),
     active:-1,
     ench: { list:[], attrs:[] },
     dd:{ open:false, idx:-1, data:[] },
@@ -254,7 +254,6 @@
         if(!dataRaw) return;
         let data = {}; try{ data = JSON.parse(dataRaw); }catch(_){}
         if(data.type==='slot' && typeof data.from==='number'){
-          // swap/move
           const from = data.from, to = i;
           if(from===to) return;
           const A = state.slots[from];
@@ -299,13 +298,12 @@
       <div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
     s.classList.toggle('active', state.active===i);
 
-    // сделать перетаскиваемым
     s.setAttribute('draggable','true');
     s.addEventListener('dragstart', (e)=>{
       const payload = JSON.stringify({type:'slot', from:i});
       e.dataTransfer.setData('application/x-kits', payload);
       e.dataTransfer.setData('text/plain', payload);
-    }, {once:true}); // перевесим при следующем renderSlot
+    }, {once:true});
   }
 
   function putItemToSlot(i,item){
@@ -501,7 +499,7 @@
     listWrap.innerHTML = list.map(k => `
       <div class="kit-row${state.kit.id===k.id?' sel':''}" data-id="${k.id}" title="${(k.description||'').replaceAll('"','&quot;')}">
         <div class="ttl">${k.name}</div>
-        <div class="sub">${(k.created_at||'').toString().replace('T',' ').slice(0,19)} · ${(k.items||[]).length} items</div>
+        <div class="sub">${(k.items_count!=null?k.items_count:(k.items||[]).length)} items</div>
       </div>
     `).join('');
     $$('.kit-row', listWrap).forEach(el=>{
@@ -590,7 +588,6 @@
 
   /* ===== BINDINGS ===== */
   function bind(){
-    // версии/поиск/обновить items
     verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
     verSelect.value = state.version.id;
     verSelect.addEventListener('change', ()=>{
@@ -600,7 +597,6 @@
     itemSearch?.addEventListener('input', (e)=>renderItems(e.target.value));
     itemRefresh?.addEventListener('click', ()=>loadItemsFor(state.version));
 
-    // слоты/редактор
     slotClearBtn?.addEventListener('click', clearActiveSlot);
     dnameClear?.addEventListener('click', ()=>{ slotDName.value=''; applySlotEditor(); });
     $$('#slot-editor [data-qty]', root).forEach(btn=>{
@@ -613,7 +609,6 @@
     slotQty?.addEventListener('input', applySlotEditor);
     slotDName?.addEventListener('input', applySlotEditor);
 
-    // чипы: удалить / изменить lvl кликом
     enchWrap?.addEventListener('click', (e)=>{
       const chip = e.target.closest('.chip');
       if(!chip) return;
@@ -622,7 +617,6 @@
         return;
       }
       if(e.target.classList.contains('lvl')){
-        // инк/дек
         if(chip.dataset.type==='ench'){
           const id = chip.dataset.id;
           const max = (state.ench.list.find(x=>x.id===id)?.max) || 5;
@@ -677,7 +671,6 @@
     window.addEventListener('resize', placeDD);
     window.addEventListener('scroll', placeDD, true);
 
-    // поля кита + кнопки
     nameInput?.addEventListener('input', ()=>markDirty(true));
     descInput?.addEventListener('input', ()=>markDirty(true));
     btnSave?.addEventListener('click', saveKit);
@@ -692,8 +685,7 @@
     if(!grab() || state.inited) return;
     state.inited=true;
 
-    // если в select уже есть опции в разметке — перезапишем нашими (Vanilla/Custom/All)
-    if(verSelect) verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
+    verSelect && (verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join(''));
 
     buildSlots();
     bind();

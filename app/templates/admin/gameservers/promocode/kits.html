@@ -205,13 +205,11 @@ window.kitsInit = function() {
   const $$ = (q, d=root)=>Array.from(d.querySelectorAll(q));
   const SLOT_COUNT = 27;
 
-  // расширенный список: энчанты + популярные атрибуты (для удобства поиска)
   const ENCHANTS = [
     "sharpness","smite","bane_of_arthropods","looting","unbreaking","mending","efficiency","fortune",
     "protection","projectile_protection","blast_protection","fire_protection","feather_falling",
     "power","punch","flame","infinity","thorns","respiration","aqua_affinity","soul_speed","swift_sneak",
     "depth_strider","frost_walker","silk_touch","knockback","fire_aspect","sweeping_edge","luck_of_the_sea","lure",
-    // attrs (на чипах будут храниться как обычные записи {id,lvl})
     "attack_damage","attack_speed","max_health","movement_speed","armor","armor_toughness"
   ];
 
@@ -272,7 +270,6 @@ window.kitsInit = function() {
     $('#slot-no').textContent = it ? ("#"+(idx+1)) : "—";
     $('#slot-qty').value = it?.amount || 1;
     $('#slot-dname').value = it?.display_name || "";
-    // render enchants chips
     const wrap = $('#slot-enchants'); wrap.innerHTML = "";
     (it?.enchants||[]).forEach((e,i)=>{
       const chip = document.createElement('span');
@@ -286,9 +283,7 @@ window.kitsInit = function() {
         e.lvl = Math.max(1, Math.min(10, cur + (up?1:-1)));
         selectSlot(idx); markDirty(true);
       };
-      chip.addEventListener('auxclick', (ev)=>{ // средняя кнопка — удалить
-        if (ev.button===1){ it.enchants.splice(i,1); selectSlot(idx); markDirty(true); }
-      });
+      chip.addEventListener('auxclick', (ev)=>{ if (ev.button===1){ it.enchants.splice(i,1); selectSlot(idx); markDirty(true); }});
       wrap.appendChild(chip);
     });
     updateStats();
@@ -313,14 +308,12 @@ window.kitsInit = function() {
         el.setAttribute('draggable','true');
         el.addEventListener('dragstart', e=>{
           e.dataTransfer.setData('application/x-slot', JSON.stringify({from:i, move:true}));
-          // fallback: also put text/plain
           e.dataTransfer.setData('text/plain', JSON.stringify({from:i, move:true, type:'slot'}));
         });
       } else {
         el.innerHTML = `<span class="dim">#${i+1}</span>`;
       }
 
-      // drag&drop (item from catalog OR slot move)
       el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('drag-over'); });
       el.addEventListener('dragleave', ()=> el.classList.remove('drag-over'));
       el.addEventListener('drop', e=>{
@@ -329,7 +322,6 @@ window.kitsInit = function() {
         if (!raw) return;
         let data = {};
         try{ data = JSON.parse(raw); }catch(_){}
-        // move from another slot
         if (data && typeof data.from === 'number'){
           const from = data.from, to = i;
           if (from===to) return;
@@ -342,7 +334,6 @@ window.kitsInit = function() {
           markDirty(true);
           return;
         }
-        // from catalog
         if (data && data.id){
           state.kit.slots[i] = { namespace: data.ns||'minecraft', item_id: data.id, amount: 1, display_name: "", enchants: [], slot: i, icon: data.icon };
           renderSlots();
@@ -352,7 +343,7 @@ window.kitsInit = function() {
       });
 
       el.addEventListener('click', (ev)=>{
-        if (ev.altKey){ // быстрый очист
+        if (ev.altKey){
           if (state.kit.slots[i]) {
             state.kit.slots[i] = null;
             renderSlots();
@@ -379,6 +370,8 @@ window.kitsInit = function() {
     updateStats();
   };
 
+  const escapeHtml = (s)=>String(s||"").replace(/[&<>"]/g, t=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[t]));
+
   const renderKitsList = ()=>{
     const box = $('#kits-list');
     if (!state.list.length){
@@ -387,7 +380,7 @@ window.kitsInit = function() {
       return;
     }
     box.innerHTML = state.list.map(k=>{
-      const cnt = (k.items||[]).length;
+      const cnt = (k.items_count!=null ? k.items_count : (k.items||[]).length);
       return `<div class="kit-row ${k.id===state.selectedId?'sel':''}" data-id="${k.id}">
         <div>
           <div class="ttl">${k.name}</div>
@@ -405,8 +398,6 @@ window.kitsInit = function() {
     });
   };
 
-  const escapeHtml = (s)=>String(s||"").replace(/[&<>"]/g, t=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[t]));
-
   const openKit = (k)=>{
     state.selectedId = k?.id ?? null;
     state.kit = {
@@ -419,7 +410,7 @@ window.kitsInit = function() {
       const pos = (typeof it.slot==='number' && it.slot>=0 && it.slot<SLOT_COUNT) ? it.slot : state.kit.slots.findIndex(x=>x==null);
       if (pos>=0) state.kit.slots[pos] = {
         namespace: it.namespace||'minecraft',
-        item_id: it.item_id,
+        item_id: it.item_id || it.id,
         amount: it.amount||1,
         display_name: it.display_name||"",
         enchants: it.enchants||it.enchantments||[],
@@ -435,9 +426,7 @@ window.kitsInit = function() {
     $('#kit-hint').textContent = k?.id ? `открыт кит #${k.id}` : 'новый кит';
   };
 
-  const newKit = ()=>{
-    openKit({id:null,name:"",description:"",items:[]});
-  };
+  const newKit = ()=>{ openKit({id:null,name:"",description:"",items:[]}); };
 
   const duplicateKit = ()=>{
     if (!state.kit || state.kit.id==null) return;
@@ -464,7 +453,7 @@ window.kitsInit = function() {
       namespace: it.namespace||'minecraft',
       item_id: it.item_id,
       amount: parseInt(it.amount||1,10),
-      display_name: it.display_name||null,
+      display_name: (it.display_name||'') || null,
       enchants: it.enchants||[],
       slot: idx
     }) : null).filter(Boolean);
@@ -476,7 +465,8 @@ window.kitsInit = function() {
     if (!res.ok){ toast(res.error||"Не удалось сохранить", "error"); return; }
     toast("Сохранено","ok");
     await loadKits();
-    const savedId = res.id || res.data?.id;
+
+    const savedId = (res.data && (res.data.id || res.data.kit?.id)) || res.id || state.kit.id;
     const saved = state.list.find(x=> x.id===savedId) || state.list.find(x=> x.name===payload.name);
     if (saved) openKit(saved);
     markDirty(false);
@@ -486,7 +476,7 @@ window.kitsInit = function() {
     try{
       const res = await API.kitsList();
       if (!res.ok){ toast(res.error||"Ошибка загрузки", "error"); return; }
-      state.list = res.data || [];
+      state.list = Array.isArray(res.data) ? res.data : [];
       renderKitsList();
     }catch(e){ toast("Ошибка сети при загрузке китов","error"); }
   };
@@ -618,7 +608,6 @@ window.kitsInit = function() {
       const first = $('.dd-item', dd);
       if (first) addEnchant(first.dataset.id, 1);
     } else if (e.key==="Backspace" && !input.value){
-      // remove last chip
       if (state._sel==null) return;
       const it = state.kit.slots[state._sel]; if (!it) return;
       it.enchants?.pop();
