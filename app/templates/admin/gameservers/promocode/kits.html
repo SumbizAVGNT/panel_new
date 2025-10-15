@@ -1,5 +1,5 @@
 {% raw %}
-<section id="kits-root" class="vstack gap-3">
+<section id="kits-root" class="vstack gap-3" data-mcver="1.20.6">
   <style>
     /* ===== Kits (scoped) ===== */
     #kits-root .glass{background:rgba(13,17,23,.55);border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(8px);border-radius:16px}
@@ -204,8 +204,10 @@ window.kitsInit = function() {
   const $  = (q, d=root)=>d.querySelector(q);
   const $$ = (q, d=root)=>Array.from(d.querySelectorAll(q));
   const SLOT_COUNT = 27;
+  const MC_VER = root.dataset.mcver || "1.20.6";
 
-  const ENCHANTS = [
+  // если есть JSON с энчантами — берём оттуда, иначе дефолтный список
+  let ENCHANTS = [
     "sharpness","smite","bane_of_arthropods","looting","unbreaking","mending","efficiency","fortune",
     "protection","projectile_protection","blast_protection","fire_protection","feather_falling",
     "power","punch","flame","infinity","thorns","respiration","aqua_affinity","soul_speed","swift_sneak",
@@ -216,7 +218,7 @@ window.kitsInit = function() {
   const iconUrl = (ns, id, hint) => {
     if (hint) return hint;
     ns = ns || 'minecraft';
-    if (ns === 'minecraft') return `/static/mc/1.20.6/items/${id}.png`;
+    if (ns === 'minecraft') return `/static/mc/${MC_VER}/items/${id}.png`;
     return `/static/mc/itemsadder/${ns}.${id}.png`;
   };
 
@@ -237,6 +239,7 @@ window.kitsInit = function() {
     async kitsDelete(id){ return (await fetch("/promocode/api/kits/delete",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})).json(); },
     async itemsVanilla(){ return (await fetch("/promocode/api/items/vanilla")).json(); },
     async itemsCustom(){ return (await fetch("/promocode/api/items/custom")).json(); },
+    async enchants(){ try{ const r = await fetch("/static/data/enchantments-1.20.6.json"); if(r.ok) return r.json(); }catch{} return null; },
   };
 
   const state = {
@@ -250,7 +253,7 @@ window.kitsInit = function() {
 
   const markDirty = (v=true)=>{
     state.dirty = v;
-    $('#kit-save').disabled = !state.dirty || !state.kit || !state.kit.name?.trim();
+    $('#kit-save').disabled = !state.dirty || !state.kit || !$('#kit-name').value.trim();
   };
 
   const updateStats = ()=>{
@@ -259,7 +262,7 @@ window.kitsInit = function() {
     $('#slot-clear').disabled = (state._sel==null);
     $('#kit-dup').disabled = !state.kit || state.kit.id==null;
     $('#kit-del').disabled = !state.kit || state.kit.id==null;
-    $('#kit-save').disabled = !state.dirty || !state.kit || !state.kit.name?.trim();
+    $('#kit-save').disabled = !state.dirty || !state.kit || !$('#kit-name').value.trim();
   };
 
   const selectSlot = (idx)=>{
@@ -383,7 +386,7 @@ window.kitsInit = function() {
       const cnt = (k.items_count!=null ? k.items_count : (k.items||[]).length);
       return `<div class="kit-row ${k.id===state.selectedId?'sel':''}" data-id="${k.id}">
         <div>
-          <div class="ttl">${k.name}</div>
+          <div class="ttl">${escapeHtml(k.name)}</div>
           <div class="sub">${cnt} items${k.description? ' · '+escapeHtml(k.description):''}</div>
         </div>
       </div>`;
@@ -452,7 +455,7 @@ window.kitsInit = function() {
     const items = state.kit.slots.map((it,idx)=> it ? ({
       namespace: it.namespace||'minecraft',
       item_id: it.item_id,
-      amount: parseInt(it.amount||1,10),
+      amount: Math.max(1, Math.min(64, parseInt(it.amount||1,10))),
       display_name: (it.display_name||'') || null,
       enchants: it.enchants||[],
       slot: idx
@@ -625,6 +628,10 @@ window.kitsInit = function() {
 
   /* ---------- bootstrap ---------- */
   (async function boot(){
+    try{
+      const ench = await API.enchants();
+      if (ench && Array.isArray(ench)) ENCHANTS = ench;
+    }catch{}
     await Promise.all([loadKits(), loadCatalog()]);
     if (state.list.length) openKit(state.list[0]); else newKit();
   })();
