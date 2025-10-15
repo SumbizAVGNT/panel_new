@@ -1,29 +1,30 @@
 <script>
-/* Kits module + автокомплит + CRUD киты
-   + ПАГИНАЦИЯ списка предметов (без правок HTML — всё создаётся скриптом)
-   - Рендерит только текущую страницу (по умолчанию 48 шт.)
-   - Верхняя и нижняя панель, выбор размера страницы, счётчики
-   - Поиск/переключение версии сбрасывают на страницу 1
+/* Kits + CRUD + улучшенный каталог:
+   - статичный каталог (без сдвигов)
+   - расширенная пагинация (ввод номера, ±10, больше опций размера)
 */
 (function () {
   'use strict';
 
-  /* ---------- small styles (pager) ---------- */
-  (function injectPagerCSS(){
+  /* ===== CONFIG ===== */
+  const STICKY_PAGER = false;                 // отключаем липкость, чтобы каталог не прыгал
+  const DEFAULT_PAGE_SIZE = Number(localStorage.getItem('kits.pageSize') || 24);
+
+  /* ===== Pager CSS (фикс ширины/статичность) ===== */
+  (function injectCSS(){
     if (document.getElementById('kits-pager-style')) return;
     const css = `
-      #kits-root .pagerbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:.35rem 0}
-      #kits-root .pagerbar .pages{display:flex;align-items:center;gap:6px}
+      #kits-root .items-grid{width:100%;box-sizing:border-box}
+      #kits-root .pagerbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:.35rem 0;width:100%}
+      #kits-root .pagerbar .pages{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
       #kits-root .pagerbar .info{color:#94a3b8;font-size:.86rem}
-      #kits-root .pagerbar.sticky{position:sticky;top:0;background:rgba(13,17,23,.80);backdrop-filter:blur(6px);border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:.35rem .5rem;margin-bottom:.5rem;z-index:5}
+      #kits-root .pagerbar.sticky{${STICKY_PAGER ? 'position:sticky;top:0;' : 'position:static;'}background:rgba(13,17,23,.80);backdrop-filter:blur(6px);border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:.35rem .5rem;margin-bottom:.5rem;z-index:5}
+      #kits-root .pager-input{width:72px}
     `;
-    const st = document.createElement('style');
-    st.id = 'kits-pager-style';
-    st.textContent = css;
-    document.head.appendChild(st);
+    const st=document.createElement('style'); st.id='kits-pager-style'; st.textContent=css; document.head.appendChild(st);
   })();
 
-  /* ---------- API endpoints ---------- */
+  /* ===== API ===== */
   const API = {
     itemsVanilla: '/admin/promocode/api/items/vanilla',
     itemsCustom:  '/admin/promocode/api/items/custom',
@@ -33,22 +34,11 @@
   };
 
   const SLOT_COUNT = 27;
-
   const VERSIONS = [
-    { id:'vanilla',   label:'Vanilla 1.20.6',
-      itemsUrl: API.itemsVanilla,
-      imgUrl:(id)=>`/static/mc/1.20.6/items/${id}.png` },
-    { id:'custom',    label:'Custom (ItemsAdder)',
-      itemsUrl: API.itemsCustom,
-      imgUrl:(id)=>`/static/mc/itemsadder/${String(id).replace(':','.')}.png` },
-    { id:'all',       label:'Все',
-      itemsUrl: null,
-      imgUrl:(id,ns)=> ns && ns!=='minecraft'
-        ? `/static/mc/itemsadder/${ns}.${id}.png`
-        : `/static/mc/1.20.6/items/${id}.png`
-    }
+    { id:'vanilla', label:'Vanilla 1.20.6', itemsUrl: API.itemsVanilla, imgUrl:(id)=>`/static/mc/1.20.6/items/${id}.png` },
+    { id:'custom',  label:'Custom (ItemsAdder)', itemsUrl: API.itemsCustom, imgUrl:(id)=>`/static/mc/itemsadder/${String(id).replace(':','.')}.png` },
+    { id:'all',     label:'Все', itemsUrl:null, imgUrl:(id,ns)=> ns&&ns!=='minecraft'? `/static/mc/itemsadder/${ns}.${id}.png`:`/static/mc/1.20.6/items/${id}.png` }
   ];
-
   const ENCH_FILE = '/static/data/enchantments-1.20.6.json';
   const DEFAULT_ENCH = [
     {id:'minecraft:sharpness',max:5},{id:'minecraft:smite',max:5},
@@ -61,10 +51,10 @@
     {id:'minecraft:generic.movement_speed',def:0.1,range:[-1024,1024]}
   ];
 
-  /* ---------- state & refs ---------- */
+  /* ===== state ===== */
   const state = {
     inited:false,
-    items:[],                 // [{id:'ns:id', ns, name, icon}]
+    items:[],
     version: VERSIONS[0],
     slots: Array(SLOT_COUNT).fill(null),
     active:-1,
@@ -73,37 +63,27 @@
     kit:{ id:null, name:'', description:'' },
     dirty:false,
     kitsCache:[],
-    // pagination
     filtered:[],
     page: 1,
-    pageSize: Number(localStorage.getItem('kits.pageSize') || 48)
+    pageSize: DEFAULT_PAGE_SIZE
   };
 
   const $  = (s, r=document)=>r.querySelector(s);
   const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
 
+  /* ===== refs ===== */
   let root, grid, itemsWrap, itemsEmpty, verSelect, nameInput, descInput;
   let slotEditor, slotNo, slotQty, slotDName, dnameClear, slotExtra, slotClearBtn, statsPill, kitsToasts;
   let enchInput, enchWrap, enchClearBtn;
   let btnNew, btnDup, btnSave, btnDel, listWrap, btnRefresh, kitsCountLbl;
   let itemSearch, itemRefresh;
-
-  // created by script
   let pagerTop, pagerBottom;
 
-  async function GET(url){
-    const r=await fetch(url,{cache:'no-store'});
-    let j=null; try{ j=await r.json(); }catch(_){}
-    return (j && j.ok) ? j.data : j;
-  }
-  async function POST(url, body){
-    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
-    const j=await r.json().catch(()=>({ok:false,error:'bad json'}));
-    if(!j.ok) throw new Error(j.error||'Request failed');
-    return j.data;
-  }
+  /* ===== helpers ===== */
+  async function GET(url){ const r=await fetch(url,{cache:'no-store'}); let j=null; try{ j=await r.json(); }catch(_){ } return (j&&j.ok)? j.data : j; }
+  async function POST(url, body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); const j=await r.json().catch(()=>({ok:false,error:'bad json'})); if(!j.ok) throw new Error(j.error||'Request failed'); return j.data; }
+  const toast=(msg, ok=true)=>{ const zone=$('#kits-toasts'); if(!zone) return; const el=document.createElement('div'); el.className='toastx '+(ok?'ok':'err'); el.innerHTML=`<div class="small">${msg}</div>`; zone.appendChild(el); setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2000); };
 
-  /* ---------- DOM grab ---------- */
   function grab(){
     root = document.getElementById('kits-root');
     if(!root) return false;
@@ -140,35 +120,39 @@
     itemSearch  = $('#item-search', root);
     itemRefresh = $('#item-refresh', root);
 
-    // create pager bars (top sticky + bottom)
-    if (!pagerTop) {
-      pagerTop = makePager(true);
-      itemsWrap.parentElement.insertBefore(pagerTop.el, itemsWrap);
-    }
-    if (!pagerBottom) {
-      pagerBottom = makePager(false);
-      itemsWrap.parentElement.appendChild(pagerBottom.el);
-    }
+    // гарантируем, что карточка каталога не меняет ширину
+    const card = itemsWrap?.parentElement;
+    if (card) { card.style.width='100%'; card.style.boxSizing='border-box'; card.style.position='relative'; }
+
+    // пейджеры
+    if (!pagerTop)    { pagerTop    = makePager(STICKY_PAGER);    card.insertBefore(pagerTop.el, itemsWrap); }
+    if (!pagerBottom) { pagerBottom = makePager(false);            card.appendChild(pagerBottom.el); }
     return true;
   }
 
-  /* ---------- pager component ---------- */
+  /* ===== PAGER ===== */
   function makePager(sticky){
     const el = document.createElement('div');
     el.className = 'pagerbar' + (sticky ? ' sticky' : '');
     el.innerHTML = `
       <div class="pages">
         <button class="btn btn-sm btn-outline-secondary pg-first" type="button" title="В начало">«</button>
+        <button class="btn btn-sm btn-outline-secondary pg-prev10"  type="button" title="-10">⟨10</button>
         <button class="btn btn-sm btn-outline-secondary pg-prev"  type="button" title="Назад">‹</button>
         <span class="info"><span class="pg-page">1</span>/<span class="pg-pages">1</span></span>
         <button class="btn btn-sm btn-outline-secondary pg-next"  type="button" title="Вперёд">›</button>
+        <button class="btn btn-sm btn-outline-secondary pg-next10"  type="button" title="+10">10⟩</button>
         <button class="btn btn-sm btn-outline-secondary pg-last"  type="button" title="В конец">»</button>
+        <input class="form-control form-control-sm pager-input pg-goto" placeholder="стр." title="Перейти на страницу" />
+        <button class="btn btn-sm btn-outline-secondary pg-go" type="button">Go</button>
       </div>
       <div class="d-flex align-items-center gap-2">
         <span class="text-secondary small">на странице</span>
         <select class="form-select form-select-sm pg-size" style="width:auto">
           <option value="24">24</option>
+          <option value="36">36</option>
           <option value="48">48</option>
+          <option value="72">72</option>
           <option value="96">96</option>
           <option value="144">144</option>
         </select>
@@ -178,43 +162,46 @@
     const refs = {
       el,
       first: $('.pg-first', el),
+      prev10:$('.pg-prev10', el),
       prev:  $('.pg-prev',  el),
       next:  $('.pg-next',  el),
+      next10:$('.pg-next10', el),
       last:  $('.pg-last',  el),
       page:  $('.pg-page',  el),
       pages: $('.pg-pages', el),
       total: $('.pg-total', el),
       range: $('.pg-range', el),
       size:  $('.pg-size',  el),
-      syncSize(){
-        refs.size.value = String(state.pageSize);
-      }
+      goto:  $('.pg-goto',  el),
+      go:    $('.pg-go',    el),
+      syncSize(){ refs.size.value = String(state.pageSize); }
     };
-    // handlers
-    refs.first.addEventListener('click', ()=>{ state.page=1; renderItems(currentQuery()); });
-    refs.prev .addEventListener('click', ()=>{ state.page=Math.max(1,state.page-1); renderItems(currentQuery()); });
-    refs.next .addEventListener('click', ()=>{ const pages=maxPages(); state.page=Math.min(pages,state.page+1); renderItems(currentQuery()); });
-    refs.last .addEventListener('click', ()=>{ state.page=maxPages(); renderItems(currentQuery()); });
-    refs.size .addEventListener('change', ()=>{
-      state.pageSize = Number(refs.size.value) || 48;
+    const goTo = (p)=>{ const pages=maxPages(); state.page=Math.max(1, Math.min(pages, p)); renderItems(currentQuery()); };
+    refs.first .addEventListener('click', ()=>goTo(1));
+    refs.prev10.addEventListener('click', ()=>goTo(state.page-10));
+    refs.prev  .addEventListener('click', ()=>goTo(state.page-1));
+    refs.next  .addEventListener('click', ()=>goTo(state.page+1));
+    refs.next10.addEventListener('click', ()=>goTo(state.page+10));
+    refs.last  .addEventListener('click', ()=>goTo(maxPages()));
+    refs.size  .addEventListener('change', ()=>{
+      state.pageSize = Number(refs.size.value)||24;
       localStorage.setItem('kits.pageSize', String(state.pageSize));
-      state.page = 1;
-      // sync both bars
-      pagerTop && pagerTop.syncSize();
-      pagerBottom && pagerBottom.syncSize();
-      renderItems(currentQuery());
+      goTo(1);
+      pagerTop && pagerTop.syncSize(); pagerBottom && pagerBottom.syncSize();
     });
+    refs.go.addEventListener('click', ()=>{
+      const p = parseInt(refs.goto.value||'1',10)||1; goTo(p);
+    });
+    refs.goto.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); refs.go.click(); } });
 
     refs.syncSize();
     return refs;
   }
-
   function updatePagers(total){
     const pages = Math.max(1, Math.ceil(total / state.pageSize));
     state.page = Math.min(pages, Math.max(1, state.page));
     const start = total ? ((state.page-1)*state.pageSize + 1) : 0;
     const end   = Math.min(total, state.page*state.pageSize);
-
     for (const p of [pagerTop, pagerBottom]) {
       if (!p) continue;
       p.pages.textContent = String(pages);
@@ -223,39 +210,27 @@
       p.range.textContent = `${start}–${end}`;
       p.first.disabled = state.page<=1;
       p.prev .disabled = state.page<=1;
+      p.prev10.disabled= state.page<=10;
       p.next .disabled = state.page>=pages;
+      p.next10.disabled= state.page+10>pages;
       p.last .disabled = state.page>=pages;
       p.el.hidden = total <= state.pageSize;
     }
   }
+  const maxPages = ()=>Math.max(1, Math.ceil(state.filtered.length / state.pageSize));
+  const currentQuery = ()=> (itemSearch?.value || '').trim().toLowerCase();
 
-  function maxPages(){
-    return Math.max(1, Math.ceil(state.filtered.length / state.pageSize));
-  }
-  function currentQuery(){ return (itemSearch?.value || '').trim().toLowerCase(); }
-
-  /* ---------- toasts ---------- */
-  function toast(msg, ok=true){
-    if(!kitsToasts) return;
-    const el=document.createElement('div');
-    el.className='toastx '+(ok?'ok':'err');
-    el.innerHTML=`<div class="small">${msg}</div>`;
-    kitsToasts.appendChild(el);
-    setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(), 320); }, 2000);
-  }
-
-  function setButtons(){
-    btnSave && (btnSave.disabled = !state.dirty || !(nameInput.value||'').trim());
-    btnDel  && (btnDel.disabled  = !(state.kit.id));
-    btnDup  && (btnDup.disabled  = !(state.kit.id));
-  }
-  function markDirty(v=true){
-    state.dirty = !!v;
-    setButtons();
-  }
+  /* ===== Buttons / dirty ===== */
+  const setButtons=()=>{
+    $('#kit-save').disabled = !state.dirty || !(nameInput.value||'').trim();
+    $('#kit-del').disabled  = !(state.kit.id);
+    $('#kit-dup').disabled  = !(state.kit.id);
+    $('#slot-clear').disabled = state.active<0 || !state.slots[state.active];
+  };
+  const markDirty=(v=true)=>{ state.dirty=!!v; setButtons(); };
   window.addEventListener('beforeunload',(e)=>{ if(state.dirty){ e.preventDefault(); e.returnValue=''; } });
 
-  /* ========== ITEMS ========== */
+  /* ===== ITEMS ===== */
   async function fetchItems(url){
     const data = await GET(url);
     const arr = Array.isArray(data) ? data : [];
@@ -279,36 +254,25 @@
     }
     return out;
   }
-
   async function loadItemsFor(version){
     state.version = version;
     try{
       let items = [];
       if(version.id==='all'){
-        const [van, cust] = await Promise.all([
-          fetchItems(API.itemsVanilla),
-          fetchItems(API.itemsCustom)
-        ]);
-        const map = new Map();
-        for(const it of [...van, ...cust]) if(!map.has(it.key)) map.set(it.key, it);
+        const [van, cust] = await Promise.all([ fetchItems(API.itemsVanilla), fetchItems(API.itemsCustom) ]);
+        const map=new Map(); for(const it of [...van,...cust]) if(!map.has(it.key)) map.set(it.key,it);
         items = Array.from(map.values());
-      }else{
-        items = await fetchItems(version.itemsUrl);
-      }
-      state.items = items;
-      state.page = 1;
-      renderItems(currentQuery());
+      }else{ items = await fetchItems(version.itemsUrl); }
+      state.items = items; state.page = 1; renderItems(currentQuery());
     }catch(e){
       console.error('Items load error', e);
       state.items=[]; state.page=1; renderItems('');
       toast('Не удалось загрузить список предметов', false);
     }
   }
-
   function renderItems(filter){
     const q = String(filter||'').toLowerCase();
     const scope = state.version.id;
-    // filter by scope + query
     const list = state.items.filter(x=>{
       const okScope = scope==='vanilla' ? (x.ns==='minecraft' || !x.ns) : scope==='custom' ? (x.ns && x.ns!=='minecraft') : true;
       if (!okScope) return false;
@@ -353,418 +317,162 @@
     itemsWrap.appendChild(frag);
   }
 
-  /* ========== SLOTS ========== */
-  function updateStats(){
-    const c = state.slots.filter(Boolean).length;
-    statsPill && (statsPill.textContent=`${c} item${c===1?'':'s'}`);
-    btnDup && (btnDup.disabled = !(state.kit.id));
-    btnDel && (btnDel.disabled = !(state.kit.id));
-    btnSave && (btnSave.disabled = !state.dirty || !(nameInput.value||'').trim());
-    slotClearBtn && (slotClearBtn.disabled = state.active<0 || !state.slots[state.active]);
-  }
-
+  /* ===== SLOTS (коротко, без изменений логики) ===== */
+  function updateStats(){ const c=state.slots.filter(Boolean).length; statsPill&&(statsPill.textContent=`${c} item${c===1?'':'s'}`); setButtons(); }
   function buildSlots(){
     grid.innerHTML='';
     for(let i=0;i<SLOT_COUNT;i++){
-      const s=document.createElement('div');
-      s.className='slot'; s.dataset.idx=String(i);
+      const s=document.createElement('div'); s.className='slot'; s.dataset.idx=String(i);
       s.innerHTML=`<div class="name dim">#${i+1}</div><div class="qty" hidden>1</div>`;
-      s.addEventListener('click', (ev)=>{
-        if(ev.altKey){ clearSlot(i); return; }
-        selectSlot(i);
-      });
-      s.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); clearSlot(i); });
-
+      s.addEventListener('click',(ev)=>{ if(ev.altKey){ clearSlot(i); return; } selectSlot(i); });
+      s.addEventListener('contextmenu',(ev)=>{ ev.preventDefault(); clearSlot(i); });
       s.addEventListener('dragover', e=>{e.preventDefault(); s.classList.add('drag-over');});
       s.addEventListener('dragleave', ()=>s.classList.remove('drag-over'));
       s.addEventListener('drop', e=>{
         e.preventDefault(); s.classList.remove('drag-over');
-        let dataRaw = e.dataTransfer.getData('application/x-kits') || e.dataTransfer.getData('text/plain');
-        if(!dataRaw) return;
+        let dataRaw = e.dataTransfer.getData('application/x-kits') || e.dataTransfer.getData('text/plain'); if(!dataRaw) return;
         let data = {}; try{ data = JSON.parse(dataRaw); }catch(_){}
-
         if(data.type==='slot' && typeof data.from==='number'){
-          const from = data.from, to = i;
-          if(from===to) return;
-          const A = state.slots[from];
-          const B = state.slots[to];
-          state.slots[to]   = A ? {...A} : null;
-          state.slots[from] = B ? {...B} : null;
-          renderSlot(from); renderSlot(to);
-          selectSlot(to); updateStats(); markDirty(true);
-          return;
+          const from=data.from, to=i; if(from===to) return;
+          const A=state.slots[from], B=state.slots[to];
+          state.slots[to]=A?{...A}:null; state.slots[from]=B?{...B}:null;
+          renderSlot(from); renderSlot(to); selectSlot(to); updateStats(); markDirty(true); return;
         }
-        if(data.type==='catalog' && data.id){
-          putItemToSlot(i, data);
-        }
+        if(data.type==='catalog' && data.id){ putItemToSlot(i, data); }
       });
-
-      grid.appendChild(s);
-      renderSlot(i);
+      grid.appendChild(s); renderSlot(i);
     }
     updateStats();
   }
-
   function renderSlot(i){
     const s=grid.children[i]; if(!s) return;
-    const info=state.slots[i];
-    s.classList.remove('active');
-    if(!info){
-      s.innerHTML=`<div class="name dim">#${i+1}</div><div class="qty" hidden>1</div>`;
-      s.removeAttribute('draggable');
-      s.onmousedown = null;
-      s.ondragstart = null;
-      return;
-    }
+    const info=state.slots[i]; s.classList.remove('active');
+    if(!info){ s.innerHTML=`<div class="name dim">#${i+1}</div><div class="qty" hidden>1</div>`; s.removeAttribute('draggable'); return; }
     const img = info.icon || (state.version.id==='all'
       ? VERSIONS[2].imgUrl(info.id, info.ns)
-      : (info.ns==='minecraft'
-          ? VERSIONS[0].imgUrl(info.id)
-          : VERSIONS[1].imgUrl(`${info.ns}:${info.id}`)));
+      : (info.ns==='minecraft' ? VERSIONS[0].imgUrl(info.id) : VERSIONS[1].imgUrl(`${info.ns}:${info.id}`)));
     const qty=info.qty ?? 1;
-    s.innerHTML = `
-      <img class="icon" src="${img}" alt="" onerror="this.style.visibility='hidden'">
-      <div class="name">${info.display || `${info.ns}:${info.id}`}</div>
-      <div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
+    s.innerHTML = `<img class="icon" src="${img}" alt="" onerror="this.style.visibility='hidden'"><div class="name">${info.display || `${info.ns}:${info.id}`}</div><div class="qty"${qty>1?'':" hidden"}>${qty}</div>`;
     s.classList.toggle('active', state.active===i);
-
     s.setAttribute('draggable','true');
-    s.addEventListener('dragstart', (e)=>{
-      const payload = JSON.stringify({type:'slot', from:i});
-      e.dataTransfer.setData('application/x-kits', payload);
-      e.dataTransfer.setData('text/plain', payload);
-    }, {once:true});
+    s.addEventListener('dragstart',(e)=>{ const payload=JSON.stringify({type:'slot',from:i}); e.dataTransfer.setData('application/x-kits',payload); e.dataTransfer.setData('text/plain',payload); },{once:true});
   }
-
-  function putItemToSlot(i,item){
-    const ns = item.ns || 'minecraft';
-    const id = (item.id||'').includes(':') ? item.id.split(':',2)[1] : item.id;
-    state.slots[i] = { ns, id, qty:1, name:item.name||id, display:'', icon:item.icon, extra:{ench:[], attr:[]} };
-    renderSlot(i); selectSlot(i); updateStats(); markDirty(true);
-  }
-
+  function putItemToSlot(i,item){ const ns=item.ns||'minecraft'; const id=(item.id||'').includes(':')? item.id.split(':',2)[1] : item.id; state.slots[i]={ ns, id, qty:1, name:item.name||id, display:'', icon:item.icon, extra:{ench:[],attr:[]} }; renderSlot(i); selectSlot(i); updateStats(); markDirty(true); }
   function selectSlot(i){
-    state.active=i;
-    $$('.slot',grid).forEach(el=>el.classList.toggle('active', Number(el.dataset.idx)===i));
-    const data = state.slots[i];
-    slotEditor.hidden = !data;
-    slotNo.textContent = String(i+1);
-    slotQty.value   = data?.qty ?? 1;
-    slotDName.value = data?.display ?? '';
-    slotClearBtn.disabled = !data;
-
-    enchWrap.innerHTML='';
-    const extra = data?.extra || {ench:[],attr:[]};
-    (extra.ench||[]).forEach(addEnchChip);
-    (extra.attr||[]).forEach(addAttrChip);
-    serializeExtra();
+    state.active=i; $$('.slot',grid).forEach(el=>el.classList.toggle('active', Number(el.dataset.idx)===i));
+    const d=state.slots[i]; slotEditor.hidden=!d; slotNo.textContent=String(i+1); slotQty.value=d?.qty??1; slotDName.value=d?.display??''; $('#slot-clear').disabled=!d;
+    enchWrap.innerHTML=''; const extra=d?.extra||{ench:[],attr:[]}; (extra.ench||[]).forEach(addEnchChip); (extra.attr||[]).forEach(addAttrChip); serializeExtra();
   }
+  function clearSlot(i){ if(i<0 || !state.slots[i]) return; state.slots[i]=null; renderSlot(i); if(state.active===i){ selectSlot(i); } updateStats(); markDirty(true); }
+  function applySlotEditor(){ if(state.active<0) return; const s=state.slots[state.active]||(state.slots[state.active]={}); s.qty=Math.max(1,Math.min(64,Number(slotQty.value||1))); s.display=slotDName.value.trim()||''; s.extra=parseExtraFromChips(); serializeExtra(); renderSlot(state.active); updateStats(); markDirty(true); }
 
-  function clearSlot(i){
-    if(i<0) return;
-    if(!state.slots[i]) return;
-    state.slots[i]=null;
-    renderSlot(i);
-    if(state.active===i){ selectSlot(i); }
-    updateStats(); markDirty(true);
-  }
-
-  function clearActiveSlot(){
-    if(state.active<0) return;
-    clearSlot(state.active);
-  }
-
-  function applySlotEditor(){
-    if(state.active<0) return;
-    const s = state.slots[state.active] || (state.slots[state.active]={});
-    s.qty = Math.max(1, Math.min(64, Number(slotQty.value||1)));
-    s.display = slotDName.value.trim() || '';
-    s.extra = parseExtraFromChips();
-    serializeExtra();
-    renderSlot(state.active); updateStats(); markDirty(true);
-  }
-
-  /* ========== ENCHANTS/ATTR ========== */
+  /* ===== ench/attr (как раньше) ===== */
   async function loadEnchData(){
     try{
-      const r=await fetch(ENCH_FILE,{cache:'no-store'});
-      const j=await r.json();
-      const list  = (j.enchantments||[]).map(e=>({ id:e.id, t:'ench', alias:(e.alias||[]), max:Number(e.max||1), desc:e.desc||'' }));
-      const attrs = (j.attributes||[]).map(a=>({ id:a.id, t:'attr', alias:(a.alias||[]), range:a.range||[-2048,2048], def:a.default ?? 1 }));
-      state.ench.list  = list.length ? list : DEFAULT_ENCH.map(x=>({id:x.id,t:'ench',alias:[],max:x.max}));
-      state.ench.attrs = attrs.length ? attrs : DEFAULT_ATTR.map(x=>({id:x.id,t:'attr',alias:[],range:x.range,def:x.def}));
-    }catch(e){
-      console.error('Enchant file load error', e);
-      state.ench.list  = DEFAULT_ENCH.map(x=>({id:x.id,t:'ench',alias:[],max:x.max}));
-      state.ench.attrs = DEFAULT_ATTR.map(x=>({id:x.id,t:'attr',alias:[],range:x.range,def:x.def}));
-      toast('Файл чар не найден — использую встроенный список', false);
-    }
+      const r=await fetch(ENCH_FILE,{cache:'no-store'}); const j=await r.json();
+      const list=(j.enchantments||[]).map(e=>({id:e.id,t:'ench',alias:(e.alias||[]),max:Number(e.max||1)}));
+      const attrs=(j.attributes||[]).map(a=>({id:a.id,t:'attr',alias:(a.alias||[]),range:a.range||[-2048,2048],def:a.default??1}));
+      state.ench.list=list.length?list:DEFAULT_ENCH.map(x=>({id:x.id,t:'ench',alias:[],max:x.max}));
+      state.ench.attrs=attrs.length?attrs:DEFAULT_ATTR.map(x=>({id:x.id,t:'attr',alias:[],range:x.range,def:x.def}));
+    }catch{ state.ench.list=DEFAULT_ENCH.map(x=>({id:x.id,t:'ench',alias:[],max:x.max})); state.ench.attrs=DEFAULT_ATTR.map(x=>({id:x.id,t:'attr',alias:[],range:x.range,def:x.def})); }
   }
-  function addEnchChip(e){
-    const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='ench'; chip.dataset.id=e.id;
-    const max = (state.ench.list.find(x=>x.id===e.id)?.max) || 5;
-    const lvl = Math.max(1, Math.min(max, Number(e.lvl||1)));
-    chip.innerHTML = `<span>${e.id}</span> <span class="lvl" data-lvl="${lvl}" title="Клик: +1, Shift: −1 (max ${max})">${lvl}</span> <button class="x" title="Удалить" aria-label="Удалить">&times;</button>`;
-    enchWrap.appendChild(chip);
-  }
-  function addAttrChip(a){
-    const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='attr'; chip.dataset.id=a.id;
-    let val = (a.val==null) ? (state.ench.attrs.find(x=>x.id===a.id)?.def ?? 1) : Number(a.val);
-    if(isNaN(val)) val=1;
-    chip.innerHTML = `<span>${a.id}</span> <span class="lvl" data-val="${val}" title="Клик: +1, Shift: −1">${val}</span> <button class="x" title="Удалить" aria-label="Удалить">&times;</button>`;
-    enchWrap.appendChild(chip);
-  }
-  function parseExtraFromChips(){
-    const ench=[], attr=[];
-    $$('.chip',enchWrap).forEach(ch=>{
-      const id=ch.dataset.id, t=ch.dataset.type;
-      if(t==='ench'){ ench.push({id, lvl:Number(ch.querySelector('.lvl').dataset.lvl||1)}); }
-      else{ attr.push({id, val:Number(ch.querySelector('.lvl').dataset.val||1)}); }
-    });
-    return {ench, attr};
-  }
-  function serializeExtra(){
-    if(state.active<0) return;
-    const s = state.slots[state.active] || {};
-    s.extra = parseExtraFromChips();
-    slotExtra.value = JSON.stringify(s.extra);
-    state.slots[state.active] = s;
-  }
+  function addEnchChip(e){ const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='ench'; chip.dataset.id=e.id; const max=(state.ench.list.find(x=>x.id===e.id)?.max)||5; const lvl=Math.max(1,Math.min(max,Number(e.lvl||1))); chip.innerHTML=`<span>${e.id}</span> <span class="lvl" data-lvl="${lvl}" title="Клик: +1, Shift: −1 (max ${max})">${lvl}</span> <button class="x" aria-label="Удалить">&times;</button>`; enchWrap.appendChild(chip); }
+  function addAttrChip(a){ const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='attr'; chip.dataset.id=a.id; let val=(a.val==null)?(state.ench.attrs.find(x=>x.id===a.id)?.def??1):Number(a.val); if(isNaN(val)) val=1; chip.innerHTML=`<span>${a.id}</span> <span class="lvl" data-val="${val}" title="Клик: +1, Shift: −1">${val}</span> <button class="x" aria-label="Удалить">&times;</button>`; enchWrap.appendChild(chip); }
+  function parseExtraFromChips(){ const ench=[],attr=[]; $$('.chip',enchWrap).forEach(ch=>{ const id=ch.dataset.id, t=ch.dataset.type; if(t==='ench'){ ench.push({id, lvl:Number(ch.querySelector('.lvl').dataset.lvl||1)}); } else { attr.push({id, val:Number(ch.querySelector('.lvl').dataset.val||1)}); } }); return {ench,attr}; }
+  function serializeExtra(){ if(state.active<0) return; const s=state.slots[state.active]||{}; s.extra=parseExtraFromChips(); slotExtra.value=JSON.stringify(s.extra); state.slots[state.active]=s; }
+  enchWrap?.addEventListener('click',(e)=>{ const chip=e.target.closest('.chip'); if(!chip) return; if(e.target.classList.contains('x')){ chip.remove(); serializeExtra(); enchInput.focus(); markDirty(true); return; } if(e.target.classList.contains('lvl')){ if(chip.dataset.type==='ench'){ const id=chip.dataset.id; const max=(state.ench.list.find(x=>x.id===id)?.max)||5; let lvl=Number(e.target.dataset.lvl||1); lvl += (e.shiftKey?-1:1); lvl=Math.max(1,Math.min(max,lvl)); e.target.dataset.lvl=String(lvl); e.target.textContent=String(lvl); } else { let val=Number(e.target.dataset.val||1); val += (e.shiftKey?-1:1); e.target.dataset.val=String(val); e.target.textContent=String(val); } serializeExtra(); markDirty(true); } });
 
-  /* ========== KITS <-> DB ========== */
-  function kitSerializeItems(){
-    const items=[];
-    for(let i=0;i<SLOT_COUNT;i++){
-      const s = state.slots[i];
-      if(!s) continue;
-      items.push({
-        namespace: s.ns || 'minecraft',
-        item_id:   s.id,
-        amount:    Number(s.qty||1),
-        display_name: s.display || '',
-        enchants:  (s.extra?.ench)||[],
-        nbt:       (s.extra?.attr)||[],
-        slot: i
-      });
-    }
-    return items;
-  }
-
-  function highlightSelected(id){
-    $$('.kit-row', listWrap).forEach(el=>el.classList.toggle('sel', Number(el.dataset.id)===Number(id)));
-  }
-
+  /* ===== Kits CRUD (без изменений) ===== */
+  function kitSerializeItems(){ const items=[]; for(let i=0;i<SLOT_COUNT;i++){ const s=state.slots[i]; if(!s) continue; items.push({namespace:s.ns||'minecraft', item_id:s.id, amount:Number(s.qty||1), display_name:s.display||'', enchants:(s.extra?.ench)||[], nbt:(s.extra?.attr)||[], slot:i}); } return items; }
+  function highlightSelected(id){ $$('.kit-row', listWrap).forEach(el=>el.classList.toggle('sel', Number(el.dataset.id)===Number(id))); }
   function kitLoadToUI(kit){
-    state.slots = Array(SLOT_COUNT).fill(null);
-    buildSlots();
-
-    nameInput.value = kit.name||'';
-    descInput.value = kit.description||'';
-    state.kit.id = kit.id||null;
-    state.kit.name = nameInput.value;
-    state.kit.description = descInput.value;
-
+    state.slots = Array(SLOT_COUNT).fill(null); buildSlots();
+    nameInput.value = kit.name||''; descInput.value = kit.description||''; state.kit.id = kit.id||null;
     const items = Array.isArray(kit.items)? kit.items : [];
     for(const it of items){
-      const idx = (it.slot!=null) ? Number(it.slot) : -1;
-      if(idx<0 || idx>=SLOT_COUNT) continue;
-      const ns = it.namespace || it.ns || 'minecraft';
-      const iid = it.item_id || it.id;
-      if(!iid) continue;
-      const ench = it.enchants || it.enchants_json || [];
-      const nbt  = it.nbt || it.nbt_json || [];
-      state.slots[idx] = {
-        ns, id:iid, qty: Number(it.amount||1),
-        display: it.display_name || '',
-        icon: (ns==='minecraft'
-          ? `/static/mc/1.20.6/items/${iid}.png`
-          : `/static/mc/itemsadder/${ns}.${iid}.png`),
-        extra:{ ench:Array.isArray(ench)?ench:[], attr:Array.isArray(nbt)?nbt:[] }
-      };
+      const idx=(it.slot!=null)?Number(it.slot):-1; if(idx<0||idx>=SLOT_COUNT) continue;
+      const ns=it.namespace||it.ns||'minecraft'; const iid=it.item_id||it.id; if(!iid) continue;
+      const ench=it.enchants||it.enchants_json||[]; const nbt=it.nbt||it.nbt_json||[];
+      state.slots[idx]={ ns, id:iid, qty:Number(it.amount||1), display:it.display_name||'', icon:(ns==='minecraft'?`/static/mc/1.20.6/items/${iid}.png`:`/static/mc/itemsadder/${ns}.${iid}.png`), extra:{ench:Array.isArray(ench)?ench:[], attr:Array.isArray(nbt)?nbt:[]} };
       renderSlot(idx);
     }
-    updateStats();
-    markDirty(false);
-    highlightSelected(state.kit.id);
+    updateStats(); markDirty(false); highlightSelected(state.kit.id);
   }
-
   function renderKitsList(){
-    if(!listWrap) return;
     const list = Array.isArray(state.kitsCache)? state.kitsCache : [];
     kitsCountLbl && (kitsCountLbl.textContent = list.length ? `${list.length}` : '—');
     listWrap.innerHTML = list.map(k => `
       <div class="kit-row${state.kit.id===k.id?' sel':''}" data-id="${k.id}" title="${(k.description||'').replaceAll('"','&quot;')}">
         <div class="ttl">${k.name}</div>
         <div class="sub">${(k.items_count!=null?k.items_count:(k.items||[]).length)} items</div>
-      </div>
-    `).join('');
+      </div>`).join('');
     $$('.kit-row', listWrap).forEach(el=>{
       el.addEventListener('click', ()=>{
         const id = Number(el.dataset.id);
         if(state.dirty && !confirm('Есть несохранённые изменения. Переключить без сохранения?')) return;
-        const k = state.kitsCache.find(x=>Number(x.id)===id);
-        if(!k) return;
-        kitLoadToUI(k);
+        const k = state.kitsCache.find(x=>Number(x.id)===id); if(!k) return; kitLoadToUI(k);
       });
     });
   }
-
-  async function loadKitsList(){
-    try{
-      const data = await GET(API.kitsList);
-      state.kitsCache = Array.isArray(data)? data : [];
-      renderKitsList();
-      if(state.kit.id==null && state.kitsCache.length){
-        kitLoadToUI(state.kitsCache[0]);
-      }else{
-        highlightSelected(state.kit.id);
-      }
-    }catch(e){
-      console.error('kits list error', e);
-      toast('Не удалось загрузить киты', false);
-    }
-  }
-
+  async function loadKitsList(){ try{ const data = await GET(API.kitsList); state.kitsCache = Array.isArray(data)? data : []; renderKitsList(); if(state.kit.id==null && state.kitsCache.length){ kitLoadToUI(state.kitsCache[0]); } else { highlightSelected(state.kit.id); } }catch(e){ console.error('kits list error', e); toast('Не удалось загрузить киты', false); } }
   async function saveKit(){
-    const payload = {
-      id: state.kit.id,
-      name: (nameInput.value||'').trim(),
-      description: (descInput.value||'').trim(),
-      items: kitSerializeItems()
-    };
+    const payload = { id: state.kit.id, name:(nameInput.value||'').trim(), description:(descInput.value||'').trim(), items: kitSerializeItems() };
     if(!payload.name){ toast('Введите название кита', false); return; }
-    try{
-      const data = await POST(API.kitsSave, payload);
-      if(data && data.id!=null) state.kit.id = data.id;
-      toast('Кит сохранён');
-      markDirty(false);
-      await loadKitsList();
-      highlightSelected(state.kit.id);
-      const fresh = state.kitsCache.find(k=>Number(k.id)===Number(state.kit.id));
-      if(fresh) kitLoadToUI(fresh);
-    }catch(e){
-      console.error(e);
-      toast('Ошибка при сохранении кита', false);
-    }
+    try{ const data=await POST(API.kitsSave, payload); if(data && data.id!=null) state.kit.id=data.id; toast('Кит сохранён'); markDirty(false); await loadKitsList(); highlightSelected(state.kit.id); const fresh=state.kitsCache.find(k=>Number(k.id)===Number(state.kit.id)); if(fresh) kitLoadToUI(fresh); }catch(e){ console.error(e); toast('Ошибка при сохранении кита', false); }
+  }
+  async function deleteKit(){ if(!state.kit.id){ toast('Кит ещё не сохранён', false); return; } if(!confirm('Удалить этот кит?')) return; try{ await POST(API.kitsDelete, {id: state.kit.id}); toast('Кит удалён'); state.kit={id:null,name:'',description:''}; nameInput.value=''; descInput.value=''; state.slots=Array(SLOT_COUNT).fill(null); buildSlots(); updateStats(); markDirty(false); await loadKitsList(); highlightSelected(null); }catch(e){ console.error(e); toast('Не удалось удалить кит', false); } }
+  function newKit(){ if(state.dirty && !confirm('Есть несохранённые изменения. Очистить форму?')) return; state.kit={id:null,name:'',description:''}; nameInput.value=''; descInput.value=''; state.slots=Array(SLOT_COUNT).fill(null); buildSlots(); updateStats(); markDirty(false); highlightSelected(null); }
+  function duplicateKit(){ const base=(nameInput.value||'').trim()||'Kit'; nameInput.value=base+' (copy)'; state.kit.id=null; markDirty(true); highlightSelected(null); }
+
+  /* ===== ench input bindings ===== */
+  function bindEnch(){
+    const find=(q)=>{ const s=(q||'').toLowerCase(); const pool=[...state.ench.list, ...state.ench.attrs]; if(!pool.length) return []; if(!s) return pool.slice(0,12); return pool.filter(x => x.id.toLowerCase().includes(s) || (x.alias||[]).some(a=>a.toLowerCase().includes(s))).slice(0,12); };
+    let dd; const close=()=>{ dd?.remove(); dd=null; };
+    const open=(list)=>{
+      close(); if(!list.length) return;
+      dd=document.createElement('div'); dd.className='dd-list'; dd.style.position='absolute';
+      const r=enchInput.getBoundingClientRect(); dd.style.left=r.left+window.scrollX+'px'; dd.style.top=(r.bottom+6+window.scrollY)+'px'; dd.style.minWidth=r.width+'px';
+      dd.innerHTML=list.map((x,i)=>`<div class="dd-item ${i===0?'act':''}" data-i="${i}"><span>${x.id}</span><small>${x.t==='ench'?'max '+(x.max??1):'attr'}</small></div>`).join('');
+      document.body.appendChild(dd);
+      $$('.dd-item',dd).forEach(el=>el.addEventListener('click',()=>{ const it=list[Number(el.dataset.i)]; if(it.t==='ench') addEnchChip({id:it.id,lvl:1}); else addAttrChip({id:it.id,val:it.def??1}); enchInput.value=''; close(); serializeExtra(); enchInput.focus(); markDirty(true); }));
+      document.addEventListener('click',(e)=>{ if(e.target!==enchInput && !dd.contains(e.target)) close(); }, {once:true});
+    };
+    enchInput?.addEventListener('input', ()=>open(find(enchInput.value)));
+    enchInput?.addEventListener('keydown', (e)=>{ if(e.key==='Backspace' && !enchInput.value){ const chips=$$('.chip',enchWrap); const last=chips[chips.length-1]; if(last){ last.remove(); serializeExtra(); e.preventDefault(); markDirty(true); } } });
+    $('#ench-clear')?.addEventListener('click', ()=>{ enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; enchInput.focus(); markDirty(true); });
   }
 
-  async function deleteKit(){
-    if(!state.kit.id){ toast('Кит ещё не сохранён', false); return; }
-    if(!confirm('Удалить этот кит?')) return;
-    try{
-      await POST(API.kitsDelete, {id: state.kit.id});
-      toast('Кит удалён');
-      state.kit = {id:null,name:'',description:''};
-      nameInput.value=''; descInput.value='';
-      state.slots = Array(SLOT_COUNT).fill(null); buildSlots(); updateStats();
-      markDirty(false);
-      await loadKitsList();
-      highlightSelected(null);
-    }catch(e){
-      console.error(e);
-      toast('Не удалось удалить кит', false);
-    }
-  }
-
-  function newKit(){
-    if(state.dirty && !confirm('Есть несохранённые изменения. Очистить форму?')) return;
-    state.kit = {id:null,name:'',description:''};
-    nameInput.value=''; descInput.value='';
-    state.slots = Array(SLOT_COUNT).fill(null); buildSlots(); updateStats();
-    markDirty(false);
-    highlightSelected(null);
-  }
-  function duplicateKit(){
-    const base = (nameInput.value||'').trim() || 'Kit';
-    nameInput.value = base + ' (copy)';
-    state.kit.id = null;
-    markDirty(true);
-    highlightSelected(null);
-  }
-
-  /* ---------- bindings ---------- */
-  function bind(){
-    verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
-    verSelect.value = state.version.id;
-    verSelect.addEventListener('change', ()=>{
-      const v = VERSIONS.find(x=>x.id===verSelect.value) || VERSIONS[0];
-      state.page = 1;
-      loadItemsFor(v);
-    });
-
-    itemSearch?.addEventListener('input', ()=>{
-      state.page = 1;
-      renderItems(currentQuery());
-    });
+  /* ===== bind ui ===== */
+  function bindUI(){
+    verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join(''); verSelect.value = state.version.id;
+    verSelect.addEventListener('change', ()=>{ const v=VERSIONS.find(x=>x.id===verSelect.value)||VERSIONS[0]; state.page=1; loadItemsFor(v); });
+    itemSearch?.addEventListener('input', ()=>{ state.page=1; renderItems(currentQuery()); });
     itemRefresh?.addEventListener('click', ()=>{ state.page=1; loadItemsFor(state.version); });
 
-    slotClearBtn?.addEventListener('click', clearActiveSlot);
-    dnameClear?.addEventListener('click', ()=>{ slotDName.value=''; applySlotEditor(); });
-    $$('#slot-editor [data-qty]', root).forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        let v=Number(slotQty.value||1) + (btn.dataset.qty==='+1'?1:-1);
-        v=Math.max(1, Math.min(64, v));
-        slotQty.value=String(v); applySlotEditor();
-      });
-    });
-    slotQty?.addEventListener('input', applySlotEditor);
-    slotDName?.addEventListener('input', applySlotEditor);
-
-    enchWrap?.addEventListener('click', (e)=>{
-      const chip = e.target.closest('.chip');
-      if(!chip) return;
-      if(e.target.classList.contains('x')){
-        chip.remove(); serializeExtra(); enchInput.focus(); markDirty(true);
-        return;
-      }
-      if(e.target.classList.contains('lvl')){
-        if(chip.dataset.type==='ench'){
-          const id = chip.dataset.id;
-          const max = (state.ench.list.find(x=>x.id===id)?.max) || 5;
-          let lvl = Number(e.target.dataset.lvl||1);
-          lvl += (e.shiftKey?-1:1);
-          lvl = Math.max(1, Math.min(max, lvl));
-          e.target.dataset.lvl = String(lvl);
-          e.target.textContent = String(lvl);
-        }else{
-          let val = Number(e.target.dataset.val||1);
-          val += (e.shiftKey?-1:1);
-          e.target.dataset.val = String(val);
-          e.target.textContent = String(val);
-        }
-        serializeExtra(); markDirty(true);
-      }
-    });
-
-    enchInput?.addEventListener('keydown', (e)=>{
-      if(e.key==='Backspace' && !enchInput.value){
-        const chips = $$('.chip',enchWrap); const last = chips[chips.length-1];
-        if(last){ last.remove(); serializeExtra(); e.preventDefault(); markDirty(true); }
-      }
-    });
-    enchClearBtn?.addEventListener('click', ()=>{ enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; enchInput.focus(); markDirty(true); });
+    $('#slot-clear')?.addEventListener('click', ()=>clearSlot(state.active));
+    $('#dname-clear')?.addEventListener('click', ()=>{ $('#slot-dname').value=''; applySlotEditor(); });
+    $$('#slot-editor [data-qty]', root).forEach(btn=> btn.addEventListener('click', ()=>{ let v=Number($('#slot-qty').value||1)+(btn.dataset.qty==='+1'?1:-1); v=Math.max(1,Math.min(64,v)); $('#slot-qty').value=String(v); applySlotEditor(); }));
+    $('#slot-qty')?.addEventListener('input', applySlotEditor);
+    $('#slot-dname')?.addEventListener('input', applySlotEditor);
 
     nameInput?.addEventListener('input', ()=>markDirty(true));
     descInput?.addEventListener('input', ()=>markDirty(true));
-    btnSave?.addEventListener('click', saveKit);
-    btnDel?.addEventListener('click', deleteKit);
-    btnNew?.addEventListener('click', newKit);
-    btnDup?.addEventListener('click', duplicateKit);
-    btnRefresh?.addEventListener('click', loadKitsList);
+    $('#kit-save')?.addEventListener('click', saveKit);
+    $('#kit-del')?.addEventListener('click', deleteKit);
+    $('#kit-new')?.addEventListener('click', newKit);
+    $('#kit-dup')?.addEventListener('click', duplicateKit);
+    $('#kits-refresh')?.addEventListener('click', loadKitsList);
   }
 
-  /* ---------- init ---------- */
+  /* ===== init ===== */
   function init(){
     if(!grab() || state.inited) return;
     state.inited=true;
-
     buildSlots();
-    bind();
-    pagerTop && pagerTop.syncSize();
-    pagerBottom && pagerBottom.syncSize();
-
-    loadItemsFor(state.version);
+    bindUI();
+    bindEnch();
     loadEnchData();
+    loadItemsFor(state.version);
     loadKitsList();
     markDirty(false);
     setButtons();
