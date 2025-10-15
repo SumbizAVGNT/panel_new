@@ -1,8 +1,12 @@
-<!-- ===================== PROMOCODES – ULTRA UI ===================== -->
+<!-- ===================== PROMOCODES – AURORA/GLASS UI ===================== -->
 <!-- Toolbar + Table + Modal + Styles + Logic (one file) -->
 
-<!-- ===== Toolbar ===== -->
+<!-- ===== Toolbar + Table ===== -->
 <div class="pc-wrap">
+  <!-- Aurora background -->
+  <div class="aurora-overlay"></div>
+
+  <!-- Toolbar -->
   <div class="pc-toolbar glass-card">
     <div class="left">
       <div class="input-icon">
@@ -28,7 +32,7 @@
     <div class="right">
       <button id="pc-refresh" class="btn btn-sm btn-outline-light btn-ghost">
         <i class="bi bi-arrow-repeat me-1"></i>Обновить
-        </button>
+      </button>
       <button id="pc-create" class="btn btn-sm btn-primary btn-neon">
         <i class="bi bi-plus-lg me-1"></i>Создать
       </button>
@@ -36,7 +40,7 @@
     </div>
   </div>
 
-  <!-- ===== Table ===== -->
+  <!-- Table -->
   <div class="table-responsive glass-card">
     <table id="pc-table" class="table table-dark table-striped table-sm align-middle mb-0">
       <thead class="text-secondary small sticky-head">
@@ -62,83 +66,90 @@
 <!-- ===== Modal: редактирование/создание ===== -->
 <div class="modal fade" id="pcEditModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content bg-dark border-secondary glass-modal">
-      <div class="modal-header">
-        <h5 class="modal-title">
-          Промокод <span id="pc-f-title" class="text-secondary"></span>
-        </h5>
+    <div class="modal-content glass-modal">
+
+      <!-- Aurora header -->
+      <div class="modal-header mod-aurora">
+        <div class="mod-aurora__title">
+          <div class="mod-aurora__dot"></div>
+          <div>
+            <div class="mod-aurora__caption">Промокод</div>
+            <div class="mod-aurora__sub">Редактор <span id="pc-f-title" class="text-secondary"></span></div>
+          </div>
+        </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрыть"></button>
       </div>
 
       <div class="modal-body">
         <input type="hidden" id="pc-f-id">
-        <div class="row g-2">
+
+        <div class="row g-3">
           <div class="col-md-4">
-            <label class="form-label small">Код</label>
+            <label class="form-label small text-dim">Код</label>
             <div class="input-group input-group-sm">
               <input id="pc-f-code" class="form-control" placeholder="например, SUMMER2025">
               <button id="pc-f-gen" class="btn btn-outline-secondary" title="Сгенерировать"><i class="bi bi-magic"></i></button>
             </div>
           </div>
           <div class="col-md-2">
-            <label class="form-label small">Активен</label>
+            <label class="form-label small text-dim">Активен</label>
             <select id="pc-f-enabled" class="form-select form-select-sm">
               <option value="1">Да</option>
               <option value="0">Нет</option>
             </select>
           </div>
           <div class="col-md-3">
-            <label class="form-label small">Realm</label>
+            <label class="form-label small text-dim">Realm</label>
             <input id="pc-f-realm" class="form-control form-control-sm" placeholder="anarchy / пусто = любой">
           </div>
           <div class="col-md-3">
-            <label class="form-label small">Истекает (YYYY-MM-DD HH:MM:SS)</label>
-            <input id="pc-f-exp" class="form-control form-control-sm" placeholder="">
+            <label class="form-label small text-dim">Истекает (YYYY-MM-DD HH:MM:SS)</label>
+            <input id="pc-f-exp" class="form-control form-control-sm">
           </div>
 
           <div class="col-md-3">
-            <label class="form-label small">Сумма</label>
+            <label class="form-label small text-dim">Сумма</label>
             <input id="pc-f-amount" type="number" step="0.01" class="form-control form-control-sm" placeholder="0">
           </div>
           <div class="col-md-3">
-            <label class="form-label small">Валюта</label>
+            <label class="form-label small text-dim">Валюта</label>
             <input id="pc-f-currency" class="form-control form-control-sm" placeholder="rubs / coins / …" value="rubs">
           </div>
           <div class="col-md-2">
-            <label class="form-label small">Всего использований</label>
+            <label class="form-label small text-dim">Всего использований</label>
             <input id="pc-f-total" type="number" min="0" class="form-control form-control-sm" placeholder="0 = безлимит">
           </div>
           <div class="col-md-2">
-            <label class="form-label small">Per-player</label>
+            <label class="form-label small text-dim">Per-player</label>
             <input id="pc-f-per" type="number" min="0" class="form-control form-control-sm" placeholder="null">
           </div>
           <div class="col-md-2">
-            <label class="form-label small">Кулдаун (сек)</label>
+            <label class="form-label small text-dim">Кулдаун (сек)</label>
             <input id="pc-f-cd" type="number" min="0" class="form-control form-control-sm">
           </div>
           <div class="col-md-2">
-            <label class="form-label small">Kit</label>
+            <label class="form-label small text-dim">Kit</label>
             <select id="pc-f-kit" class="form-select form-select-sm">
               <option value="">— без кита —</option>
             </select>
           </div>
           <div class="col-md-2">
-            <label class="form-label small">Осталось использ.</label>
+            <label class="form-label small text-dim">Осталось использ.</label>
             <input id="pc-f-left" type="number" class="form-control form-control-sm" disabled>
           </div>
         </div>
 
-        <div class="d-flex align-items-center gap-2 mt-2">
+        <div class="d-flex align-items-center gap-2 mt-3">
           <button class="btn btn-sm btn-success btn-neon" id="pc-f-save">
             <i class="bi bi-check2 me-1"></i>Сохранить
           </button>
           <button class="btn btn-sm btn-outline-danger" id="pc-f-delete">
             <i class="bi bi-trash me-1"></i>Удалить
           </button>
-          <span id="pc-f-hint" class="text-secondary small">Если оставить «Код» пустым — сгенерируется автоматически.</span>
+          <span id="pc-f-hint" class="text-secondary small">Оставьте «Код» пустым — сгенерируется автоматически.</span>
         </div>
 
-        <hr class="border-secondary my-3">
+        <hr class="border-secondary my-4">
 
         <!-- LuckPerms группы -->
         <div class="d-flex align-items-center justify-content-between">
@@ -149,8 +160,8 @@
           </div>
         </div>
 
-        <div class="table-responsive mt-2">
-          <table class="table table-dark table-sm align-middle">
+        <div class="table-responsive mt-2 glass-subcard">
+          <table class="table table-dark table-sm align-middle nice-table">
             <thead class="text-secondary small">
             <tr>
               <th style="width:50px">#</th>
@@ -166,7 +177,7 @@
           </table>
         </div>
 
-        <hr class="border-secondary my-3">
+        <hr class="border-secondary my-4">
 
         <!-- Активации игроков -->
         <div class="d-flex align-items-center gap-2">
@@ -176,8 +187,8 @@
           <span id="pc-r-count" class="text-secondary small ms-auto"></span>
         </div>
 
-        <div class="table-responsive mt-2">
-          <table class="table table-dark table-sm align-middle">
+        <div class="table-responsive mt-2 glass-subcard">
+          <table class="table table-dark table-sm align-middle nice-table">
             <thead class="text-secondary small">
             <tr>
               <th>Время</th>
@@ -193,6 +204,7 @@
         </div>
 
       </div>
+
       <div class="modal-footer">
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Закрыть</button>
       </div>
@@ -203,70 +215,126 @@
 <!-- ===== Toast zone ===== -->
 <div id="pc-toasts" class="pc-toasts"></div>
 
-<!-- ===== Visual polish ===== -->
+<!-- ===== Visual: AURORA + GLASS ===== -->
 <style>
 :root{
-  --pc-bg: rgba(13,17,23,.58);
+  --pc-bg: rgba(13,17,23,.55);
   --pc-br: rgba(148,163,184,.18);
-  --pc-blur: 8px;
-  --pc-glow: 0 0 0 1px rgba(96,165,250,.25), 0 6px 30px rgba(2,132,199,.18);
+  --pc-blur: 10px;
+  --pc-glow: 0 0 0 1px rgba(96,165,250,.20), 0 12px 42px rgba(2,132,199,.22);
   --pc-green: #10b981;
   --pc-red: #ef4444;
   --pc-cyan: #22d3ee;
   --pc-blue: #60a5fa;
+  --pc-violet:#a78bfa;
   --pc-dim: #94a3b8;
   --pc-text: #e5e7eb;
 }
 
-.pc-wrap{display:grid;gap:14px}
+.pc-wrap{position:relative; display:grid; gap:14px}
+
+/* Aurora background */
+.aurora-overlay{
+  position:absolute; inset:-40px;
+  pointer-events:none; z-index:0;
+  background:
+    radial-gradient(500px 300px at 15% 0%, rgba(34,211,238,.12), transparent 50%),
+    radial-gradient(700px 420px at 85% 10%, rgba(96,165,250,.10), transparent 55%),
+    conic-gradient(from 180deg at 70% 10%, rgba(167,139,250,.12), rgba(34,211,238,.10), rgba(96,165,250,.10), transparent 60%);
+  filter: blur(28px) saturate(120%);
+  animation: auroraShift 16s ease-in-out infinite alternate;
+}
+@keyframes auroraShift{
+  0%{ transform:translateY(-6px) scale(1.02); opacity:.75 }
+  100%{ transform:translateY(6px) scale(1.03); opacity:.9 }
+}
+
+/* Glass cards */
 .glass-card{
+  position:relative; z-index:1;
   background:var(--pc-bg);
   border:1px solid var(--pc-br);
   backdrop-filter: blur(var(--pc-blur));
   border-radius:16px;
   padding:.75rem;
+  box-shadow: var(--pc-glow);
 }
+.glass-subcard{
+  background:rgba(2,6,23,.45);
+  border:1px solid rgba(148,163,184,.15);
+  border-radius:14px;
+  padding:.5rem;
+}
+
+/* Modal glass */
 .glass-modal{
   background:rgba(13,17,23,.92)!important;
   border:1px solid var(--pc-br);
+  border-radius:16px;
   box-shadow: var(--pc-glow);
+  overflow:hidden;
 }
-.pc-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.mod-aurora{
+  position:relative;
+  border-bottom:1px solid rgba(148,163,184,.2);
+}
+.mod-aurora::before{
+  content:""; position:absolute; inset:-30% -10% auto -10%; height:140%;
+  background:
+    radial-gradient(300px 160px at 10% 70%, rgba(34,211,238,.25), transparent 55%),
+    radial-gradient(340px 200px at 90% 30%, rgba(96,165,250,.25), transparent 60%),
+    conic-gradient(from 200deg at 50% 0%, rgba(167,139,250,.28), rgba(34,211,238,.18), transparent 70%);
+  filter: blur(26px);
+  opacity:.6; pointer-events:none;
+}
+.mod-aurora__title{display:flex; align-items:center; gap:.75rem}
+.mod-aurora__dot{
+  width:32px;height:32px;border-radius:10px;
+  background: linear-gradient(145deg, var(--pc-cyan), var(--pc-blue));
+  box-shadow: 0 6px 18px rgba(34,211,238,.35);
+}
+.mod-aurora__caption{font-weight:700; letter-spacing:.3px}
+.mod-aurora__sub{font-size:.9rem; color:var(--pc-dim)}
+
+.pc-toolbar{position:relative; display:flex;justify-content:space-between;align-items:center;gap:10px}
 .pc-toolbar .left, .pc-toolbar .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pc-toolbar .form-control, .pc-toolbar .form-select{
-  min-width:180px;background:rgba(2,6,23,.55);
+  min-width:180px;background:rgba(2,6,23,.55)!important;
   border-color:rgba(148,163,184,.25);color:var(--pc-text)
 }
 .input-icon{position:relative}
 .input-icon i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--pc-dim)}
 .input-icon input{padding-left:32px}
 
+/* Neon button */
 .btn-ghost{border-color:rgba(148,163,184,.28)!important}
 .btn-neon{
   position:relative; overflow:hidden; border:0!important; color:#0b1220!important;
-  background: linear-gradient(90deg, #22d3ee, #60a5fa);
-  box-shadow: 0 8px 20px rgba(34,211,238,.25);
+  background: linear-gradient(90deg, var(--pc-cyan), var(--pc-blue));
+  box-shadow: 0 8px 24px rgba(34,211,238,.28);
 }
 .btn-neon::after{
   content:""; position:absolute; inset:0;
-  background: radial-gradient(120px 120px at var(--x,50%) var(--y,50%), rgba(255,255,255,.25), transparent 60%);
-  mix-blend-mode: screen; opacity:0; transition:opacity .2s;
+  background: radial-gradient(130px 130px at var(--x,50%) var(--y,50%), rgba(255,255,255,.25), transparent 60%);
+  mix-blend-mode: screen; opacity:0; transition:opacity .18s;
 }
 .btn-neon:hover::after{opacity:1}
 
-#pc-table{--bs-table-bg:rgba(15,23,42,.65);--bs-table-striped-bg:rgba(148,163,184,.05)}
+/* Table */
+#pc-table{--bs-table-bg:rgba(15,23,42,.6);--bs-table-striped-bg:rgba(148,163,184,.06)}
 #pc-table th,#pc-table td{vertical-align:middle}
-#pc-table tbody tr{transition:.15s}
-#pc-table tbody tr:hover{transform:translateY(-1px); box-shadow:0 6px 24px rgba(0,0,0,.28)}
+#pc-table tbody tr{transition:.16s}
+#pc-table tbody tr:hover{transform:translateY(-1px); box-shadow:0 8px 28px rgba(0,0,0,.28)}
 .sticky-head{position:sticky;top:0;z-index:1;background:rgba(15,23,42,.85)!important}
 
+/* Badges */
 .badge-soft{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.22);color:var(--pc-text)}
-.badge-active{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.45);color:#a7f3d0}
+.badge-active{background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.45);color:#a7f3d0}
 .badge-off{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35);color:#e5e7eb}
 
+/* Misc */
 .text-dim{color:var(--pc-dim)!important}
 .text-expired{color:var(--pc-red)!important}
-
 .table thead th[data-sort]{user-select:none; position:relative}
 .table thead th[data-sort]::after{
   content:"";display:inline-block;margin-left:.35rem;border:4px solid transparent;
@@ -274,40 +342,41 @@
 }
 .table thead th[data-sort].desc::after{border-top-color:transparent;border-bottom-color:rgba(148,163,184,.75);transform:translateY(3px)}
 
+/* Code pill */
 .pc-code{
-  display:inline-flex; align-items:center; gap:.4rem;
-  padding:.25rem .5rem; border-radius:.65rem;
+  display:inline-flex; align-items:center; gap:.45rem;
+  padding:.25rem .55rem; border-radius:.7rem;
   background:linear-gradient(180deg, rgba(148,163,184,.12), rgba(148,163,184,.05));
   border:1px solid rgba(148,163,184,.25); cursor:copy; transition:.15s;
 }
 .pc-code:hover{border-color:rgba(148,163,184,.5)}
-.pc-code.copied{box-shadow:0 0 0 2px rgba(96,165,250,.25)}
+.pc-code.copied{box-shadow:0 0 0 2px rgba(96,165,250,.28)}
 
+/* Toasts */
 .pc-toasts{position:fixed;right:14px;bottom:14px;display:grid;gap:8px;z-index:1080}
 .pc-toast{
-  background:rgba(2,6,23,.92); color:#e5e7eb; border:1px solid rgba(148,163,184,.22);
-  border-radius:12px; padding:.5rem .65rem; box-shadow:0 10px 30px rgba(0,0,0,.35);
+  background:rgba(2,6,23,.96); color:#e5e7eb; border:1px solid rgba(148,163,184,.22);
+  border-radius:12px; padding:.5rem .65rem; box-shadow:0 14px 34px rgba(0,0,0,.35);
   animation: toast-in .18s ease-out;
 }
 @keyframes toast-in{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
 
+/* Skeletons */
 .skel{position:relative; overflow:hidden; background:rgba(148,163,184,.08)}
 .skel::after{
   content:""; position:absolute; inset:0; transform:translateX(-100%);
-  background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
-  animation: sk 1.1s infinite;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.09), transparent);
+  animation: sk 1.05s infinite;
 }
 @keyframes sk{to{transform:translateX(100%)}}
-
 .skel-row td{padding:.65rem .5rem}
 .skel-pill{height:20px;border-radius:10px}
-.skel-txt{height:12px;border-radius:6px}
 
-.modal-content.bg-dark{background:rgba(13,17,23,.92)!important}
-
-@media (max-width: 920px){
-  .pc-toolbar .form-select{min-width:140px}
+.modal-content .form-control, .modal-content .form-select{
+  background:rgba(2,6,23,.6)!important; border-color:rgba(148,163,184,.28)!important;
+  color:var(--pc-text)!important;
 }
+.nice-table thead th{background:rgba(2,6,23,.5)}
 </style>
 
 <!-- ===== Logic ===== -->
@@ -315,9 +384,9 @@
 (function(){
   'use strict';
 
-  // ------------- helpers
-  const $ = (s, r=document)=>r.querySelector(s);
-  const $$= (s, r=document)=>Array.from(r.querySelectorAll(s));
+  // ---------- helpers ----------
+  const $  = (s, r=document)=>r.querySelector(s);
+  const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
   const on = (el, ev, fn)=> el && el.addEventListener(ev, fn);
   const esc = (s)=> String(s??'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
   const hl  = (txt, q)=>{ if(!q) return esc(txt); const i=String(txt).toLowerCase().indexOf(q.toLowerCase()); if(i<0) return esc(txt);
@@ -327,12 +396,7 @@
   const setNeonPointer = (btn, e)=>{ const r=btn.getBoundingClientRect(); btn.style.setProperty('--x', (e.clientX - r.left)+'px'); btn.style.setProperty('--y', (e.clientY - r.top)+'px'); };
 
   const API_BASES = ['/admin/promocode/api','/admin/gameservers/promocode/api'];
-  const chooseBase = async ()=>{
-    for (const b of API_BASES){
-      try{ const r=await fetch(b+'/promo/list',{cache:'no-store'}); if(r.ok) return b; }catch(_){}
-    }
-    return API_BASES[0];
-  };
+  const chooseBase = async ()=>{ for (const b of API_BASES){ try{ const r=await fetch(b+'/promo/list',{cache:'no-store'}); if(r.ok) return b; }catch(_){}} return API_BASES[0]; };
   const json = async (url, opts={})=>{
     const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
     let j=null; try{ j=await r.json(); }catch(_){}
@@ -342,8 +406,9 @@
   const fmtMoney=(a,k)=> (a!=null && a!=='') ? `${(+a).toFixed(2)} ${k||''}`.trim() : '—';
   const fmtDate =(s)=> s ? String(s).replace('T',' ').slice(0,19) : '—';
 
-  // ------------- state + refs
+  // ---------- state + refs ----------
   let API='', rows=[], kits=[], sortBy='id', sortDir='desc';
+  let modalBS=null, backdrop=null, bodyDelegBound=false;
   const els = {
     list: $('#pc-list'), cnt: $('#pc-count'), search: $('#pc-search'),
     ref: $('#pc-refresh'), create: $('#pc-create'), table: $('#pc-table'),
@@ -361,8 +426,7 @@
     rQ: $('#pc-r-player'), rBtn: $('#pc-r-search'), rCnt: $('#pc-r-count'), rBody: $('#pc-reds-body'),
   };
 
-  // ------------- Modal wrapper (Bootstrap or fallback)
-  let modalBS=null, backdrop=null;
+  // ---------- Modal wrapper (Bootstrap or fallback) ----------
   const Modal = {
     init(){
       if (window.bootstrap) modalBS = bootstrap.Modal.getOrCreateInstance(els.m);
@@ -382,10 +446,7 @@
     }
   };
 
-  // ------------- neon pointer
-  $$('.btn-neon').forEach(b=> on(b,'pointermove', e=>setNeonPointer(b,e)));
-
-  // ------------- skeletons
+  // ---------- skeletons ----------
   function skeletonRows(n=6){
     els.list.innerHTML = Array.from({length:n}).map(()=>`
       <tr class="skel-row">
@@ -402,7 +463,7 @@
     `).join('');
   }
 
-  // ------------- kits + filters
+  // ---------- kits + filters ----------
   async function loadKits(){
     try{
       kits = await json(API+'/kits/list');
@@ -411,13 +472,12 @@
       $('#pc-filter-kit').innerHTML = `<option value="">Kit: любой</option>` + (kits||[]).map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
     }catch(_){ /* ignore */ }
   }
-
   function fillRealmFilter(){
     const uniq = Array.from(new Set(rows.map(r=>r.realm||''))).sort((a,b)=>String(a).localeCompare(String(b)));
     els.filterRealm.innerHTML = `<option value="">Realm: все</option>` + uniq.map(v=>`<option value="${esc(v)}">${v || 'all'}</option>`).join('');
   }
 
-  // ------------- table render
+  // ---------- table render ----------
   function filterRows(){
     const q = (els.search.value||'').trim().toLowerCase();
     const st = els.filterStatus.value;
@@ -431,10 +491,8 @@
       return true;
     });
   }
-
   function render(){
     let list = filterRows();
-
     list.sort((a,b)=>{
       const A=a[sortBy], B=b[sortBy];
       if(['id','amount','uses_left','uses_total'].includes(sortBy)) return (Number(A)||0)-(Number(B)||0);
@@ -462,12 +520,7 @@
 
       return `
       <tr data-id="${x.id}">
-        <td>
-          <span class="pc-code" title="Скопировать код">
-            <i class="bi bi-qr-code"></i>
-            <span class="code">${hl(x.code, q)}</span>
-          </span>
-        </td>
+        <td><span class="pc-code" title="Скопировать код"><i class="bi bi-qr-code"></i><span class="code">${hl(x.code, q)}</span></span></td>
         <td>${st}</td>
         <td>${fmtMoney(x.amount, x.currency_key)}</td>
         <td>${x.realm ? esc(x.realm) : '<span class="text-dim">all</span>'}</td>
@@ -488,13 +541,24 @@
     // actions
     $$('.pc-code', els.list).forEach(el=>el.addEventListener('click', (e)=>{
       const tr = e.target.closest('tr'); const r = rows.find(x=>x.id==tr.dataset.id);
-      if(!r) return; navigator.clipboard?.writeText(r.code).then(()=>{ el.classList.add('copied'); toast('Код скопирован'); setTimeout(()=>el.classList.remove('copied'), 700); });
+      if(!r) return;
+      navigator.clipboard?.writeText(r.code).then(()=>{ el.classList.add('copied'); toast('Код скопирован'); setTimeout(()=>el.classList.remove('copied'), 700); });
     }));
     $$('.act-copy', els.list).forEach(b=>b.addEventListener('click', (e)=>{
       const tr=e.target.closest('tr'); const r=rows.find(x=>x.id==tr.dataset.id); if(r){ navigator.clipboard?.writeText(r.code); toast('Код скопирован'); }
     }));
     $$('.act-edit', els.list).forEach(b=>b.addEventListener('click', openEdit));
     $$('.act-del', els.list).forEach(b=>b.addEventListener('click', delOne));
+
+    // делегат на один раз (клик по первой ячейке = копировать)
+    if(!bodyDelegBound){
+      bodyDelegBound = true;
+      els.list.addEventListener('click', (e)=>{
+        const td = e.target.closest('td'); const tr = e.target.closest('tr');
+        if(!td || !tr) return;
+        if(td.cellIndex===0){ const r=rows.find(x=>x.id==tr.dataset.id); if(r) { navigator.clipboard?.writeText(r.code); toast('Код скопирован'); } }
+      });
+    }
   }
 
   async function loadList(){
@@ -508,7 +572,7 @@
     }
   }
 
-  // ------------- modal: fill & open
+  // ---------- modal: fill & open ----------
   function fillModal(row){
     els.mId.value      = row?.id ?? '';
     els.mTitle.textContent = row ? `#${row.id}` : '(новый)';
@@ -526,7 +590,6 @@
     loadGroups(row?.id);
     loadReds(row?.id);
   }
-
   async function openEdit(e){
     const tr=e.target.closest('tr');
     const id=Number(tr.dataset.id);
@@ -535,7 +598,6 @@
     fillModal(row);
     Modal.show();
   }
-
   async function delOne(e){
     const tr=e.target.closest('tr');
     const id=Number(tr.dataset.id);
@@ -548,7 +610,7 @@
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // ------------- save (create/update)
+  // ---------- save (create/update) ----------
   function buildBodyFromModal(){
     const id = els.mId.value ? Number(els.mId.value) : null;
     return {
@@ -565,7 +627,6 @@
       kit_id: (els.mKit.value? Number(els.mKit.value) : null)
     };
   }
-
   async function saveCurrent(){
     const body = buildBodyFromModal();
     try{
@@ -592,7 +653,7 @@
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // ------------- кодоген
+  // ---------- кодоген ----------
   function genCode(){
     const alph='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let out=''; const len=10+Math.floor(Math.random()*3);
@@ -600,7 +661,7 @@
     els.mCode.value = out;
   }
 
-  // ------------- groups (LP)
+  // ---------- groups (LP) ----------
   function rowGroupTpl(i,g){
     return `<tr>
       <td class="text-secondary">${i+1}</td>
@@ -650,7 +711,7 @@
     }catch(err){ alert('Ошибка: '+(err.message||err)); }
   }
 
-  // ------------- redemptions
+  // ---------- redemptions ----------
   async function loadReds(codeId){
     els.rBody.innerHTML=''; els.rCnt.textContent='';
     if(!codeId) return;
@@ -673,7 +734,7 @@
     }
   }
 
-  // ------------- events
+  // ---------- bind ----------
   function bind(){
     // сорт
     $$('th[data-sort]', els.table).forEach(th=>{
@@ -686,7 +747,6 @@
       });
     });
 
-    // фильтры / поиск
     on(els.search,'input', render);
     on(els.filterStatus,'change', render);
     on(els.filterRealm,'change', render);
@@ -694,11 +754,7 @@
 
     on(els.ref,'click', loadList);
     on(els.create,'mousemove', (e)=>setNeonPointer(els.create, e));
-    on(els.create,'click', async ()=>{
-      await loadKits();
-      fillModal(null);
-      Modal.show();
-    });
+    on(els.create,'click', async ()=>{ await loadKits(); fillModal(null); Modal.show(); });
 
     on(els.mSave,'click', saveCurrent);
     on(els.mDel,'click', async ()=>{
@@ -720,7 +776,7 @@
     on(els.mGen,'click', (e)=>{ e.preventDefault(); genCode(); });
   }
 
-  // ------------- init
+  // ---------- init ----------
   (async function init(){
     Modal.init();
     API = await chooseBase();
