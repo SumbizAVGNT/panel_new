@@ -1,8 +1,29 @@
 <script>
-/* Kits module + автокомплит + CRUD киты (расширено: корректное сохранение/открытие по id, счётчик items_count, иконки, D&D между слотами) */
-(function(){
+/* Kits module + автокомплит + CRUD киты
+   + ПАГИНАЦИЯ списка предметов (без правок HTML — всё создаётся скриптом)
+   - Рендерит только текущую страницу (по умолчанию 48 шт.)
+   - Верхняя и нижняя панель, выбор размера страницы, счётчики
+   - Поиск/переключение версии сбрасывают на страницу 1
+*/
+(function () {
   'use strict';
 
+  /* ---------- small styles (pager) ---------- */
+  (function injectPagerCSS(){
+    if (document.getElementById('kits-pager-style')) return;
+    const css = `
+      #kits-root .pagerbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:.35rem 0}
+      #kits-root .pagerbar .pages{display:flex;align-items:center;gap:6px}
+      #kits-root .pagerbar .info{color:#94a3b8;font-size:.86rem}
+      #kits-root .pagerbar.sticky{position:sticky;top:0;background:rgba(13,17,23,.80);backdrop-filter:blur(6px);border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:.35rem .5rem;margin-bottom:.5rem;z-index:5}
+    `;
+    const st = document.createElement('style');
+    st.id = 'kits-pager-style';
+    st.textContent = css;
+    document.head.appendChild(st);
+  })();
+
+  /* ---------- API endpoints ---------- */
   const API = {
     itemsVanilla: '/admin/promocode/api/items/vanilla',
     itemsCustom:  '/admin/promocode/api/items/custom',
@@ -40,6 +61,7 @@
     {id:'minecraft:generic.movement_speed',def:0.1,range:[-1024,1024]}
   ];
 
+  /* ---------- state & refs ---------- */
   const state = {
     inited:false,
     items:[],                 // [{id:'ns:id', ns, name, icon}]
@@ -50,18 +72,24 @@
     dd:{ open:false, idx:-1, data:[] },
     kit:{ id:null, name:'', description:'' },
     dirty:false,
-    kitsCache:[]
+    kitsCache:[],
+    // pagination
+    filtered:[],
+    page: 1,
+    pageSize: Number(localStorage.getItem('kits.pageSize') || 48)
   };
 
-  const $=(s,r=document)=>r.querySelector(s);
-  const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const $  = (s, r=document)=>r.querySelector(s);
+  const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
 
   let root, grid, itemsWrap, itemsEmpty, verSelect, nameInput, descInput;
   let slotEditor, slotNo, slotQty, slotDName, dnameClear, slotExtra, slotClearBtn, statsPill, kitsToasts;
   let enchInput, enchWrap, enchClearBtn;
-  let ddPortal;
   let btnNew, btnDup, btnSave, btnDel, listWrap, btnRefresh, kitsCountLbl;
   let itemSearch, itemRefresh;
+
+  // created by script
+  let pagerTop, pagerBottom;
 
   async function GET(url){
     const r=await fetch(url,{cache:'no-store'});
@@ -75,6 +103,7 @@
     return j.data;
   }
 
+  /* ---------- DOM grab ---------- */
   function grab(){
     root = document.getElementById('kits-root');
     if(!root) return false;
@@ -111,18 +140,101 @@
     itemSearch  = $('#item-search', root);
     itemRefresh = $('#item-refresh', root);
 
-    if(!ddPortal){
-      ddPortal = document.createElement('div');
-      Object.assign(ddPortal.style,{
-        position:'absolute',zIndex:'4000',left:'0px',top:'0px',minWidth:'240px',
-        background:'#0b1220',border:'1px solid rgba(148,163,184,.25)',borderRadius:'10px',
-        boxShadow:'0 10px 24px rgba(0,0,0,.35)',maxHeight:'260px',overflow:'auto',padding:'4px 0',display:'none'
-      });
-      document.body.appendChild(ddPortal);
+    // create pager bars (top sticky + bottom)
+    if (!pagerTop) {
+      pagerTop = makePager(true);
+      itemsWrap.parentElement.insertBefore(pagerTop.el, itemsWrap);
+    }
+    if (!pagerBottom) {
+      pagerBottom = makePager(false);
+      itemsWrap.parentElement.appendChild(pagerBottom.el);
     }
     return true;
   }
 
+  /* ---------- pager component ---------- */
+  function makePager(sticky){
+    const el = document.createElement('div');
+    el.className = 'pagerbar' + (sticky ? ' sticky' : '');
+    el.innerHTML = `
+      <div class="pages">
+        <button class="btn btn-sm btn-outline-secondary pg-first" type="button" title="В начало">«</button>
+        <button class="btn btn-sm btn-outline-secondary pg-prev"  type="button" title="Назад">‹</button>
+        <span class="info"><span class="pg-page">1</span>/<span class="pg-pages">1</span></span>
+        <button class="btn btn-sm btn-outline-secondary pg-next"  type="button" title="Вперёд">›</button>
+        <button class="btn btn-sm btn-outline-secondary pg-last"  type="button" title="В конец">»</button>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="text-secondary small">на странице</span>
+        <select class="form-select form-select-sm pg-size" style="width:auto">
+          <option value="24">24</option>
+          <option value="48">48</option>
+          <option value="96">96</option>
+          <option value="144">144</option>
+        </select>
+        <span class="info"><span class="pg-range">0–0</span> из <span class="pg-total">0</span></span>
+      </div>
+    `;
+    const refs = {
+      el,
+      first: $('.pg-first', el),
+      prev:  $('.pg-prev',  el),
+      next:  $('.pg-next',  el),
+      last:  $('.pg-last',  el),
+      page:  $('.pg-page',  el),
+      pages: $('.pg-pages', el),
+      total: $('.pg-total', el),
+      range: $('.pg-range', el),
+      size:  $('.pg-size',  el),
+      syncSize(){
+        refs.size.value = String(state.pageSize);
+      }
+    };
+    // handlers
+    refs.first.addEventListener('click', ()=>{ state.page=1; renderItems(currentQuery()); });
+    refs.prev .addEventListener('click', ()=>{ state.page=Math.max(1,state.page-1); renderItems(currentQuery()); });
+    refs.next .addEventListener('click', ()=>{ const pages=maxPages(); state.page=Math.min(pages,state.page+1); renderItems(currentQuery()); });
+    refs.last .addEventListener('click', ()=>{ state.page=maxPages(); renderItems(currentQuery()); });
+    refs.size .addEventListener('change', ()=>{
+      state.pageSize = Number(refs.size.value) || 48;
+      localStorage.setItem('kits.pageSize', String(state.pageSize));
+      state.page = 1;
+      // sync both bars
+      pagerTop && pagerTop.syncSize();
+      pagerBottom && pagerBottom.syncSize();
+      renderItems(currentQuery());
+    });
+
+    refs.syncSize();
+    return refs;
+  }
+
+  function updatePagers(total){
+    const pages = Math.max(1, Math.ceil(total / state.pageSize));
+    state.page = Math.min(pages, Math.max(1, state.page));
+    const start = total ? ((state.page-1)*state.pageSize + 1) : 0;
+    const end   = Math.min(total, state.page*state.pageSize);
+
+    for (const p of [pagerTop, pagerBottom]) {
+      if (!p) continue;
+      p.pages.textContent = String(pages);
+      p.page.textContent  = String(state.page);
+      p.total.textContent = String(total);
+      p.range.textContent = `${start}–${end}`;
+      p.first.disabled = state.page<=1;
+      p.prev .disabled = state.page<=1;
+      p.next .disabled = state.page>=pages;
+      p.last .disabled = state.page>=pages;
+      p.el.hidden = total <= state.pageSize;
+    }
+  }
+
+  function maxPages(){
+    return Math.max(1, Math.ceil(state.filtered.length / state.pageSize));
+  }
+  function currentQuery(){ return (itemSearch?.value || '').trim().toLowerCase(); }
+
+  /* ---------- toasts ---------- */
   function toast(msg, ok=true){
     if(!kitsToasts) return;
     const el=document.createElement('div');
@@ -143,7 +255,7 @@
   }
   window.addEventListener('beforeunload',(e)=>{ if(state.dirty){ e.preventDefault(); e.returnValue=''; } });
 
-  /* ===== ITEMS ===== */
+  /* ========== ITEMS ========== */
   async function fetchItems(url){
     const data = await GET(url);
     const arr = Array.isArray(data) ? data : [];
@@ -184,22 +296,38 @@
         items = await fetchItems(version.itemsUrl);
       }
       state.items = items;
-      renderItems();
+      state.page = 1;
+      renderItems(currentQuery());
     }catch(e){
       console.error('Items load error', e);
-      state.items=[]; renderItems();
+      state.items=[]; state.page=1; renderItems('');
       toast('Не удалось загрузить список предметов', false);
     }
   }
 
-  function renderItems(filter=''){
-    const q=String(filter).trim().toLowerCase();
-    const list = !q ? state.items : state.items.filter(x =>
-      x.key.toLowerCase().includes(q) || (x.name||'').toLowerCase().includes(q));
+  function renderItems(filter){
+    const q = String(filter||'').toLowerCase();
+    const scope = state.version.id;
+    // filter by scope + query
+    const list = state.items.filter(x=>{
+      const okScope = scope==='vanilla' ? (x.ns==='minecraft' || !x.ns) : scope==='custom' ? (x.ns && x.ns!=='minecraft') : true;
+      if (!okScope) return false;
+      if (!q) return true;
+      return x.key.toLowerCase().includes(q) || (x.name||'').toLowerCase().includes(q);
+    });
 
-    itemsWrap.innerHTML=''; itemsEmpty.hidden = list.length>0;
+    state.filtered = list;
+    updatePagers(list.length);
 
-    for(const it of list){
+    const start = (state.page - 1) * state.pageSize;
+    const end   = start + state.pageSize;
+    const pageItems = list.slice(start, end);
+
+    itemsWrap.innerHTML='';
+    itemsEmpty.hidden = pageItems.length>0;
+
+    const frag = document.createDocumentFragment();
+    for(const it of pageItems){
       const el = document.createElement('div');
       el.className = 'item';
       el.setAttribute('draggable','true');
@@ -208,7 +336,7 @@
       el.dataset.icon = it.icon;
       el.title = `${it.name}\n${it.key}`;
       el.innerHTML = `
-        <img class="icon" src="${it.icon}" alt="" onerror="this.style.visibility='hidden'">
+        <img class="icon" src="${it.icon}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
         <div class="n">${it.ns}:${it.id}</div>
       `;
       el.addEventListener('dragstart', (e)=>{
@@ -220,11 +348,12 @@
         const idx = state.active>=0 ? state.active : (state.slots.findIndex(x=>!x) >= 0 ? state.slots.findIndex(x=>!x) : 0);
         putItemToSlot(idx, {ns:el.dataset.ns, id:el.dataset.id, name:it.name, icon:it.icon});
       });
-      itemsWrap.appendChild(el);
+      frag.appendChild(el);
     }
+    itemsWrap.appendChild(frag);
   }
 
-  /* ===== SLOTS ===== */
+  /* ========== SLOTS ========== */
   function updateStats(){
     const c = state.slots.filter(Boolean).length;
     statsPill && (statsPill.textContent=`${c} item${c===1?'':'s'}`);
@@ -253,12 +382,13 @@
         let dataRaw = e.dataTransfer.getData('application/x-kits') || e.dataTransfer.getData('text/plain');
         if(!dataRaw) return;
         let data = {}; try{ data = JSON.parse(dataRaw); }catch(_){}
+
         if(data.type==='slot' && typeof data.from==='number'){
           const from = data.from, to = i;
           if(from===to) return;
           const A = state.slots[from];
           const B = state.slots[to];
-          state.slots[to] = A ? {...A} : null;
+          state.slots[to]   = A ? {...A} : null;
           state.slots[from] = B ? {...B} : null;
           renderSlot(from); renderSlot(to);
           selectSlot(to); updateStats(); markDirty(true);
@@ -354,7 +484,7 @@
     renderSlot(state.active); updateStats(); markDirty(true);
   }
 
-  /* ===== ENCHANTS/ATTR ===== */
+  /* ========== ENCHANTS/ATTR ========== */
   async function loadEnchData(){
     try{
       const r=await fetch(ENCH_FILE,{cache:'no-store'});
@@ -369,13 +499,6 @@
       state.ench.attrs = DEFAULT_ATTR.map(x=>({id:x.id,t:'attr',alias:[],range:x.range,def:x.def}));
       toast('Файл чар не найден — использую встроенный список', false);
     }
-  }
-  function findSuggestions(q){
-    const s=(q||'').toLowerCase();
-    const pool=[...state.ench.list, ...state.ench.attrs];
-    if(!pool.length) return [];
-    if(!s) return pool.slice(0,12);
-    return pool.filter(x => x.id.toLowerCase().includes(s) || (x.alias||[]).some(a=>a.toLowerCase().includes(s))).slice(0,12);
   }
   function addEnchChip(e){
     const chip=document.createElement('span'); chip.className='chip'; chip.dataset.type='ench'; chip.dataset.id=e.id;
@@ -408,34 +531,7 @@
     state.slots[state.active] = s;
   }
 
-  /* ===== DROPDOWN (portal) ===== */
-  function placeDD(){
-    if(!state.dd.open) return;
-    const r = enchInput.getBoundingClientRect();
-    const margin = 6;
-    ddPortal.style.top  = Math.round(r.bottom + margin + window.scrollY)+'px';
-    ddPortal.style.left = Math.round(r.left + window.scrollX)+'px';
-    ddPortal.style.width= Math.round(r.width)+'px';
-  }
-  function openDD(list){
-    if(!list || list.length===0){ closeDD(); return; }
-    ddPortal.innerHTML = list.map((x,i)=>(`
-      <div class="kits-dd-item${i===state.dd.idx?' act':''}" data-i="${i}"
-           style="padding:.45rem .6rem;display:flex;justify-content:space-between;gap:.6rem;cursor:pointer;">
-        <span style="color:#e5e7eb">${x.id}</span>
-        <small style="color:#94a3b8">${x.t==='ench' ? ('max '+(x.max??1)) : 'attr'}</small>
-      </div>`)).join('');
-    ddPortal.style.display = 'block';
-    state.dd.open = true;
-    placeDD();
-  }
-  function closeDD(){
-    if(!state.dd.open) return;
-    ddPortal.style.display='none'; ddPortal.innerHTML='';
-    state.dd.open=false; state.dd.idx=-1; state.dd.data=[];
-  }
-
-  /* ===== KITS <-> DB ===== */
+  /* ========== KITS <-> DB ========== */
   function kitSerializeItems(){
     const items=[];
     for(let i=0;i<SLOT_COUNT;i++){
@@ -586,16 +682,21 @@
     highlightSelected(null);
   }
 
-  /* ===== BINDINGS ===== */
+  /* ---------- bindings ---------- */
   function bind(){
     verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join('');
     verSelect.value = state.version.id;
     verSelect.addEventListener('change', ()=>{
       const v = VERSIONS.find(x=>x.id===verSelect.value) || VERSIONS[0];
+      state.page = 1;
       loadItemsFor(v);
     });
-    itemSearch?.addEventListener('input', (e)=>renderItems(e.target.value));
-    itemRefresh?.addEventListener('click', ()=>loadItemsFor(state.version));
+
+    itemSearch?.addEventListener('input', ()=>{
+      state.page = 1;
+      renderItems(currentQuery());
+    });
+    itemRefresh?.addEventListener('click', ()=>{ state.page=1; loadItemsFor(state.version); });
 
     slotClearBtn?.addEventListener('click', clearActiveSlot);
     dnameClear?.addEventListener('click', ()=>{ slotDName.value=''; applySlotEditor(); });
@@ -643,34 +744,6 @@
     });
     enchClearBtn?.addEventListener('click', ()=>{ enchWrap.innerHTML=''; serializeExtra(); enchInput.value=''; enchInput.focus(); markDirty(true); });
 
-    const showDD = ()=>{ const list = findSuggestions(enchInput.value); state.dd.idx=0; state.dd.data=list; openDD(list); };
-    enchInput?.addEventListener('focus', showDD);
-    enchInput?.addEventListener('input', showDD);
-    enchInput?.addEventListener('keydown', (e)=>{
-      if(!state.dd.open) return;
-      if(e.key==='ArrowDown'){ e.preventDefault(); state.dd.idx=Math.min(state.dd.data.length-1, state.dd.idx+1); openDD(state.dd.data); }
-      if(e.key==='ArrowUp'){   e.preventDefault(); state.dd.idx=Math.max(0, state.dd.idx-1); openDD(state.dd.data); }
-      if(e.key==='Escape'){ closeDD(); }
-      if(e.key==='Enter'){
-        e.preventDefault();
-        const it=state.dd.data[state.dd.idx]; if(!it) return;
-        if(it.t==='ench') addEnchChip({id:it.id, lvl:1}); else addAttrChip({id:it.id, val:it.def ?? 1});
-        enchInput.value=''; closeDD(); serializeExtra(); enchInput.focus(); markDirty(true);
-      }
-    });
-
-    ddPortal.addEventListener('mousedown', (e)=>e.preventDefault());
-    ddPortal.addEventListener('click', (e)=>{
-      const row = e.target.closest('.kits-dd-item'); if(!row) return;
-      const i = Number(row.dataset.i||-1); const it = state.dd.data[i]; if(!it) return;
-      if(it.t==='ench') addEnchChip({id:it.id, lvl:1}); else addAttrChip({id:it.id, val:it.def ?? 1});
-      enchInput.value=''; closeDD(); serializeExtra(); enchInput.focus(); markDirty(true);
-    });
-
-    document.addEventListener('click', (e)=>{ if(e.target!==enchInput && !ddPortal.contains(e.target)) closeDD(); });
-    window.addEventListener('resize', placeDD);
-    window.addEventListener('scroll', placeDD, true);
-
     nameInput?.addEventListener('input', ()=>markDirty(true));
     descInput?.addEventListener('input', ()=>markDirty(true));
     btnSave?.addEventListener('click', saveKit);
@@ -680,15 +753,16 @@
     btnRefresh?.addEventListener('click', loadKitsList);
   }
 
-  /* ===== INIT ===== */
+  /* ---------- init ---------- */
   function init(){
     if(!grab() || state.inited) return;
     state.inited=true;
 
-    verSelect && (verSelect.innerHTML = VERSIONS.map(v=>`<option value="${v.id}">${v.label}</option>`).join(''));
-
     buildSlots();
     bind();
+    pagerTop && pagerTop.syncSize();
+    pagerBottom && pagerBottom.syncSize();
+
     loadItemsFor(state.version);
     loadEnchData();
     loadKitsList();
