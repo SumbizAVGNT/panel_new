@@ -57,12 +57,10 @@
     #kits-root .chip .x{border:0;background:transparent;color:#e5e7eb;line-height:1;padding:0 .1rem;cursor:pointer}
     #kits-root #ench-input{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.55);color:#e5e7eb;border-radius:10px;padding:.48rem .6rem;width:100%}
 
-    /* Pager */
+    /* Pager (single, top) */
     #kits-root .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;width:100%;box-sizing:border-box}
     #kits-root .pager .pages{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
     #kits-root .pager .info{color:#94a3b8;font-size:.86rem}
-    /* Не “липкий”, чтобы сетка не прыгала */
-    #kits-root .pager.sticky{position:static;top:auto;background:transparent;border:0;padding:0;margin-bottom:8px}
   </style>
 
   <!-- Header -->
@@ -162,11 +160,7 @@
           </div>
         </div>
 
-
-
-
-
-        <!-- BOTTOM pager -->
+        <!-- SINGLE (TOP) PAGER -->
         <div id="items-pager" class="pager" hidden>
           <div class="pages">
             <button class="btn btn-sm btn-outline-secondary pg-first">«</button>
@@ -189,6 +183,9 @@
             <span class="info"><span class="pg-range">0–0</span> из <span class="pg-total">0</span></span>
           </div>
         </div>
+
+        <div id="items-wrap" class="items-grid"></div>
+        <div id="items-empty" class="text-secondary small mt-2" hidden>Ничего не найдено.</div>
       </div>
     </div>
 
@@ -281,7 +278,7 @@ window.kitsInit = function() {
     _sel: null,
     // pagination
     page: 1,
-    pageSize: 24,   // <= по умолчанию больше страниц
+    pageSize: 24,
     filtered: []
   };
 
@@ -534,8 +531,8 @@ window.kitsInit = function() {
     }catch(e){ toast("Ошибка сети при загрузке каталога","error"); }
   };
 
-  // helpers for pager
-  const pagers = ()=>[$('#items-pager'), $('#items-pager-top')].filter(Boolean);
+  /* ===== Pagination (single top pager) ===== */
+  const pagers = ()=>[$('#items-pager')];
 
   const renderPager = (total)=>{
     const pages = Math.max(1, Math.ceil(total / state.pageSize));
@@ -559,25 +556,6 @@ window.kitsInit = function() {
     });
   };
 
-  const renderCatalog = ()=>{
-    const wrap = $('#items-wrap');
-    const q = ($('#item-search').value||"").trim().toLowerCase();
-    const scope = $('#ver-select').value;
-    const list = state.items.filter(x=>{
-      const okScope = scope==="vanilla" ? (x.ns==='minecraft' || !x.ns) : scope==="custom" ? (x.ns && x.ns!=='minecraft') : true;
-      if (!okScope) return false;
-      if (!q) return true;
-      return x.id.toLowerCase().includes(q) || (x.name||"").toLowerCase().includes(q) || (`${x.ns}:${x.id}`).toLowerCase().includes(q);
-    });
-
-    state.filtered = list;
-    renderPager(list.length);
-
-    const start = (state.page - 1) * state.pageSize;
-    theEnd = start + state.pageSize; // avoid accidental globals – next line fixes
-  };
-
-  // fix typo and render items
   function renderCatalog(){
     const wrap = $('#items-wrap');
     const q = ($('#item-search').value||"").trim().toLowerCase();
@@ -598,7 +576,7 @@ window.kitsInit = function() {
 
     $('#items-empty').hidden = pageItems.length>0;
     wrap.innerHTML = pageItems.map(it=>`
-      <div class="item" draggable="true" data-ns="${it.ns}" data-id="${it.id}" data-icon="${it.icon}" title="${it.ns}:${it.id}">
+      <div class="item" draggable="true" data-ns="${it.ns}" data-id="${it.id}" data-icon="${it.icon}" title="${it.name||it.ns+':'+it.id}\n${it.ns}:${it.id}">
         <img class="icon" alt="${it.ns}:${it.id}" src="${it.icon}" loading="lazy" onerror="this.style.visibility='hidden'">
         <div class="n">${it.ns}:${it.id}</div>
       </div>`).join('');
@@ -628,17 +606,15 @@ window.kitsInit = function() {
   $('#ver-select').addEventListener('change', ()=>{ state.page=1; renderCatalog(); });
   $('#item-search').addEventListener('input', ()=>{ state.page=1; renderCatalog(); });
 
-  // wire both pagers
+  // single pager bindings
   pagers().forEach(p=>{
     p.querySelector('.pg-first').addEventListener('click', ()=>{ state.page=1; renderCatalog(); });
-    p.querySelector('.pg-prev').addEventListener('click',  ()=>{ state.page=Math.max(1,state.page-1); renderCatalog(); });
-    p.querySelector('.pg-next').addEventListener('click',  ()=>{ const pages=Math.max(1,Math.ceil(state.filtered.length/state.pageSize)); state.page=Math.min(pages,state.page+1); renderCatalog(); });
-    p.querySelector('.pg-last').addEventListener('click',  ()=>{ state.page=Math.max(1,Math.ceil(state.filtered.length/state.pageSize)); renderCatalog(); });
-    p.querySelector('.pg-size').addEventListener('change',  ()=>{
+    p.querySelector('.pg-prev') .addEventListener('click', ()=>{ state.page=Math.max(1,state.page-1); renderCatalog(); });
+    p.querySelector('.pg-next') .addEventListener('click', ()=>{ const pages=Math.max(1,Math.ceil(state.filtered.length/state.pageSize)); state.page=Math.min(pages,state.page+1); renderCatalog(); });
+    p.querySelector('.pg-last') .addEventListener('click', ()=>{ state.page=Math.max(1,Math.ceil(state.filtered.length/state.pageSize)); renderCatalog(); });
+    p.querySelector('.pg-size') .addEventListener('change', ()=>{
       state.pageSize=parseInt(p.querySelector('.pg-size').value,10)||24;
       state.page=1;
-      // синхронизируем селекты размера
-      pagers().forEach(pp=>pp.querySelector('.pg-size').value=String(state.pageSize));
       renderCatalog();
     });
   });
