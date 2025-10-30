@@ -9,15 +9,28 @@ from flask import Blueprint, render_template, jsonify, request, current_app, ses
 
 from ...decorators import login_required
 from ...database import get_authme_connection, MySQLConnection
-from ...modules.luckperms_repo import (
-    roles_for_uuids,            # быстрый фолбэк (primary_group)
-    effective_roles_for_uuids,  # «живые» роли: контексты + веса
-)
+
+# --- LuckPerms roles (поддержка разных реализаций модуля) ---
+try:
+    # новая реализация с приоритетами (весами)
+    from ...modules.luckperms_repo import effective_roles_for_uuids  # type: ignore
+except Exception:  # pragma: no cover
+    effective_roles_for_uuids = None  # type: ignore
+
+try:
+    # старое имя (или алиас в модуле)
+    from ...modules.luckperms_repo import roles_for_uuids  # type: ignore
+except Exception:  # pragma: no cover
+    try:
+        # упрощённая реализация без весов
+        from ...modules.luckperms_repo import roles_from_user_permissions as roles_for_uuids  # type: ignore
+    except Exception:  # pragma: no cover
+        roles_for_uuids = None  # type: ignore
 
 # --- points_repo может отсутствовать: не ломаем список аккаунтов ---
 try:
     from ...modules.points_repo import get_points_by_uuid, set_points_by_uuid  # type: ignore
-except Exception:
+except Exception:  # pragma: no cover
     def get_points_by_uuid(_uuid: str, *, key: str = "rubs"):
         return None
     def set_points_by_uuid(_uuid: str, _new: float, *, key: str = "rubs"):
@@ -26,7 +39,7 @@ except Exception:
 # --- EasyPayments (история донатов) ---
 try:
     from ...modules.easypayments_repo import donations_by_uuid  # type: ignore
-except Exception:
+except Exception:  # pragma: no cover
     def donations_by_uuid(_uuid: str, limit: int = 200):
         return []
 
@@ -43,9 +56,9 @@ try:
     )
     try:
         from ...modules.litebans_repo import _conn as _lb_conn  # type: ignore
-    except Exception:
+    except Exception:  # pragma: no cover
         _lb_conn = None
-except Exception:
+except Exception:  # pragma: no cover
     def is_banned(_uuid: str) -> bool: return False
     def get_active_ban(_uuid: str): return None
     def get_bans(_uuid: str, limit: int = 50, include_inactive: bool = True): return []
@@ -58,7 +71,7 @@ except Exception:
 # --- онлайн-мост (опционален) ---
 try:
     from ...modules.bridge_client import BridgeClient  # type: ignore
-except Exception:
+except Exception:  # pragma: no cover
     class BridgeClient:  # type: ignore
         def is_online(self, **_):
             return None
@@ -75,6 +88,17 @@ POINTS_EDIT_ROLES = [x.strip().lower() for x in (os.getenv("POINTS_EDIT_ROLES") 
 LB_SERVER_ORIGIN = os.getenv("LB_SERVER_ORIGIN", "panel")
 LB_ACTOR_UUID_DEFAULT = os.getenv("LB_ACTOR_UUID", "00000000-0000-0000-0000-000000000000")
 
+# --- AuthMe schema helpers ---
+AUTHME_DB = (os.getenv("AUTHME_NAME") or os.getenv("AUTHME_DB") or "").strip(" `")
+
+def _q(name: str) -> str:
+    return f"`{name}`"
+
+def _qtbl(table: str) -> str:
+    """`db`.`table` если БД задана, иначе просто `table`."""
+    if AUTHME_DB:
+        return f"{_q(AUTHME_DB)}.{_q(table)}"
+    return _q(table)
 
 # ---------- HTML ----------
 @bp.route("/")
@@ -83,15 +107,16 @@ def index():
     # Страница standalone /admin/accounts (встроенный вариант живёт в /admin/gameservers/index.html через include)
     return render_template("admin/accounts/index.html")
 
-
 # ---------- helpers ----------
 def _current_schema(conn) -> Optional[str]:
     try:
         row = conn.query_one("SELECT DATABASE() AS db")
-        return (row or {}).get("db")
+        db = (row or {}).get("db")
+        if not db:
+            return AUTHME_DB or None
+        return db
     except Exception:
-        return None
-
+        return AUTHME_DB or None
 
 def _table_candidates() -> List[str]:
     prefer = (os.environ.get("AUTHME_TABLE") or "").strip()
@@ -104,24 +129,24 @@ def _table_candidates() -> List[str]:
             out.append(x)
     return out
 
-
 def _table_exists(conn, name: str) -> bool:
     db = _current_schema(conn)
+    # сначала information_schema
     try:
         row = conn.query_one(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1",
+            "SELECT 1 AS ok FROM information_schema.tables WHERE table_schema = %s AND table_name = %s LIMIT 1",
             (db, name),
         )
         if row:
             return True
     except Exception:
         pass
+    # затем SHOW TABLES LIKE
     try:
-        rows = conn.query_all("SHOW TABLES LIKE ?", (name,))
+        rows = conn.query_all("SHOW TABLES LIKE %s", (name,))
         return len(rows) > 0
     except Exception:
         return False
-
 
 def _pick_table(conn) -> Optional[str]:
     for t in _table_candidates():
@@ -129,21 +154,24 @@ def _pick_table(conn) -> Optional[str]:
             return t
     return None
 
-
 def _cols(conn, table: str) -> Set[str]:
     try:
-        rows = conn.query_all(f"SHOW COLUMNS FROM `{table}`")
-        return {r["Field"] for r in rows}
+        rows = conn.query_all(f"SHOW COLUMNS FROM {_qtbl(table)}")
+        cols: Set[str] = set()
+        for r in rows:
+            if isinstance(r, dict):
+                cols.add((r.get("Field") or r.get("field") or "").strip())
+            else:
+                cols.add(str(r[0]).strip())
+        return {c for c in cols if c}
     except Exception:
         return set()
-
 
 def _first_present(cols: Set[str], *variants: str) -> Optional[str]:
     for v in variants:
         if v and v in cols:
             return v
     return None
-
 
 def _norm_ts(v) -> Optional[int]:
     try:
@@ -153,13 +181,11 @@ def _norm_ts(v) -> Optional[int]:
     # если сек., переведём в мс
     return t if t > 10_000_000_000 else t * 1000
 
-
 def _dash(uuid_any: str) -> str:
     s = (uuid_any or "").replace("-", "").lower()
     if len(s) != 32:
         return (uuid_any or "").lower()
     return f"{s[0:8]}-{s[8:12]}-{s[12:16]}-{s[16:20]}-{s[20:32]}"
-
 
 # ---- auth helpers (из сессии) ----
 def _session_str(*keys: str) -> str:
@@ -168,7 +194,6 @@ def _session_str(*keys: str) -> str:
         if isinstance(v, str) and v.strip():
             return v.strip()
     return ""
-
 
 def _session_bool(*keys: str) -> bool:
     for k in keys:
@@ -181,21 +206,17 @@ def _session_bool(*keys: str) -> bool:
             return True
     return False
 
-
 def _current_username() -> str:
     return _session_str("username", "user", "login", "name", "nickname", "nick", "account", "account_name")
 
-
 def _current_role_lower() -> str:
     return (_session_str("role", "user_role") or "").lower()
-
 
 def _has_admin_flag() -> bool:
     if _session_bool("is_superadmin", "superadmin", "is_admin", "admin"):
         return True
     role = _current_role_lower()
     return role in set(POINTS_EDIT_ROLES)
-
 
 def _can_edit_points() -> bool:
     if POINTS_EDIT_ALL:
@@ -207,10 +228,8 @@ def _can_edit_points() -> bool:
         return True
     return False
 
-
 def _can_ban() -> bool:
     return _has_admin_flag()
-
 
 def _map_columns(cols: Set[str]) -> Dict[str, Optional[str]]:
     return {
@@ -225,7 +244,6 @@ def _map_columns(cols: Set[str]) -> Dict[str, Optional[str]]:
         "id": _first_present(cols, "id"),
     }
 
-
 def _fetch_single_account(*, uuid: Optional[str] = None, name: Optional[str] = None) -> Optional[dict]:
     conn = get_authme_connection()
     table = _pick_table(conn)
@@ -236,9 +254,9 @@ def _fetch_single_account(*, uuid: Optional[str] = None, name: Optional[str] = N
 
     row: Optional[Dict[str, Any]] = None
     if uuid and m["uuid"]:
-        row = conn.query_one(f"SELECT * FROM `{table}` WHERE `{m['uuid']}` = ? LIMIT 1", (_dash(uuid),))
+        row = conn.query_one(f"SELECT * FROM {_qtbl(table)} WHERE {_q(m['uuid'])} = %s LIMIT 1", (_dash(uuid),))
     elif name and m["name"]:
-        row = conn.query_one(f"SELECT * FROM `{table}` WHERE `{m['name']}` = ? LIMIT 1", (name,))
+        row = conn.query_one(f"SELECT * FROM {_qtbl(table)} WHERE {_q(m['name'])} = %s LIMIT 1", (name,))
     if not row:
         return None
 
@@ -260,14 +278,23 @@ def _fetch_single_account(*, uuid: Optional[str] = None, name: Optional[str] = N
         u = data.get("uuid")
         role = None
         if u:
-            role_map = effective_roles_for_uuids([u]) or roles_for_uuids([u])
+            role_map: Dict[str, str] = {}
+            if effective_roles_for_uuids:
+                try:
+                    role_map = effective_roles_for_uuids([u]) or {}  # type: ignore
+                except Exception:
+                    role_map = {}
+            if not role_map and roles_for_uuids:
+                try:
+                    role_map = roles_for_uuids([u]) or {}  # type: ignore
+                except Exception:
+                    role_map = {}
             role = role_map.get(u) if role_map else None
         data["role"] = role or "default"
     except Exception:
         data["role"] = "default"
 
     return data
-
 
 def _online_status(uuid: Optional[str], name: Optional[str]) -> Optional[bool]:
     try:
@@ -279,7 +306,6 @@ def _online_status(uuid: Optional[str], name: Optional[str]) -> Optional[bool]:
     except Exception:
         return None
     return None
-
 
 # ---------- API ----------
 @bp.get("/api/search")
@@ -305,14 +331,14 @@ def api_search():
     m = _map_columns(cols)
 
     select_parts: List[str] = []
-    if m["name"]:      select_parts.append(f"`{m['name']}` AS `name`")
-    if m["uuid"]:      select_parts.append(f"`{m['uuid']}` AS `uuid`")
-    if m["email"]:     select_parts.append(f"`{m['email']}` AS `email`")
-    if m["ip"]:        select_parts.append(f"`{m['ip']}` AS `ip`")
-    if m["lastip"]:    select_parts.append(f"`{m['lastip']}` AS `lastip`")
-    if m["regdate"]:   select_parts.append(f"`{m['regdate']}` AS `regdate`")
-    if m["lastlogin"]: select_parts.append(f"`{m['lastlogin']}` AS `lastlogin`")
-    if m["premium"]:   select_parts.append(f"`{m['premium']}` AS `premium`")
+    if m["name"]:      select_parts.append(f"{_q(m['name'])} AS {_q('name')}")
+    if m["uuid"]:      select_parts.append(f"{_q(m['uuid'])} AS {_q('uuid')}")
+    if m["email"]:     select_parts.append(f"{_q(m['email'])} AS {_q('email')}")
+    if m["ip"]:        select_parts.append(f"{_q(m['ip'])} AS {_q('ip')}")
+    if m["lastip"]:    select_parts.append(f"{_q(m['lastip'])} AS {_q('lastip')}")
+    if m["regdate"]:   select_parts.append(f"{_q(m['regdate'])} AS {_q('regdate')}")
+    if m["lastlogin"]: select_parts.append(f"{_q(m['lastlogin'])} AS {_q('lastlogin')}")
+    if m["premium"]:   select_parts.append(f"{_q(m['premium'])} AS {_q('premium')}")
     if not select_parts:
         select_parts = ["*"]
 
@@ -321,20 +347,18 @@ def api_search():
     if q:
         like_fields = [c for c in (m["name"], m["uuid"], m["email"], m["ip"], m["lastip"]) if c]
         if like_fields:
-            where = "WHERE " + " OR ".join(f"`{c}` LIKE ?" for c in like_fields)
+            where = "WHERE " + " OR ".join(f"{_q(c)} LIKE %s" for c in like_fields)
             params = [f"%{q}%"] * len(like_fields)
 
     # безопасный ORDER BY — выбираем первое реально существующее поле
     order_candidates = [m["lastlogin"], m["regdate"], m["id"], m["uuid"], m["name"]]
     order_by = next((x for x in order_candidates if x), None)
-    if not order_by:
-        # совсем уж fallback — сортировка по первому выбранному полю
-        order_by = select_parts[0].split("`")[1] if select_parts and "`" in select_parts[0] else None
 
-    sql = f"SELECT {', '.join(select_parts)} FROM `{table}` {where}"
+    sql = f"SELECT {', '.join(select_parts)} FROM {_qtbl(table)} {where}"
     if order_by:
-        sql += f" ORDER BY `{order_by}` DESC"
-    sql += f" LIMIT {limit}"
+        sql += f" ORDER BY {_q(order_by)} DESC"
+    sql += " LIMIT %s"
+    params.append(limit)
 
     try:
         rows = conn.query_all(sql, params)
@@ -351,13 +375,15 @@ def api_search():
     uuids_dashed = [_dash(r.get("uuid") or "") for r in rows if r.get("uuid")]
     roles_map: Dict[str, str] = {}
     try:
-        roles_map = effective_roles_for_uuids(uuids_dashed) or {}
-        if not roles_map:
-            roles_map = roles_for_uuids(uuids_dashed) or {}
+        if effective_roles_for_uuids:
+            roles_map = effective_roles_for_uuids(uuids_dashed) or {}  # type: ignore
+        if not roles_map and roles_for_uuids:
+            roles_map = roles_for_uuids(uuids_dashed) or {}  # type: ignore
     except Exception as e:
-        current_app.logger.warning("LP roles resolve failed, fallback to primary_group: %s", e)
+        current_app.logger.warning("LP roles resolve failed, fallback: %s", e)
         try:
-            roles_map = roles_for_uuids(uuids_dashed) or {}
+            if roles_for_uuids:
+                roles_map = roles_for_uuids(uuids_dashed) or {}  # type: ignore
         except Exception:
             roles_map = {}
 
@@ -366,7 +392,6 @@ def api_search():
         r["role"] = roles_map.get(u) or "default"
 
     return jsonify({"ok": True, "data": rows})
-
 
 @bp.get("/api/details")
 @login_required
@@ -433,7 +458,6 @@ def api_details():
         },
     })
 
-
 @bp.get("/api/punishments")
 @login_required
 def api_punishments():
@@ -453,7 +477,6 @@ def api_punishments():
     except Exception as e:
         current_app.logger.warning("litebans punishments fetch failed: %s", e)
         return jsonify({"ok": False, "error": "Punishments fetch failed"}), 500
-
 
 @bp.post("/api/points")
 @login_required
@@ -477,7 +500,6 @@ def api_points_update():
         current_app.logger.exception("points update failed: %s", e)
         return jsonify({"ok": False, "error": "Points update failed"}), 500
 
-
 # ---------------- LiteBans: бан/разбан ----------------
 def _litebans_conn() -> Optional[MySQLConnection]:
     if _lb_conn is None:
@@ -487,7 +509,6 @@ def _litebans_conn() -> Optional[MySQLConnection]:
     except Exception as e:
         current_app.logger.warning("litebans connect failed: %s", e)
         return None
-
 
 @bp.post("/api/ban")
 @login_required
@@ -528,7 +549,7 @@ def api_ban():
             "(`uuid`,`ip`,`reason`,`banned_by_uuid`,`banned_by_name`,`removed_by_uuid`,`removed_by_name`,"
             " `removed_by_reason`,`removed_by_date`,`time`,`until`,`template`,`server_scope`,`server_origin`,"
             " `silent`,`ipban`,`ipban_wildcard`,`active`) "
-            "VALUES (?,?,?,?,?,NULL,NULL,NULL,NULL,?,?,?,?,?, ?, ?, ?, 1)",
+            "VALUES (%s,%s,%s,%s,%s,NULL,NULL,NULL,NULL,%s,%s,%s,%s,%s, %s, %s, %s, 1)",
             (
                 uuid, None, reason, actor_uuid, actor_name,
                 now_ms, until_ms, 255, None, LB_SERVER_ORIGIN,
@@ -545,7 +566,6 @@ def api_ban():
         except Exception:
             pass
         return jsonify({"ok": False, "error": "Ban failed"}), 500
-
 
 @bp.post("/api/unban")
 @login_required
@@ -571,9 +591,9 @@ def api_unban():
     try:
         conn.execute(
             "UPDATE `litebans_bans` "
-            "SET `active` = 0, `removed_by_uuid` = ?, `removed_by_name` = ?, "
-            "    `removed_by_reason` = ?, `removed_by_date` = NOW() "
-            "WHERE `uuid` = ? AND `active` = 1",
+            "SET `active` = 0, `removed_by_uuid` = %s, `removed_by_name` = %s, "
+            "    `removed_by_reason` = %s, `removed_by_date` = NOW() "
+            "WHERE `uuid` = %s AND `active` = 1",
             (actor_uuid, actor_name, reason, uuid),
         )
         conn.commit()
@@ -585,7 +605,6 @@ def api_unban():
         except Exception:
             pass
         return jsonify({"ok": False, "error": "Unban failed"}), 500
-
 
 # ---------- register under /admin ----------
 from . import admin_bp
