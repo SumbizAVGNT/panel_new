@@ -12,25 +12,22 @@ from ...database import get_authme_connection, MySQLConnection
 
 # --- LuckPerms roles (поддержка разных реализаций модуля) ---
 try:
-    # новая реализация с приоритетами (весами)
     from ...modules.luckperms_repo import effective_roles_for_uuids  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     effective_roles_for_uuids = None  # type: ignore
 
 try:
-    # старое имя (или алиас в модуле)
     from ...modules.luckperms_repo import roles_for_uuids  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     try:
-        # упрощённая реализация без весов
         from ...modules.luckperms_repo import roles_from_user_permissions as roles_for_uuids  # type: ignore
-    except Exception:  # pragma: no cover
+    except Exception:
         roles_for_uuids = None  # type: ignore
 
-# --- points_repo может отсутствовать: не ломаем список аккаунтов ---
+# --- points_repo может отсутствовать ---
 try:
     from ...modules.points_repo import get_points_by_uuid, set_points_by_uuid  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     def get_points_by_uuid(_uuid: str, *, key: str = "rubs"):
         return None
     def set_points_by_uuid(_uuid: str, _new: float, *, key: str = "rubs"):
@@ -39,26 +36,20 @@ except Exception:  # pragma: no cover
 # --- EasyPayments (история донатов) ---
 try:
     from ...modules.easypayments_repo import donations_by_uuid  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     def donations_by_uuid(_uuid: str, limit: int = 200):
         return []
 
-# --- LiteBans (чтение наказаний) ---
+# --- LiteBans ---
 try:
     from ...modules.litebans_repo import (  # type: ignore
-        is_banned,
-        get_active_ban,
-        get_bans,
-        get_mutes,
-        get_warnings,
-        get_kicks,
-        get_history,
+        is_banned, get_active_ban, get_bans, get_mutes, get_warnings, get_kicks, get_history
     )
     try:
         from ...modules.litebans_repo import _conn as _lb_conn  # type: ignore
-    except Exception:  # pragma: no cover
+    except Exception:
         _lb_conn = None
-except Exception:  # pragma: no cover
+except Exception:
     def is_banned(_uuid: str) -> bool: return False
     def get_active_ban(_uuid: str): return None
     def get_bans(_uuid: str, limit: int = 50, include_inactive: bool = True): return []
@@ -71,7 +62,7 @@ except Exception:  # pragma: no cover
 # --- онлайн-мост (опционален) ---
 try:
     from ...modules.bridge_client import BridgeClient  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     class BridgeClient:  # type: ignore
         def is_online(self, **_):
             return None
@@ -79,12 +70,10 @@ except Exception:  # pragma: no cover
 bp = Blueprint("accounts", __name__, url_prefix="/accounts")
 
 POINTS_KEY = (os.getenv("POINTS_KEY") or "rubs").strip()
-# читаем корректное имя переменной, но оставляем б/с совместимость со старым названием
 POINTS_EDITOR_NAME = (os.getenv("POINTS_EDITOR_NAME") or os.getenv("HBusiwshu9whsd") or "").strip()
 POINTS_EDIT_ALL = (os.getenv("POINTS_EDIT_ALL") or "0").lower() in ("1", "true", "yes")
 POINTS_EDIT_ROLES = [x.strip().lower() for x in (os.getenv("POINTS_EDIT_ROLES") or "admin,superadmin").split(",") if x.strip()]
 
-# LiteBans insert defaults
 LB_SERVER_ORIGIN = os.getenv("LB_SERVER_ORIGIN", "panel")
 LB_ACTOR_UUID_DEFAULT = os.getenv("LB_ACTOR_UUID", "00000000-0000-0000-0000-000000000000")
 
@@ -95,7 +84,6 @@ def _q(name: str) -> str:
     return f"`{name}`"
 
 def _qtbl(table: str) -> str:
-    """`db`.`table` если БД задана, иначе просто `table`."""
     if AUTHME_DB:
         return f"{_q(AUTHME_DB)}.{_q(table)}"
     return _q(table)
@@ -104,17 +92,13 @@ def _qtbl(table: str) -> str:
 @bp.route("/")
 @login_required
 def index():
-    # Страница standalone /admin/accounts (встроенный вариант живёт в /admin/gameservers/index.html через include)
     return render_template("admin/accounts/index.html")
 
 # ---------- helpers ----------
 def _current_schema(conn) -> Optional[str]:
     try:
         row = conn.query_one("SELECT DATABASE() AS db")
-        db = (row or {}).get("db")
-        if not db:
-            return AUTHME_DB or None
-        return db
+        return (row or {}).get("db") or (AUTHME_DB or None)
     except Exception:
         return AUTHME_DB or None
 
@@ -131,19 +115,17 @@ def _table_candidates() -> List[str]:
 
 def _table_exists(conn, name: str) -> bool:
     db = _current_schema(conn)
-    # сначала information_schema
     try:
         row = conn.query_one(
-            "SELECT 1 AS ok FROM information_schema.tables WHERE table_schema = %s AND table_name = %s LIMIT 1",
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1",
             (db, name),
         )
         if row:
             return True
     except Exception:
         pass
-    # затем SHOW TABLES LIKE
     try:
-        rows = conn.query_all("SHOW TABLES LIKE %s", (name,))
+        rows = conn.query_all("SHOW TABLES LIKE ?", (name,))
         return len(rows) > 0
     except Exception:
         return False
@@ -178,8 +160,7 @@ def _norm_ts(v) -> Optional[int]:
         t = int(v)
     except Exception:
         return None
-    # если сек., переведём в мс
-    return t if t > 10_000_000_000 else t * 1000
+    return t if t > 10_000_000_000 else t * 1000  # сек → мс
 
 def _dash(uuid_any: str) -> str:
     s = (uuid_any or "").replace("-", "").lower()
@@ -254,9 +235,9 @@ def _fetch_single_account(*, uuid: Optional[str] = None, name: Optional[str] = N
 
     row: Optional[Dict[str, Any]] = None
     if uuid and m["uuid"]:
-        row = conn.query_one(f"SELECT * FROM {_qtbl(table)} WHERE {_q(m['uuid'])} = %s LIMIT 1", (_dash(uuid),))
+        row = conn.query_one(f"SELECT * FROM {_qtbl(table)} WHERE {_q(m['uuid'])} = ? LIMIT 1", (_dash(uuid),))
     elif name and m["name"]:
-        row = conn.query_one(f"SELECT * FROM {_qtbl(table)} WHERE {_q(m['name'])} = %s LIMIT 1", (name,))
+        row = conn.query_one(f"SELECT * FROM {_qtbl(table)} WHERE {_q(m['name'])} = ? LIMIT 1", (name,))
     if not row:
         return None
 
@@ -347,18 +328,16 @@ def api_search():
     if q:
         like_fields = [c for c in (m["name"], m["uuid"], m["email"], m["ip"], m["lastip"]) if c]
         if like_fields:
-            where = "WHERE " + " OR ".join(f"{_q(c)} LIKE %s" for c in like_fields)
+            where = "WHERE " + " OR ".join(f"{_q(c)} LIKE ?" for c in like_fields)
             params = [f"%{q}%"] * len(like_fields)
 
-    # безопасный ORDER BY — выбираем первое реально существующее поле
     order_candidates = [m["lastlogin"], m["regdate"], m["id"], m["uuid"], m["name"]]
     order_by = next((x for x in order_candidates if x), None)
 
     sql = f"SELECT {', '.join(select_parts)} FROM {_qtbl(table)} {where}"
     if order_by:
         sql += f" ORDER BY {_q(order_by)} DESC"
-    sql += " LIMIT %s"
-    params.append(limit)
+    sql += f" LIMIT {int(limit)}"  # LIMIT как литерал (только после валидации int!)
 
     try:
         rows = conn.query_all(sql, params)
@@ -396,17 +375,12 @@ def api_search():
 @bp.get("/api/details")
 @login_required
 def api_details():
-    """
-    Детальная карточка: account + role + points + online + can_edit,
-    донаты и статус блокировки.
-    """
     uuid = request.args.get("uuid") or ""
     name = request.args.get("name") or ""
     acc = _fetch_single_account(uuid=uuid, name=name)
     if not acc:
         return jsonify({"ok": False, "error": "Account not found"}), 404
 
-    # points
     points: Optional[float] = None
     try:
         if acc.get("uuid"):
@@ -417,10 +391,8 @@ def api_details():
     if points is None:
         points = 0.0
 
-    # online
     online = _online_status(acc.get("uuid"), acc.get("name"))
 
-    # donations
     donations = []
     try:
         if acc.get("uuid"):
@@ -429,7 +401,6 @@ def api_details():
         current_app.logger.warning("donations fetch failed: %s", e)
         donations = []
 
-    # bans (litebans)
     lb_active = None
     lb_is_banned = False
     try:
@@ -450,55 +421,10 @@ def api_details():
             "online": online,
             "can_edit_points": _can_edit_points(),
             "can_ban": _can_ban(),
-            "ban": {
-                "is_banned": lb_is_banned,
-                "active": lb_active,
-            },
+            "ban": {"is_banned": lb_is_banned, "active": lb_active},
             "donations": donations,
         },
     })
-
-@bp.get("/api/punishments")
-@login_required
-def api_punishments():
-    """Полная история наказаний по uuid (ленивая подгрузка вкладки)."""
-    uuid = (request.args.get("uuid") or "").strip()
-    if not uuid:
-        return jsonify({"ok": False, "error": "uuid is required"}), 400
-    try:
-        data = {
-            "bans": get_bans(uuid, limit=200, include_inactive=True) or [],
-            "mutes": get_mutes(uuid, limit=200, include_inactive=True) or [],
-            "warnings": get_warnings(uuid, limit=200) or [],
-            "kicks": get_kicks(uuid, limit=200) or [],
-            "history": get_history(uuid, limit=200) or [],
-        }
-        return jsonify({"ok": True, "data": data})
-    except Exception as e:
-        current_app.logger.warning("litebans punishments fetch failed: %s", e)
-        return jsonify({"ok": False, "error": "Punishments fetch failed"}), 500
-
-@bp.post("/api/points")
-@login_required
-def api_points_update():
-    """Обновление баланса донатной валюты."""
-    if not _can_edit_points():
-        return jsonify({"ok": False, "error": "Forbidden"}), 403
-
-    js = request.get_json(silent=True) or {}
-    uuid = js.get("uuid")
-    key = (js.get("key") or POINTS_KEY).strip()
-    points = js.get("points")
-
-    if not uuid or points is None:
-        return jsonify({"ok": False, "error": "uuid and points are required"}), 400
-
-    try:
-        new_value = set_points_by_uuid(_dash(uuid), float(points), key=key)
-        return jsonify({"ok": True, "data": {"uuid": _dash(uuid), "key": key, "points": new_value}})
-    except Exception as e:
-        current_app.logger.exception("points update failed: %s", e)
-        return jsonify({"ok": False, "error": "Points update failed"}), 500
 
 # ---------------- LiteBans: бан/разбан ----------------
 def _litebans_conn() -> Optional[MySQLConnection]:
@@ -513,14 +439,13 @@ def _litebans_conn() -> Optional[MySQLConnection]:
 @bp.post("/api/ban")
 @login_required
 def api_ban():
-    """Создать бан (LiteBans). body: {uuid, reason, duration_seconds?, silent?, ipban?}"""
     if not _can_ban():
         return jsonify({"ok": False, "error": "Forbidden"}), 403
 
     js = request.get_json(silent=True) or {}
     uuid = (_dash(js.get("uuid") or "") or "").strip()
     reason = (js.get("reason") or "Banned by an operator").strip()
-    duration_seconds = int(js.get("duration_seconds") or 0)  # 0 → permanent
+    duration_seconds = int(js.get("duration_seconds") or 0)
     silent = bool(js.get("silent") or False)
     ipban = bool(js.get("ipban") or False)
 
@@ -539,7 +464,6 @@ def api_ban():
 
     now_ms = int(time.time() * 1000)
     until_ms = 0 if duration_seconds <= 0 else now_ms + duration_seconds * 1000
-
     actor_name = _current_username() or "CONSOLE"
     actor_uuid = LB_ACTOR_UUID_DEFAULT
 
@@ -549,10 +473,10 @@ def api_ban():
             "(`uuid`,`ip`,`reason`,`banned_by_uuid`,`banned_by_name`,`removed_by_uuid`,`removed_by_name`,"
             " `removed_by_reason`,`removed_by_date`,`time`,`until`,`template`,`server_scope`,`server_origin`,"
             " `silent`,`ipban`,`ipban_wildcard`,`active`) "
-            "VALUES (%s,%s,%s,%s,%s,NULL,NULL,NULL,NULL,%s,%s,%s,%s,%s, %s, %s, %s, 1)",
+            "VALUES (?,?,?,?,?,NULL,NULL,NULL,NULL,?,?,?,NULL,?, ?, ?, ?, 1)",
             (
                 uuid, None, reason, actor_uuid, actor_name,
-                now_ms, until_ms, 255, None, LB_SERVER_ORIGIN,
+                now_ms, until_ms, 255, LB_SERVER_ORIGIN,
                 1 if silent else 0, 1 if ipban else 0, 0,
             ),
         )
@@ -570,7 +494,6 @@ def api_ban():
 @bp.post("/api/unban")
 @login_required
 def api_unban():
-    """Снять бан (LiteBans). body: {uuid, reason?} — снимает все активные по uuid."""
     if not _can_ban():
         return jsonify({"ok": False, "error": "Forbidden"}), 403
 
@@ -591,9 +514,9 @@ def api_unban():
     try:
         conn.execute(
             "UPDATE `litebans_bans` "
-            "SET `active` = 0, `removed_by_uuid` = %s, `removed_by_name` = %s, "
-            "    `removed_by_reason` = %s, `removed_by_date` = NOW() "
-            "WHERE `uuid` = %s AND `active` = 1",
+            "SET `active` = 0, `removed_by_uuid` = ?, `removed_by_name` = ?, "
+            "    `removed_by_reason` = ?, `removed_by_date` = NOW() "
+            "WHERE `uuid` = ? AND `active` = 1",
             (actor_uuid, actor_name, reason, uuid),
         )
         conn.commit()
