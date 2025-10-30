@@ -5,6 +5,8 @@ import os
 import re
 import json
 import random
+import time
+from threading import Lock
 from datetime import datetime
 from typing import Optional, Iterable, List, Tuple, Dict
 
@@ -138,7 +140,8 @@ def _ensure_schema(conn: MySQLConnection) -> None:
     if _SCHEMA_READY:
         return
     try:
-        init_db(conn)  # создаёт все таблицы, включая promo_kits / promo_kit_items / promo_codes / promo_code_groups ...
+        # создаёт все таблицы, включая promo_kits / promo_kit_items / promo_codes / promo_code_groups ...
+        init_db(conn)
         _SCHEMA_READY = True
     except Exception as e:
         current_app.logger.error("init_db failed: %s", e)
@@ -152,6 +155,7 @@ LP_PREFIX = (
     or os.getenv("LUCKPERMS_PREFIX")
     or "luckperms_"
 ).strip("`")
+LP_SERVER = (os.getenv("LUCKPERMS_SERVER") or "global").strip()
 
 def _lp_tbl(core: str) -> str:
     return f"`{LP_PREFIX}{core}`"
@@ -180,11 +184,10 @@ def _promo_groups(conn: MySQLConnection, code_id: int) -> List[dict]:
 
 def _lp_apply_groups(uuid: str, groups: List[dict]) -> int:
     """Добавляет узлы group.<name> пользователю в LuckPerms (временные/перманентные, с контекстами)."""
-    import time
     if not uuid or not groups:
         return 0
-    uu = _to_dashed_uuid(uuid)
     now = int(time.time())
+    uu = _to_dashed_uuid(uuid)
 
     rows = []
     for g in groups:
@@ -217,6 +220,56 @@ def _lp_apply_groups(uuid: str, groups: List[dict]) -> int:
     except Exception as e:
         current_app.logger.error("LuckPerms apply failed: %s", e)
         return 0
+
+# ==== LP groups catalog cache ====
+LP_GROUPS_CACHE_TTL = int(os.getenv("LP_GROUPS_CACHE_TTL",
+                         os.getenv("LUCKPERMS_GROUPS_CACHE_TTL", "180")))
+_LP_GROUPS_CACHE: Dict[str, object] = {"ts": 0.0, "items": []}
+_LP_GROUPS_LOCK = Lock()
+
+def _lp_groups_fetch_all() -> List[dict]:
+    """Читает все LP-группы и их максимальный weight из БД LP."""
+    with get_luckperms_connection() as conn:
+        w_rows = conn.query_all(
+            f"""
+            SELECT name,
+                   MAX(CAST(SUBSTRING(permission, 8) AS UNSIGNED)) AS w
+            FROM {_lp_tbl('group_permissions')}
+            WHERE permission LIKE 'weight.%'
+              AND (value=1 OR value='1' OR value='true')
+              AND (server IS NULL OR server='' OR server='global' OR server=?)
+              AND (world  IS NULL OR world='')
+            GROUP BY name
+            """,
+            (LP_SERVER,),
+        ) or []
+        weights = {r["name"]: int(r["w"] or 0) for r in w_rows}
+
+        g_rows = conn.query_all(f"SELECT name FROM {_lp_tbl('groups')}") or []
+        names = {r["name"] for r in g_rows} | set(weights.keys())
+
+        items = [{"name": n, "weight": int(weights.get(n, 0))} for n in names]
+        items.sort(key=lambda it: (-it["weight"], it["name"]))
+        return items
+
+def _lp_groups_all_cached(refresh: bool = False) -> List[dict]:
+    """Возвращает кэшированный каталог LP-групп, при необходимости обновляет."""
+    now = time.time()
+    with _LP_GROUPS_LOCK:
+        if (not refresh) and _LP_GROUPS_CACHE["items"] and (now - float(_LP_GROUPS_CACHE["ts"]) < LP_GROUPS_CACHE_TTL):
+            return list(_LP_GROUPS_CACHE["items"])
+
+    try:
+        items = _lp_groups_fetch_all()
+    except Exception as e:
+        current_app.logger.warning("lp groups fetch failed: %s", e)
+        with _LP_GROUPS_LOCK:
+            return list(_LP_GROUPS_CACHE["items"])
+
+    with _LP_GROUPS_LOCK:
+        _LP_GROUPS_CACHE["items"] = list(items)
+        _LP_GROUPS_CACHE["ts"] = now
+    return items
 
 # =========================================================
 # UI
@@ -579,7 +632,7 @@ def api_promo_list():
     return _ok(rows)
 
 # =========================================================
-# API: LuckPerms groups for a code
+# API: LuckPerms groups for a code + catalog
 # =========================================================
 
 @bp.get("/api/promo/groups/list")
@@ -644,6 +697,29 @@ def api_promo_groups_save():
                 bulk,
             )
     return _ok({"count": len(bulk)})
+
+@bp.get("/api/lp/groups")
+@login_required
+def api_lp_groups():
+    """
+    Каталог LP-групп (кэшируется в памяти).
+    Query:
+      q       — фильтр по подстроке (optional)
+      limit   — максимум записей (default 300)
+      refresh — 1/true чтобы принудительно обновить кэш
+    """
+    q = (request.args.get("q") or "").strip().lower()
+    limit = max(1, min(2000, int(request.args.get("limit") or 300)))
+    refresh = str(request.args.get("refresh") or "").lower() in ("1", "true", "yes")
+
+    # если плагин/коннектор LP не сконфигурирован — отдаём пусто
+    if not get_luckperms_connection:
+        return _ok([])
+
+    items = _lp_groups_all_cached(refresh=refresh)
+    if q:
+        items = [it for it in items if q in it["name"].lower()]
+    return _ok(items[:limit])
 
 # =========================================================
 # API: redemptions (preview + redeem + history)
@@ -843,6 +919,4 @@ admin_bp.add_url_rule("/gameservers/promocode/api/promo/list",    view_func=api_
 admin_bp.add_url_rule("/gameservers/promocode/api/promo/groups/list", view_func=api_promo_groups_list, methods=["GET"],  endpoint="gameservers_promocode_api_promo_groups_list")
 admin_bp.add_url_rule("/gameservers/promocode/api/promo/groups/save", view_func=api_promo_groups_save, methods=["POST"], endpoint="gameservers_promocode_api_promo_groups_save")
 
-# redemptions
-admin_bp.add_url_rule("/gameservers/promocode/api/promo/redemptions", view_func=api_promo_redemptions, methods=["GET"], endpoint="gameservers_promocode_api_promo_redemptions")
-admin_bp.add_url_rule("/gameservers/promocode/api/promo/reds",        view_func=api_promo_reds_alias,  methods=["GET"], endpoint="gameservers_promocode_api_promo_reds")
+# lp
